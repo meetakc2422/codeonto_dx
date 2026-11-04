@@ -1,0 +1,5 @@
+{
+  "VENDOR_ACTION_PENDING": "pending",
+  "CLOSED": "replied",
+  "EXPIRED": "ignored"
+}

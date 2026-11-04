@@ -1,0 +1,127 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block extrastyle %}{{ block.super }}
+<style>
+  .ids-tabs { display: flex; gap: 6px; margin: 4px 0 16px; flex-wrap: wrap; }
+  .ids-tabs a { padding: 8px 14px; border: 1px solid var(--hairline-color); border-radius: 8px; text-decoration: none; }
+  .ids-tabs a.active { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+  .ids-tabs small { opacity: .8; }
+  .ids-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 1100px) { .ids-cols { grid-template-columns: 1fr; } }
+  .ids-box { border: 1px solid var(--hairline-color); border-radius: 8px; padding: 12px; min-width: 0; }
+  .ids-box h2 { margin: 0 0 10px; font-size: 15px; background: none; color: var(--body-fg); padding: 0; }
+  .ids-bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .ids-bar input[type=search] { flex: 1; min-width: 160px; }
+  .ids-table-wrap { max-height: 60vh; overflow: auto; }
+  .ids-box table { width: 100%; }
+  .ids-box td code { font-size: 12px; }
+  .ids-inactive { opacity: .55; }
+  .ids-pager { margin-top: 8px; display: flex; gap: 10px; align-items: center; }
+  .ids-used { color: var(--body-quiet-color); font-size: 12px; }
+</style>
+{% endblock %}
+
+{% block breadcrumbs %}
+<div class="breadcrumbs">
+  <a href="{% url 'admin:index' %}">Home</a>
+  &rsaquo; <a href="{% url 'admin:outlets_client_changelist' %}">Clients</a>
+  &rsaquo; <a href="{% url 'admin:outlets_client_change' client.pk %}">{{ client }}</a>
+  &rsaquo; Platform IDs
+</div>
+{% endblock %}
+
+{% block content %}
+<p>Assign the Zomato res IDs, Swiggy IDs and Google location IDs that belong to <strong>{{ client }}</strong>.
+  Only assigned IDs can be mapped to {{ client }}'s stores (by the client in the dashboard, or here in admin under Brands).</p>
+
+<div class="ids-tabs">
+  {% for t in tabs %}
+    <a href="?platform={{ t.code }}" class="{% if t.code == platform %}active{% endif %}">
+      {{ t.label }} <small>· {{ t.owned }} assigned · {{ t.available }} available</small></a>
+  {% endfor %}
+</div>
+
+<div class="ids-cols">
+  {# ---------- available: not owned by any client ---------- #}
+  <div class="ids-box">
+    <h2>Available {{ label }} IDs <span class="ids-used">(active, not assigned to any client)</span></h2>
+    <form method="get" class="ids-bar">
+      <input type="hidden" name="platform" value="{{ platform }}">
+      <input type="hidden" name="q2" value="{{ q2 }}">
+      <input type="search" name="q" value="{{ q }}" placeholder="Search name, {{ extra_label|lower }}, city or ID" autofocus>
+      <input type="submit" value="Search">
+    </form>
+    <form method="post">{% csrf_token %}
+      <input type="hidden" name="op" value="assign">
+      <div class="ids-bar">
+        <label><input type="checkbox" data-all="avail"> Select all on page</label>
+        <input type="submit" class="default" value="Assign selected to {{ client }} →">
+      </div>
+      <div class="ids-table-wrap"><table>
+        <thead><tr><th></th><th>ID</th><th>Name</th><th>{{ extra_label }}</th><th>City</th></tr></thead>
+        <tbody>
+        {% for r in available %}
+          <tr><td><input type="checkbox" name="ids" value="{{ r.id }}" data-group="avail"></td>
+            <td><code>{{ r.id }}</code></td><td>{{ r.name }}</td><td>{{ r.extra|truncatechars:60 }}</td><td>{{ r.city }}</td></tr>
+        {% empty %}
+          <tr><td colspan="5">{% if q %}No available IDs match “{{ q }}”.{% else %}No unassigned {{ label }} IDs left.{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+    </form>
+    <div class="ids-pager">
+      {% if page_a.has_previous %}<a href="?platform={{ platform }}&q={{ q|urlencode }}&q2={{ q2|urlencode }}&pa={{ page_a.previous_page_number }}">‹ Prev</a>{% endif %}
+      <span>{{ page_a.paginator.count }} IDs{% if page_a.paginator.num_pages > 1 %} · page {{ page_a.number }} of {{ page_a.paginator.num_pages }}{% endif %}</span>
+      {% if page_a.has_next %}<a href="?platform={{ platform }}&q={{ q|urlencode }}&q2={{ q2|urlencode }}&pa={{ page_a.next_page_number }}">Next ›</a>{% endif %}
+    </div>
+  </div>
+
+  {# ---------- owned by this client ---------- #}
+  <div class="ids-box">
+    <h2>{{ client }}’s {{ label }} IDs</h2>
+    <form method="get" class="ids-bar">
+      <input type="hidden" name="platform" value="{{ platform }}">
+      <input type="hidden" name="q" value="{{ q }}">
+      <input type="search" name="q2" value="{{ q2 }}" placeholder="Search this client's IDs">
+      <input type="submit" value="Search">
+    </form>
+    <form method="post">{% csrf_token %}
+      <input type="hidden" name="op" value="remove">
+      <div class="ids-bar">
+        <label><input type="checkbox" data-all="owned"> Select all on page</label>
+        <input type="submit" value="← Remove selected from {{ client }}">
+      </div>
+      <div class="ids-table-wrap"><table>
+        <thead><tr><th></th><th>ID</th><th>Name</th><th>{{ extra_label }}</th><th>City</th><th>Used by store</th></tr></thead>
+        <tbody>
+        {% for r in owned %}
+          <tr class="{% if not r.is_active %}ids-inactive{% endif %}">
+            <td>{% if not r.store %}<input type="checkbox" name="ids" value="{{ r.id }}" data-group="owned">{% endif %}</td>
+            <td><code>{{ r.id }}</code></td><td>{{ r.name }}{% if not r.is_active %} <em>(inactive)</em>{% endif %}</td>
+            <td>{{ r.extra|truncatechars:60 }}</td><td>{{ r.city }}</td>
+            <td>{% if r.store %}{{ r.store.brand }} · {{ r.store.outlet_name }}{% else %}<span class="ids-used">not mapped yet</span>{% endif %}</td></tr>
+        {% empty %}
+          <tr><td colspan="6">{% if q2 %}No IDs match “{{ q2 }}”.{% else %}No {{ label }} IDs assigned yet. Pick them on the left.{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table></div>
+    </form>
+    <div class="ids-pager">
+      {% if page_o.has_previous %}<a href="?platform={{ platform }}&q={{ q|urlencode }}&q2={{ q2|urlencode }}&po={{ page_o.previous_page_number }}">‹ Prev</a>{% endif %}
+      <span>{{ page_o.paginator.count }} IDs{% if page_o.paginator.num_pages > 1 %} · page {{ page_o.number }} of {{ page_o.paginator.num_pages }}{% endif %}</span>
+      {% if page_o.has_next %}<a href="?platform={{ platform }}&q={{ q|urlencode }}&q2={{ q2|urlencode }}&po={{ page_o.next_page_number }}">Next ›</a>{% endif %}
+    </div>
+  </div>
+</div>
+
+<p style="margin-top:16px">Next: map these IDs to stores under
+  <a href="{% url 'admin:outlets_brand_changelist' %}?client__id__exact={{ client.pk }}">{{ client }}’s brands</a>,
+  or let the client do it from the dashboard (Brands &amp; Outlets).</p>
+
+<script>
+  document.querySelectorAll("[data-all]").forEach((box) => box.addEventListener("change", () => {
+    document.querySelectorAll(`[data-group="${box.dataset.all}"]`).forEach((cb) => { cb.checked = box.checked; });
+  }));
+</script>
+{% endblock %}

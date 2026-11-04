@@ -1,0 +1,10 @@
+{
+  "_doc": "Hour of day (IST, 24h) a mealtime starts; a window runs until the next one starts. Order matters.",
+  "windows": [
+    {"name": "Breakfast", "from": 5},
+    {"name": "Lunch", "from": 12},
+    {"name": "Evening Snacks", "from": 16},
+    {"name": "Dinner", "from": 19},
+    {"name": "Late Night Dinner", "from": 23}
+  ]
+}

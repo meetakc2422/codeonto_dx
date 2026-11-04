@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Codeonto Dashboard</title>
+  <link rel="icon" href="assets/logo-mark.svg" type="image/svg+xml">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-left">
+      <a href="#/overview" class="logo"><span class="brand-logo">P<i>u</i>lse<small>by codeonto</small></span></a>
+      <button class="icon-btn ghost" id="menuToggle" aria-label="Toggle menu">
+        <svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+    </div>
+    <div class="topbar-right">
+      <div class="brand-picker">
+        <span class="brand-industry" id="brandIndustry"></span>
+        <select id="brandSelect" aria-label="Brand"></select>
+      </div>
+      <button class="icon-btn" id="fullscreenBtn" aria-label="Fullscreen">
+        <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
+      </button>
+      <div class="user-menu">
+        <button class="avatar" id="userBtn" aria-haspopup="true" aria-expanded="false" aria-controls="userMenu" aria-label="Account menu">SS</button>
+        <div class="user-pop" id="userMenu" hidden></div>
+      </div>
+    </div>
+  </header>
+
+  <div class="layout">
+    <nav class="sidebar" id="sidebar"></nav>
+    <div class="scrim" id="scrim"></div>
+    <main class="content">
+      <div class="page-head">
+        <div>
+          <h1 id="pageTitle">Overview</h1>
+          <p id="pageSub" class="muted"></p>
+        </div>
+        <div class="filters" id="filters">
+          <div class="outlet-filter" id="outletFilter">
+            <button class="outlet-filter-btn" id="locationBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="locationPop" aria-label="Outlet"></button>
+            <div class="outlet-filter-pop" id="locationPop" hidden>
+              <input id="locationSearch" type="search" placeholder="Search area, city or res ID" aria-label="Search outlets" autocomplete="off">
+              <div class="outlet-filter-list" id="locationList" role="listbox" aria-label="Outlets"></div>
+            </div>
+          </div>
+          <select id="platformSelect" aria-label="Platform"></select>
+          <div class="segmented" id="rangeSeg">
+            <button data-days="7">7D</button>
+            <button data-days="30" class="active">30D</button>
+            <button data-days="90">90D</button>
+            <button data-custom="1" id="customBtn">Custom</button>
+          </div>
+          <div class="range-pop" id="rangePop" hidden>
+            <label>From <input type="date" id="rangeFrom"></label>
+            <label>To <input type="date" id="rangeTo"></label>
+            <button class="btn blue" id="rangeApply">Apply</button>
+          </div>
+        </div>
+      </div>
+      <div id="page"></div>
+    </main>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

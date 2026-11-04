@@ -1,0 +1,40 @@
+{
+  "_doc": "Swiggy GenerateBusinessReport sheet: 'Overview|Metric' as the sheet shows it. direct -> [KPI code, weight]; see core/derive.py for the derived types.",
+  "orders_metric": "SALES|Delivered Orders",
+  "direct": {
+    "SALES|Net Sales": ["net_revenue", "one"],
+    "SALES|Delivered Orders": ["delivered_orders", "one"],
+    "SALES|Net AOV": ["avg_order_value", "orders"],
+    "SALES|Cancelled Order Loss": ["cancellation_loss", "one"],
+    "CONVERSION_FUNNEL|Impressions": ["impressions", "one"],
+    "CONVERSION_FUNNEL|Menu Opens": ["menu_views", "one"],
+    "CONVERSION_FUNNEL|Carts Builds": ["add_to_cart", "one"],
+    "CONVERSION_FUNNEL|Orders Placed": ["funnel_orders", "one"],
+    "ADS_CBA|Ad Impressions": ["ad_impressions", "one"],
+    "DISCOUNTS|Discount Given by Restaurant(RDGMV)": ["discount_given", "one"],
+    "DISCOUNTS|Discount GMV %": ["discount_pct_revenue", "orders"],
+    "DISCOUNTS|Restaurant Discount Per Order(RDPO)": ["discount_per_order", "orders"],
+    "OPERATIONS|Online Availability %": ["online_pct", "one"],
+    "OPERATIONS|Kitchen Prep Time": ["avg_prep_time", "orders"],
+    "OPERATIONS|Food Ready Accuracy (MFR)": ["mfr_accuracy", "orders"],
+    "OPERATIONS|Delayed Orders (> 10 mins)": ["delayed_orders_pct", "orders"],
+    "MENU|Menu Score(Out of 100)": ["menu_score", "one"],
+    "MENU|Items with Photos": ["menu_images_pct", "one"],
+    "MENU|Items with Descriptions": ["menu_description_pct", "one"]
+  },
+  "needed": [
+    "SALES|Restaurant Cancelled Orders",
+    "ADS_CPC|CPC Driven Sales", "ADS_CPC|CPC Orders", "ADS_CPC|Total CPC Spends",
+    "ADS_CBA|CBA Driven Sales", "ADS_CBA|CBA Orders", "ADS_CBA|Total CBA Spends",
+    "DISCOUNTS|Discounted Orders %"
+  ],
+  "derived": [
+    {"kpi": "cancellation_rate", "type": "share", "numerator": "SALES|Restaurant Cancelled Orders", "other": "SALES|Delivered Orders", "weight": "orders"},
+    {"kpi": "menu_to_order_pct", "type": "ratio", "numerator": "CONVERSION_FUNNEL|Orders Placed", "denominator": "CONVERSION_FUNNEL|Menu Opens", "scale": 100, "weight": "denominator"},
+    {"kpi": "ad_sales", "type": "sum", "terms": ["ADS_CPC|CPC Driven Sales", "ADS_CBA|CBA Driven Sales"]},
+    {"kpi": "ad_orders", "type": "sum", "terms": ["ADS_CPC|CPC Orders", "ADS_CBA|CBA Orders"]},
+    {"kpi": "ad_spend", "type": "sum", "terms": ["ADS_CPC|Total CPC Spends", "ADS_CBA|Total CBA Spends"]},
+    {"kpi": "ad_roi", "type": "ratio", "numerator": "kpi:ad_sales", "denominator": "kpi:ad_spend", "weight": "denominator"},
+    {"kpi": "discounted_orders", "type": "pct", "base": "SALES|Delivered Orders", "pct": "DISCOUNTS|Discounted Orders %"}
+  ]
+}

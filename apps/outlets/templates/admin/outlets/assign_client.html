@@ -1,0 +1,14 @@
+{% extends "admin/base_site.html" %}
+{% block content %}
+<form method="post">{% csrf_token %}
+  <p>Assign <strong>{{ queryset.count }}</strong> {{ opts.verbose_name_plural }} to:</p>
+  {{ form.as_p }}
+  <ul style="max-height:240px;overflow:auto">{% for obj in queryset|slice:":200" %}<li>{{ obj }}</li>{% endfor %}</ul>
+  {% if queryset.count > 200 %}<p>… and {{ queryset.count|add:"-200" }} more</p>{% endif %}
+  {% for obj in queryset %}<input type="hidden" name="{{ action_checkbox_name }}" value="{{ obj.pk }}">{% endfor %}
+  <input type="hidden" name="action" value="assign_to_client">
+  <input type="hidden" name="apply" value="1">
+  <input type="submit" value="Assign">
+  <a href="" class="button cancel-link" style="margin-left:8px">Cancel</a>
+</form>
+{% endblock %}

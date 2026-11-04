@@ -1,0 +1,136 @@
+{
+  "_doc": "direct: 'Section|Metric label as Zomato shows it' -> [KPI code, weight]; weight 'orders' = that day's delivered orders, 'one' = 1. needed: figures only used to derive counts. derived (evaluated in order): 'pct' = base x pct/100, 'ratio' = numerator / denominator; 'kpi:<code>' refers to a KPI derived earlier in this list.",
+  "direct": {
+    "Sales overview|Sales": [
+      "gross_revenue",
+      "one"
+    ],
+    "Sales overview|Delivered orders": [
+      "delivered_orders",
+      "one"
+    ],
+    "Sales overview|Average order value": [
+      "avg_order_value",
+      "orders"
+    ],
+    "Customer experience|Average rating": [
+      "listing_rating",
+      "one"
+    ],
+    "Customer experience|Online %": [
+      "online_pct",
+      "one"
+    ],
+    "Customer experience|Kitchen preparation time": [
+      "avg_prep_time",
+      "orders"
+    ],
+    "Customer experience|Food order ready accuracy": [
+      "mfr_accuracy",
+      "orders"
+    ],
+    "Customer experience|Delayed orders": [
+      "delayed_orders_pct",
+      "orders"
+    ],
+    "Customer experience|Rejected orders": [
+      "cancellation_rate",
+      "orders"
+    ],
+    "Customer experience|Lost sales": [
+      "cancellation_loss",
+      "one"
+    ],
+    "Customer funnel|Impressions": [
+      "impressions",
+      "one"
+    ],
+    "Customer funnel|Menu to order": [
+      "menu_to_order_pct",
+      "one"
+    ],
+    "Marketing|Sales from Ads": [
+      "ad_sales",
+      "one"
+    ],
+    "Marketing|Ads impressions": [
+      "ad_impressions",
+      "one"
+    ],
+    "Marketing|Ads spend": [
+      "ad_spend",
+      "one"
+    ],
+    "Marketing|Ads return on investment": [
+      "ad_roi",
+      "one"
+    ],
+    "Marketing|Discount given": [
+      "discount_given",
+      "one"
+    ],
+    "Marketing|Effective discount": [
+      "discount_pct_revenue",
+      "orders"
+    ],
+    "Menu trends|Menu score": [
+      "menu_score",
+      "one"
+    ],
+    "Menu trends|Items with images": [
+      "menu_images_pct",
+      "one"
+    ],
+    "Menu trends|Items with description": [
+      "menu_description_pct",
+      "one"
+    ]
+  },
+  "needed": [
+    "Customer funnel|Impressions to menu",
+    "Customer funnel|Menu to cart",
+    "Customer funnel|Cart to order",
+    "Marketing|Ads orders",
+    "Marketing|Orders with offers"
+  ],
+  "derived": [
+    {
+      "kpi": "menu_views",
+      "type": "pct",
+      "base": "Customer funnel|Impressions",
+      "pct": "Customer funnel|Impressions to menu"
+    },
+    {
+      "kpi": "add_to_cart",
+      "type": "pct",
+      "base": "kpi:menu_views",
+      "pct": "Customer funnel|Menu to cart"
+    },
+    {
+      "kpi": "funnel_orders",
+      "type": "pct",
+      "base": "kpi:add_to_cart",
+      "pct": "Customer funnel|Cart to order"
+    },
+    {
+      "kpi": "ad_orders",
+      "type": "pct",
+      "base": "Sales overview|Delivered orders",
+      "pct": "Marketing|Ads orders"
+    },
+    {
+      "kpi": "discounted_orders",
+      "type": "pct",
+      "base": "Sales overview|Delivered orders",
+      "pct": "Marketing|Orders with offers"
+    },
+    {
+      "kpi": "discount_per_order",
+      "type": "ratio",
+      "numerator": "Marketing|Discount given",
+      "denominator": "kpi:discounted_orders",
+      "weight": "denominator"
+    }
+  ],
+  "orders_metric": "Sales overview|Delivered orders"
+}

@@ -1,0 +1,15 @@
+{
+  "photos_target": 10,
+  "post_max_age_days": 30,
+  "checks": [
+    {"points": 10, "key": "phone", "fix": "Add a phone number"},
+    {"points": 10, "key": "website", "fix": "Add a website or ordering link"},
+    {"points": 20, "key": "hours", "fix": "Set opening hours"},
+    {"points": 10, "key": "category", "fix": "Choose a primary category"},
+    {"points": 5, "key": "extra_categories", "fix": "Add secondary categories (for example Delivery, Asian)"},
+    {"points": 10, "key": "description", "fix": "Write a business description"},
+    {"points": 15, "key": "photos", "fix": "Add more photos (10 or more)"},
+    {"points": 15, "key": "posts", "fix": "Publish a post (none in the last 30 days)"},
+    {"points": 5, "key": "open", "fix": "Listing is not open: check its status"}
+  ]
+}

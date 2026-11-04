@@ -1,0 +1,11 @@
+{
+  "BUSINESS_IMPRESSIONS_DESKTOP_MAPS": "profile_views",
+  "BUSINESS_IMPRESSIONS_DESKTOP_SEARCH": "profile_views",
+  "BUSINESS_IMPRESSIONS_MOBILE_MAPS": "profile_views",
+  "BUSINESS_IMPRESSIONS_MOBILE_SEARCH": "profile_views",
+  "WEBSITE_CLICKS": "website_clicks",
+  "CALL_CLICKS": "call_clicks",
+  "BUSINESS_DIRECTION_REQUESTS": "direction_requests",
+  "BUSINESS_FOOD_MENU_CLICKS": "profile_menu_clicks",
+  "BUSINESS_FOOD_ORDERS": "profile_food_orders"
+}
