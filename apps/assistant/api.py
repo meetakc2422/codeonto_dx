@@ -43,7 +43,8 @@ def chat(request):
     brand = access.brands_for(request.user).filter(pk=ctx.get("brand_id")).first() if str(ctx.get("brand_id") or "").isdigit() else None
     if brand:
         page = (f"THE USER IS LOOKING AT: brand '{brand.name}' (id {brand.id})"
-                + (f", outlet id {ctx['outlet_id']}" if str(ctx.get("outlet_id") or "").isdigit() else ", all outlets")
+                + (f", outlet id{'s' if ',' in str(ctx['outlet_id']) else ''} {ctx['outlet_id']}"
+                   if str(ctx.get("outlet_id") or "").replace(",", "").isdigit() else ", all outlets")
                 + (f", dates {ctx.get('start')} to {ctx.get('end')}" if ctx.get("start") and ctx.get("end") else "")
                 + (f", on the '{ctx['page']}' page" if ctx.get("page") else "")
                 + ". Questions like 'this month' or 'my outlets' refer to this view unless they say otherwise.")

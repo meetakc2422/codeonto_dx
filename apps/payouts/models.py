@@ -75,3 +75,25 @@ class PayoutOrder(models.Model):
 
     def __str__(self):
         return f"{self.order_id} ({self.cycle})"
+
+
+class PayoutLineType(models.Model):
+    """A line seen on the platforms' payout statements (section + item label). Lines we haven't reviewed yet are shown
+    as "new deduction types" so a new fee, ad product or adjustment never slips into the numbers unnoticed.
+    kind says what it is once reviewed: part of the orders, ad spend, or another deduction not tied to orders."""
+
+    KINDS = [("order", "Part of the orders"), ("ad", "Ad spend"), ("deduction", "Other deduction")]
+
+    platform = models.CharField(max_length=20)
+    section = models.CharField(max_length=80)
+    label = models.CharField(max_length=255, help_text="Item label with digits replaced by #, so dated labels count as one")
+    kind = models.CharField(max_length=20, choices=KINDS, blank=True)
+    reviewed = models.BooleanField(default=False)
+    first_seen = models.DateField(null=True, blank=True)
+
+    class Meta:
+        db_table = "payout_line_types"
+        constraints = [models.UniqueConstraint(fields=["platform", "section", "label"], name="uniq_payout_line_type")]
+
+    def __str__(self):
+        return f"{self.platform} · {self.section} · {self.label}"

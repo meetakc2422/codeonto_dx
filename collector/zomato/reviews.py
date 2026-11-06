@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 
 from core import config as cfg, db
 from core.common import ConfigError, log, require_env
+from core.refusals import Refusals
 
 from .outlets import _cookies
 
@@ -171,8 +172,11 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     creds = {a["id"]: _cookies(db.load_credentials(a)) for a in accs.values()}
     default = next(iter(accs.values()))["id"]
     ok, total_new = True, 0
+    refusals = Refusals("zomato reviews")
     for s in stores:
         acc_id = s["account_id"] if s["account_id"] in by_id else default
+        if refusals.is_dead(acc_id):
+            continue
         try:
             with db.transaction() as cur:
                 new = 0
@@ -202,11 +206,13 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             log.info("zomato reviews %s (%s): %s replies saved", s["outlet_name"], s["res_id"], got)
             total_new += new
             log.info("zomato reviews %s · %s (%s): %s new", s["brand"], s["outlet_name"], s["res_id"], new)
+            refusals.success(acc_id)
         except PermissionError as e:
-            log.error("zomato reviews: %s", e)
-            return False
+            refusals.refused(acc_id, f"{s['brand']} · {s['outlet_name']} ({s['res_id']})", e)
+            ok = False
         except Exception as e:
             log.exception("zomato reviews %s failed: %s", s["res_id"], e)
             ok = False
+    refusals.summary()
     log.info("zomato reviews: %s new across %s stores", total_new, len(stores))
     return ok

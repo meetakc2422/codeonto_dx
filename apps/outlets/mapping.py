@@ -4,8 +4,6 @@ from dataclasses import dataclass, field
 
 from django.db import transaction
 
-from apps.metrics.models import MetricDaily
-from apps.reviews.models import Review
 
 from .catalog import CATALOGS
 from .models import Brand, BrandOutlet
@@ -88,9 +86,8 @@ def save_brand_outlets(brand: Brand, outlets: list[dict], delete_ids: list[int],
             if owner:
                 setattr(owner, fname, None)
                 owner.save(update_fields=[fname, "updated_at"])
-                # history recorded for that platform follows the id to its new store
-                Review.objects.filter(outlet=owner, platform_id=code).update(outlet=bo)
-                MetricDaily.objects.filter(outlet=owner, platform_id=code).update(outlet=bo)
+                # everything recorded for that platform follows the id to its new store, so deleting the old row loses nothing
+                move_platform_data(owner, bo, code)
             if not item.is_active and not owner:
                 raise MappingError(f"{code} id {ext} is inactive (no longer in our accounts)")
             setattr(bo, fname, item)
@@ -104,3 +101,32 @@ def save_brand_outlets(brand: Brand, outlets: list[dict], delete_ids: list[int],
         _, per_model = BrandOutlet.objects.filter(brand=brand, pk__in=delete_ids).delete()
         deleted = per_model.get(BrandOutlet._meta.label, 0)
     return {"saved": saved, "deleted": deleted}
+
+
+def move_platform_data(src: BrandOutlet, dst: BrandOutlet, platform: str) -> dict:
+    """Move every row recorded for `platform` from one store to another: reviews, metrics, payouts, uptime, stock-outs,
+    complaints, item sales, hours, listing profile, market spots. Without this, deleting the old row after a merge
+    would delete that platform's history with it. Rows the new store already has (same unique key) are left alone."""
+    from django.db import IntegrityError, transaction
+
+    moved = {}
+    for rel in BrandOutlet._meta.related_objects:
+        model, fk = rel.related_model, rel.field.name
+        if not getattr(rel, "on_delete", None) or "platform" not in {f.name for f in model._meta.fields}:
+            continue
+        qs = model.objects.filter(**{fk: src, "platform": platform})
+        try:
+            with transaction.atomic():
+                n = qs.update(**{fk: dst})
+        except IntegrityError:  # a few rows clash with ones the new store already has: move the rest one by one
+            n = 0
+            for obj in qs:
+                try:
+                    with transaction.atomic():
+                        model.objects.filter(pk=obj.pk).update(**{fk: dst})
+                        n += 1
+                except IntegrityError:
+                    pass
+        if n:
+            moved[model._meta.label] = n
+    return moved

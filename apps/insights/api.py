@@ -13,7 +13,7 @@ from rest_framework.response import Response
 
 from apps.complaints.models import Complaint
 from apps.listings.models import OutletHours
-from apps.outlets.access import get_brand, in_scope
+from apps.outlets.access import get_brand, in_scope, outlet_ids
 from apps.payouts.models import PayoutCycle, PayoutOrder
 from apps.reviews.models import Review
 from apps.stockouts.models import StockOut
@@ -122,8 +122,8 @@ def money_leaked(request, brand_id):
 
     def scoped(qs, field="outlet_id"):
         qs = in_scope(qs, request.user, field)
-        if qp.get("outlet_id"):
-            qs = qs.filter(**{field: qp["outlet_id"]})
+        if outlet_ids(qp.get("outlet_id")):
+            qs = qs.filter(**{f"{field}__in": outlet_ids(qp.get("outlet_id"))})
         if qp.get("platform"):
             qs = qs.filter(**{field.replace("outlet_id", "platform_id"): qp["platform"]})
         return qs
@@ -239,7 +239,7 @@ def item_scorecard(request, brand_id):
 
     def scoped(qs):
         qs = in_scope(qs, request.user)
-        return qs.filter(outlet_id=qp["outlet_id"]) if qp.get("outlet_id") else qs
+        return qs.filter(outlet_id__in=outlet_ids(qp.get("outlet_id"))) if outlet_ids(qp.get("outlet_id")) else qs
 
     rows = {}
 

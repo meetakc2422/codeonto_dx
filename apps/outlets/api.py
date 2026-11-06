@@ -185,3 +185,18 @@ def import_outlets(request, brand_id):
     if not text.strip():
         return Response({"detail": "Upload a CSV file"}, status=400)
     return Response(import_csv(b, text, bool(request.data.get("commit")), assign_unowned=access.is_staff(request.user)))
+
+
+@api_view(["GET"])
+def link_suggestions(request, brand_id):
+    """Zomato-only and Swiggy-only rows of a brand that are probably the same kitchen, for someone to confirm."""
+    from .linking import suggest
+
+    b = access.get_brand(request.user, brand_id, manage=True)
+    rows = list(access.in_scope(b.outlets.filter(is_active=True), request.user, "id")
+                .values("id", "outlet_name", "area", "city", "zomato_id", "swiggy_id"))
+    z = [r for r in rows if r["zomato_id"] and not r["swiggy_id"]]
+    s = [r for r in rows if r["swiggy_id"] and not r["zomato_id"]]
+    pairs = suggest(z, s)
+    return Response({"zomato_only": len(z), "swiggy_only": len(s), "pairs": [
+        {"zomato": p["zomato"], "swiggy": p["swiggy"], "score": p["score"], "sure": p["sure"]} for p in pairs]})

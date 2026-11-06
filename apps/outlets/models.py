@@ -227,3 +227,19 @@ class BrandOutlet(TimeStamped):
                 errors[field] = f"{item} belongs to {item.client}, not {self.brand.client}."
         if errors:
             raise ValidationError(errors)
+
+
+class LoginCode(models.Model):
+    """A one-time login code emailed to a user. Only a hash is stored; it expires after a few minutes, allows a few
+    wrong guesses, and works once."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="login_codes")
+    code_hash = models.CharField(max_length=128)
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    attempts = models.PositiveSmallIntegerField(default=0)
+    used_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "login_codes"
+        indexes = [models.Index(fields=["user", "created_at"])]

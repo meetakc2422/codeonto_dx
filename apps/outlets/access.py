@@ -119,3 +119,11 @@ def user_json(user) -> dict:
         "can_manage": is_staff(user) or bool(m and m.can_manage),
         "outlet_limited": outlet_limit(user) is not None,
     }
+
+
+def outlet_ids(value) -> list[int] | None:
+    """The outlet filter: one id or a comma list ("12" or "12,15,40"). None means all outlets."""
+    if not value:
+        return None
+    ids = [int(x) for x in str(value).split(",") if x.strip().isdigit()]
+    return ids or None

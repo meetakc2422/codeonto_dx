@@ -1,7 +1,7 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from apps.outlets.access import get_brand, in_scope
+from apps.outlets.access import get_brand, in_scope, outlet_ids
 
 from .models import Alert
 
@@ -11,8 +11,8 @@ def brand_alerts(request, brand_id):
     get_brand(request.user, brand_id)
     qs = in_scope(Alert.objects.filter(outlet__brand_id=brand_id), request.user).select_related("outlet__brand")
     qp = request.query_params
-    if qp.get("outlet_id"):
-        qs = qs.filter(outlet_id=qp["outlet_id"])
+    if outlet_ids(qp.get("outlet_id")):
+        qs = qs.filter(outlet_id__in=outlet_ids(qp.get("outlet_id")))
     if qp.get("status") == "resolved":
         qs = qs.filter(is_open=False)
     elif qp.get("status") != "all":

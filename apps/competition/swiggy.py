@@ -20,6 +20,9 @@ from django.utils import timezone
 
 log = logging.getLogger(__name__)
 
+# Swiggy serves menu photos from its CDN by imageId
+IMAGE_CDN = "https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_300/"
+
 TIMEOUT = 30
 BAD_ESCAPE = re.compile(r'\\(?!["\\/bfnrtu])')
 
@@ -224,6 +227,7 @@ def menu_once(place: dict, res_id: str) -> dict:
                            "tags": list(dict.fromkeys(tags)), "reorder_score": None,
                            "item_rating": float(agg["rating"]) if agg.get("rating") else None, "popularity": _count(agg.get("ratingCount")),
                            "in_stock": bool(it.get("inStock", 1)), "has_photo": bool(it.get("imageId")),
+                           "image": f"{IMAGE_CDN}{it['imageId']}" if it.get("imageId") else "",
                            "desc": re.sub(r"\s*\[Energy:.*?\]", "", it.get("description") or "").strip(), "alias": "", "_personal": personal}
     for i in items.values():
         i.pop("_personal")

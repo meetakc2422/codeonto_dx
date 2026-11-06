@@ -6,12 +6,13 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from apps.masters.models import Kpi
-from apps.outlets.access import get_brand, in_scope, outlet_limit
+from apps.outlets.access import get_brand, in_scope, outlet_limit, outlet_ids
 
 from .rollups import rollup_review_metrics
 
 # Aggregates metric_daily by each KPI's own rule. 'last' takes each outlet/platform's
-# latest value in the window, then sums counts or averages everything else.
+# latest value in the window, then sums counts or averages everything else, weighted by each row's weight (1 unless
+# set, so a plain average; listing_rating carries its number of ratings so the brand rating is a weighted average).
 _AGG_SQL = """
 WITH base AS (
   SELECT k.code, k.name, k.unit, k.aggregation, k.higher_is_better, m.code AS module, k.sort_order,
@@ -24,7 +25,7 @@ WITH base AS (
   JOIN brand_outlets bo ON bo.id = md.outlet_id
   WHERE bo.brand_id = %(brand_id)s
     AND md.metric_date BETWEEN %(start)s AND %(end)s
-    AND (%(outlet_id)s::bigint IS NULL OR md.outlet_id = %(outlet_id)s)
+    AND (%(outlet_id)s::bigint[] IS NULL OR md.outlet_id = ANY(%(outlet_id)s::bigint[]))
     AND (%(allowed)s::bigint[] IS NULL OR md.outlet_id = ANY(%(allowed)s::bigint[]))
     AND (%(platform)s::text IS NULL OR md.platform = %(platform)s)
     AND (%(module)s::text IS NULL OR m.code = %(module)s)
@@ -38,7 +39,7 @@ SELECT code, name, unit, higher_is_better, module {date_select},
     WHEN 'max'          THEN MAX(value)
     WHEN 'min'          THEN MIN(value)
     WHEN 'last'         THEN CASE WHEN unit = 'count' THEN SUM(value) FILTER (WHERE rn = 1)
-                                  ELSE AVG(value) FILTER (WHERE rn = 1) END
+                                  ELSE SUM(value * w) FILTER (WHERE rn = 1) / NULLIF(SUM(w) FILTER (WHERE rn = 1), 0) END
   END AS value
 FROM base
 GROUP BY code, name, unit, aggregation, higher_is_better, module, sort_order {date_select}
@@ -50,6 +51,8 @@ def _aggregate(by_date: bool, **params) -> list[dict]:
     sql = _AGG_SQL.format(date_part=", md.metric_date" if by_date else "",
                           date_select=", metric_date" if by_date else "")
     params = {"outlet_id": None, "platform": None, "module": None, "kpi": None, "allowed": None, **params}
+    if isinstance(params["outlet_id"], int):  # one outlet passed directly (leaderboard): the SQL takes a list
+        params["outlet_id"] = [params["outlet_id"]]
     with connection.cursor() as cur:
         cur.execute(sql, params)
         cols = [c.name for c in cur.description]
@@ -69,7 +72,7 @@ def _range(request) -> tuple[date, date]:
 def _filters(request) -> dict:
     qp = request.query_params
     limit = outlet_limit(request.user)
-    return {"outlet_id": int(qp["outlet_id"]) if qp.get("outlet_id") else None,
+    return {"outlet_id": outlet_ids(qp.get("outlet_id")),
             "platform": qp.get("platform") or None, "module": qp.get("module") or None,
             "allowed": None if limit is None else sorted(limit)}
 
@@ -90,7 +93,7 @@ def brand_kpis(request, brand_id):
         cur.execute("""SELECT k.code, array_agg(DISTINCT md.platform ORDER BY md.platform)
                        FROM metric_daily md JOIN kpis k ON k.id = md.kpi_id JOIN brand_outlets bo ON bo.id = md.outlet_id
                        WHERE bo.brand_id = %(b)s AND md.metric_date BETWEEN %(s)s AND %(e)s
-                         AND (%(o)s::bigint IS NULL OR md.outlet_id = %(o)s) AND (%(p)s::text IS NULL OR md.platform = %(p)s)
+                         AND (%(o)s::bigint[] IS NULL OR md.outlet_id = ANY(%(o)s::bigint[])) AND (%(p)s::text IS NULL OR md.platform = %(p)s)
                          AND (%(a)s::bigint[] IS NULL OR md.outlet_id = ANY(%(a)s::bigint[]))
                        GROUP BY k.code""", {"b": brand_id, "s": start, "e": end, "o": f["outlet_id"], "p": f["platform"], "a": f["allowed"]})
         platforms = {code: [p for p in plats if p] for code, plats in cur.fetchall()}

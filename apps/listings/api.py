@@ -1,7 +1,7 @@
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from apps.outlets.access import get_brand, in_scope
+from apps.outlets.access import get_brand, in_scope, outlet_ids
 
 from .models import ListingProfile
 
@@ -10,8 +10,8 @@ from .models import ListingProfile
 def brand_listings(request, brand_id):
     get_brand(request.user, brand_id)
     qs = in_scope(ListingProfile.objects.filter(outlet__brand_id=brand_id), request.user).select_related("outlet__brand")
-    if request.query_params.get("outlet_id"):
-        qs = qs.filter(outlet_id=request.query_params["outlet_id"])
+    if outlet_ids(request.query_params.get("outlet_id")):
+        qs = qs.filter(outlet_id__in=outlet_ids(request.query_params.get("outlet_id")))
     if request.query_params.get("platform"):
         qs = qs.filter(platform_id=request.query_params["platform"])
     return Response([{

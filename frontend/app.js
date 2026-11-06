@@ -105,6 +105,10 @@ function filterParams(extra = {}) {
 
 const inr = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
 const plural = (n, w) => `${inr.format(n)} ${w}${n === 1 ? "" : "s"}`;
+function compactCount(v) {
+  const a = Math.abs(v);
+  return a >= 1e7 ? `${(v / 1e7).toFixed(1)} Cr` : a >= 1e5 ? `${(v / 1e5).toFixed(1)}L` : a >= 1e3 ? `${(v / 1e3).toFixed(1)}K` : inr.format(v);
+}
 function compactINR(v) {
   const a = Math.abs(v);
   if (a >= 1e7) return `₹${(v / 1e7).toFixed(2)} Cr`;
@@ -226,31 +230,61 @@ function renderSidebar() {
   $("#sidebar").innerHTML = html;
 }
 
-// ---------- outlet filter: searchable, because many stores share a brand name and city ----------
+// ---------- outlet filter: pick the platform first, then one or more of its outlets ----------
+// state.locationId holds the chosen outlet ids as "12" or "12,15,40" ("" = all); every API takes it as outlet_id
+const selIds = () => (state.locationId ? String(state.locationId).split(",").filter(Boolean) : []);
+const singleId = () => (selIds().length === 1 ? selIds()[0] : "");
+const PLATFORM_ID = { zomato: "zomato", swiggy: "swiggy", google: "google" };
+const platformLocations = () => (state.platform && PLATFORM_ID[state.platform] ? state.locations.filter((l) => l[state.platform]) : state.locations);
+const platformName = () => state.config?.connected_platforms.find((p) => p.code === state.platform)?.name || "";
+const pickSel = new Set();
+
+function outletsLabel() {
+  const ids = selIds();
+  if (!ids.length) return `All ${platformName() ? platformName() + " " : ""}outlets (${platformLocations().length})`;
+  if (ids.length === 1) return state.locations.find((l) => String(l.id) === ids[0])?.label || "1 outlet";
+  return `${ids.length} outlets`;
+}
+
 function showSelectedOutlet() {
-  const l = state.locations.find((x) => String(x.id) === String(state.locationId));
-  $("#locationBtn").textContent = l ? l.label : `All outlets (${state.locations.length})`;
-  $("#locationBtn").title = l ? [l.label, l.city, l.resId].filter(Boolean).join(" · ") : "";
+  $("#locationBtn").textContent = outletsLabel();
+  $("#locationBtn").title = selIds().map((id) => state.locations.find((l) => String(l.id) === id)?.label).filter(Boolean).join("\n");
+}
+
+function locationSub(l) {
+  const ids = { zomato: l.zomato && `Zomato ${l.zomato}`, swiggy: l.swiggy && `Swiggy ${l.swiggy}`, google: l.google && "Google" };
+  return [l.city, state.platform && PLATFORM_ID[state.platform] ? ids[state.platform] : l.resId].filter(Boolean).join(" · ");
 }
 
 function renderOutletList() {
   const q = $("#locationSearch").value.trim().toLowerCase();
-  const option = (id, name, sub) => `<button class="outlet-filter-item ${String(state.locationId) === String(id) ? "on" : ""}" type="button" role="option"
-      aria-selected="${String(state.locationId) === String(id)}" data-location="${esc(id)}"><b>${esc(name)}</b>${sub ? `<small>${esc(sub)}</small>` : ""}</button>`;
   const words = q.split(/\s+/).filter(Boolean);
-  const matches = state.locations.filter((l) => words.every((w) => l.search.includes(w)));
-  $("#locationList").innerHTML = (q ? "" : option("", "All outlets", `${state.locations.length} outlets`)) +
-    (matches.map((l) => option(l.id, l.label, [l.city, l.resId].filter(Boolean).join(" · "))).join("") ||
-      '<p class="muted outlet-filter-empty">No outlets match</p>');
+  const pool = platformLocations();
+  const matches = pool.filter((l) => words.every((w) => l.search.includes(w)));
+  $("#locationList").innerHTML = (q || !matches.length ? "" : `<label class="outlet-filter-item outlet-filter-all"><input type="checkbox" id="locationAll" ${matches.every((l) => pickSel.has(String(l.id))) ? "checked" : ""}>
+      <span><b>Select all ${words.length ? "matching" : ""}</b><small>${plural(matches.length, "outlet")}</small></span></label>`) +
+    (matches.map((l) => `<label class="outlet-filter-item ${pickSel.has(String(l.id)) ? "on" : ""}" role="option" aria-selected="${pickSel.has(String(l.id))}">
+        <input type="checkbox" data-location="${esc(l.id)}" ${pickSel.has(String(l.id)) ? "checked" : ""}>
+        <span><b>${esc(l.label)}</b><small>${esc(locationSub(l))}</small></span></label>`).join("") ||
+      `<p class="muted outlet-filter-empty">${pool.length ? "No outlets match" : `No outlets on ${esc(platformName())}`}</p>`);
+  $("#locationCount").textContent = pickSel.size ? `${pickSel.size} selected` : "none selected = all";
 }
 
 function setOutletPicker(open) {
   $("#locationPop").hidden = !open;
   $("#locationBtn").setAttribute("aria-expanded", String(open));
   if (!open) return;
+  pickSel.clear(); selIds().forEach((id) => pickSel.add(id));
   $("#locationSearch").value = "";
   renderOutletList();
   $("#locationSearch").focus();
+}
+
+function applyOutlets(ids) {
+  state.locationId = ids.join(",");
+  showSelectedOutlet();
+  setOutletPicker(false);
+  render();
 }
 
 function renderFilters() {
@@ -269,7 +303,8 @@ async function loadBrand(id) {
     const name = o.area || o.outlet_name;
     const label = o.area && o.area.toLowerCase() !== o.outlet_name.toLowerCase() ? `${o.outlet_name} · ${o.area}` : name;
     const resId = [o.zomato && `Zomato ${o.zomato}`, o.swiggy && `Swiggy ${o.swiggy}`].filter(Boolean).join(" · ");
-    return { id: o.id, name, label, city: o.city, resId, search: [name, o.outlet_name, o.city, o.zomato, o.swiggy].filter(Boolean).join(" ").toLowerCase() };
+    return { id: o.id, name, label, city: o.city, resId, zomato: o.zomato || "", swiggy: o.swiggy || "", google: o.google || "",
+             search: [name, o.outlet_name, o.city, o.zomato, o.swiggy].filter(Boolean).join(" ").toLowerCase() };
   }).sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name));
   $("#brandIndustry").textContent = config.brand.industry_name;
   renderFilters();
@@ -375,7 +410,7 @@ async function render() {
   $("#pageTitle").textContent = isSetup ? "Brands & Outlets" : moduleName(route);
   $("#pageSub").textContent = isSetup
     ? "Name your brand and map each outlet to its Google, Zomato and Swiggy listing"
-    : `${state.config.brand.name} · ${state.locationId ? state.locations.find((l) => l.id == state.locationId)?.name : "All outlets"} · ${periodLabel()}`;
+    : `${state.config.brand.name} · ${outletsLabel().replace(/ \(\d+\)$/, "")} · ${periodLabel()}`;
   const lockedModule = state.config.modules.find((m) => m.code === route && m.locked);
   if (lockedModule) return renderLocked(page, lockedModule);
   try {
@@ -387,6 +422,7 @@ async function render() {
     else if (route === "items") await renderItems(page);
     else if (route === "store_uptime") await renderUptime(page);
     else if (route === "reconciliation") await renderReconciliation(page);
+    else if (route === "marketplace_ads") await renderAds(page);
     else if (route === "alerts") await renderAlerts(page);
     else if (route === "listings") await renderListings(page);
     else if (route === "competitors") await renderCompetition(page);
@@ -433,15 +469,22 @@ function kpiCards(kpis, moduleIcon, sparks = {}) {
 async function renderOverview(page) {
   const has = (code) => state.config.modules.some((m) => m.code === code);
   const opt = (p) => p.catch(() => null);
-  const [kpiRes, summary, negPending, uptime, stock, stockActive] = await Promise.all([
+  const [kpiRes, summary, negPending, uptime, stock, stockActive, pay, payIssues] = await Promise.all([
     api(`/brands/${state.brandId}/kpis`, filterParams()),
     api(`/brands/${state.brandId}/reviews/summary`, filterParams()),
     api(`/brands/${state.brandId}/reviews`, { outlet_id: state.locationId, platform: state.platform, rating: "neg", reply_status: "pending", limit: 3 }),
     has("store_uptime") ? opt(api(`/brands/${state.brandId}/uptime/summary`, filterParams())) : null,
     has("stock_outs") ? opt(api(`/brands/${state.brandId}/stock-outs/summary`, filterParams())) : null,
     has("stock_outs") ? opt(api(`/brands/${state.brandId}/stock-outs`, filterParams({ status: "active", limit: 500 }))) : null,
+    has("reconciliation") ? opt(api(`/brands/${state.brandId}/payouts/summary`, filterParams())) : null,
+    has("reconciliation") ? opt(api(`/brands/${state.brandId}/payouts/cycles`, filterParams({ status: "issues", limit: 500 }))) : null,
   ]);
-  if (!kpiRes.kpis.length && !summary.total && !uptime && !stock) return renderNoData(page);
+  if (!kpiRes.kpis.length && !summary.total && !uptime && !stock && !pay?.cycles) return renderNoData(page);
+  const payByOutlet = new Map();
+  (payIssues?.results || []).forEach((c) => payByOutlet.set(c.outlet_id, (payByOutlet.get(c.outlet_id) || 0) + 1));
+  const platformRating = kpiRes.kpis.find((k) => k.code === "listing_rating" && k.value != null);
+  const ratingCount = kpiRes.kpis.find((k) => k.code === "rating_count" && k.value);
+  const weekRating = kpiRes.kpis.find((k) => k.code === "weekly_rating" && k.value != null);
   const rating = kpiRes.kpis.find((k) => k.code === "avg_rating");
   const offline = (uptime?.outlets || []).filter((o) => o.offline_since);
 
@@ -449,8 +492,14 @@ async function renderOverview(page) {
   const tile = (tone, href, label, value, sub, extra = "") => `<a class="ov-tile ${tone}" href="${href}">
       <span class="ov-tile-label">${label}</span><div class="ov-tile-value">${value}${extra}</div><span class="ov-tile-sub">${sub}</span></a>`;
   const tiles = [
-    tile(rating?.change_pct <= -2 ? "amber" : "ok", "#/reviews", "Rating", rating ? `${fmt(rating.value, "rating")}<small>★</small>` : "—",
-      `${inr.format(summary.total)} reviews · ${periodLabel()}`, rating ? changeChip(rating) : ""),
+    platformRating
+      ? tile(platformRating.change_pct <= -2 ? "amber" : "ok", "#/reviews", "Platform rating", `${fmt(platformRating.value, "rating")}<small>★</small>`,
+          [ratingCount ? `${compactCount(ratingCount.value)} ratings, weighted` : "weighted by number of ratings",
+           weekRating ? `<span class="${weekRating.value < platformRating.value - 0.2 ? "ov-bad" : ""}">this week ${fmt(weekRating.value, "rating")}★</span>` : "",
+           summary.avg_rating != null ? `reviews ${fmt(summary.avg_rating, "rating")}★` : ""].filter(Boolean).join(" · "), changeChip(platformRating))
+      : tile(rating?.change_pct <= -2 ? "amber" : "ok", "#/reviews", "Rating",
+          rating?.value != null ? `${fmt(rating.value, "rating")}<small>★</small>` : summary.avg_rating != null ? `${fmt(summary.avg_rating, "rating")}<small>★</small>` : "—",
+          `${inr.format(summary.total)} reviews · ${periodLabel()}`, rating ? changeChip(rating) : ""),
     tile(summary.pending ? (negPending.length ? "red" : "amber") : "ok", "#/reviews", "Reviews to reply",
       inr.format(summary.pending), summary.pending ? `${inr.format(summary.negative)} negative in this period` : "All replied"),
   ];
@@ -458,6 +507,14 @@ async function renderOverview(page) {
     offline.length ? "Not taking orders right now" : `All online · ${uptime.uptime_pct != null ? fmt(uptime.uptime_pct, "percent") : "—"} uptime`));
   if (stock) tiles.push(tile(stock.active ? "red" : "ok", "#/stock_outs", "Items out of stock", inr.format(stock.active),
     stock.active ? `across ${plural(stock.outlets_affected, "outlet")}` : "Full menu live"));
+  const PAY_SHORT = { payout_mismatch: "don't match orders", order_count_mismatch: "order count off", unsettled_orders: "orders unsettled",
+    order_payout_math: "order payout off", order_fee_math: "order fee off", fee_rate_changed: "fee % changed", paid_without_utr: "no UTR", overdue: "overdue", deductions_carried: "deductions carried over" };
+  const PAY_MONEY = new Set(["payout_mismatch", "overdue", "fee_rate_changed", "order_payout_math", "order_fee_math"]);
+  if (pay?.cycles) tiles.push(tile(pay.with_issues ? "red" : "ok", "#/reconciliation", "Payouts to check", inr.format(pay.with_issues),
+    pay.with_issues
+      ? `<span class="ov-issues">${pay.issues.slice(0, 4).map((i) => `<span class="ov-issue ${PAY_MONEY.has(i.code) ? "money" : ""}" data-payissue="${i.code}" title="Show these payouts">${inr.format(i.count)} ${PAY_SHORT[i.code] || esc(i.label)}</span>`).join("")}</span>
+         <span>${pay.discrepancy_total ? `${rupees(pay.discrepancy_total)} unexplained` : "money matches orders"}</span>`
+      : `All ${inr.format(pay.reconciled)} checked payouts match`));
 
   // ---- 2. fix these now: the five most urgent things, offline outlets first ----
   const fixes = [];
@@ -465,6 +522,12 @@ async function renderOverview(page) {
     sub: `${o.city ? o.city + " · " : ""}since ${timeAgo(o.offline_since).replace(" ago", "")}`, href: "#/store_uptime", cta: "Check outlet" }));
   negPending.forEach((r) => fixes.push({ tone: "red", tag: `${Math.round(r.rating)}★ review`, title: r.body ? r.body.slice(0, 90) + (r.body.length > 90 ? "…" : "") : "Rating with no text",
     sub: `${r.outlet_name} · ${timeAgo(r.reviewed_at)}`, href: "#/reviews", set: { status: "pending", rating: "neg" }, cta: "Reply" }));
+  if (pay?.new_lines?.length) fixes.push({ tone: "amber", tag: "New deduction",
+    title: pay.new_lines.length === 1 ? `New ${pay.new_lines[0].platform === "swiggy" ? "Swiggy" : "Zomato"} statement line: ${pay.new_lines[0].label}` : `${pay.new_lines.length} new lines on payout statements`,
+    sub: `${pay.new_lines.map((l) => `${l.label} ${rupees(l.total)}`).slice(0, 3).join(" · ")}`, href: "#/reconciliation", cta: "Review" });
+  (pay?.issues || []).slice(0, 2).forEach((i) => fixes.push({ tone: i.code === "payout_mismatch" || i.code === "overdue" ? "red" : "amber",
+    tag: "Payout", title: `${plural(i.count, "payout")}: ${i.label.toLowerCase()}`, sub: pay.discrepancy_total ? `${rupees(pay.discrepancy_total)} unexplained in total · ${periodLabel()}` : periodLabel(),
+    href: "#/reconciliation", cta: "Check" }));
   (stockActive || []).slice().sort((x, y) => new Date(x.first_detected_at) - new Date(y.first_detected_at)).slice(0, 3)
     .forEach((s) => fixes.push({ tone: "amber", tag: "Out of stock", title: s.item_name,
       sub: `${s.outlet_name} · out for ${timeAgo(s.first_detected_at).replace(" ago", "")}`, href: "#/stock_outs", cta: "View" }));
@@ -476,14 +539,15 @@ async function renderOverview(page) {
   const rev = new Map((summary.by_outlet || []).map((o) => [o.outlet_id, o]));
   const up = new Map((uptime?.outlets || []).map((o) => [o.id, o]));
   const so = new Map((stock?.by_outlet || []).map((o) => [o.outlet_id, o]));
-  const rows = state.locations.filter((l) => !state.locationId || String(l.id) === String(state.locationId)).map((l) => ({
+  const rows = platformLocations().filter((l) => !selIds().length || selIds().includes(String(l.id))).map((l) => ({
     ...l, rating: rev.get(l.id)?.avg_rating ?? null, pending: rev.get(l.id)?.pending || 0,
-    offline: !!up.get(l.id)?.offline_since, uptime: up.get(l.id)?.uptime_pct ?? null, out: so.get(l.id)?.active || 0,
-  })).sort((a, b) => b.offline - a.offline || b.out - a.out || b.pending - a.pending || (a.rating ?? 9) - (b.rating ?? 9));
+    offline: !!up.get(l.id)?.offline_since, uptime: up.get(l.id)?.uptime_pct ?? null, out: so.get(l.id)?.active || 0, pay: payByOutlet.get(l.id) || 0,
+  })).sort((a, b) => b.offline - a.offline || b.pay - a.pay || b.out - a.out || b.pending - a.pending || (a.rating ?? 9) - (b.rating ?? 9));
   const bad = (cond, html) => `<td class="num ${cond ? "ov-bad" : ""}">${html}</td>`;
 
   page.innerHTML = `
     <div class="ov-tiles">${tiles.join("")}</div>
+    <div class="ov-two">
     <div class="card ov-fix">
       <div class="card-head"><h3>Fix these now</h3><span class="muted">${fixes.length > 5 ? `top 5 of ${fixes.length}` : ""}</span></div>
       ${shown.length ? shown.map((f, i) => `<a class="ov-fix-row ${f.tone}" href="${f.href}" data-fix="${i}">
@@ -492,19 +556,36 @@ async function renderOverview(page) {
           <span class="btn light">${f.cta}</span></a>`).join("")
         : `<div class="ov-fix-row ok"><span class="ov-fix-tag">✓</span><span class="ov-fix-text"><strong>All clear</strong><small>Nothing needs fixing right now</small></span></div>`}
     </div>
-    <div class="card" style="margin-top:16px">
+    ${pay?.cycles ? `<div class="card ov-pay-card">
+      <div class="card-head"><h3>Payouts</h3><a class="muted" href="#/reconciliation">Open reconciliation →</a></div>
+      <div class="ov-pay">
+        <div><span class="ov-tile-label">Paid</span><b>${rupees(pay.paid_total)}</b><small class="muted">${periodLabel()}</small></div>
+        <div><span class="ov-tile-label">To be paid</span><b>${rupees(pay.to_be_paid_total)}</b><small class="muted">${plural(pay.to_be_paid_cycles, "payout")}</small></div>
+        <div><span class="ov-tile-label">Unexplained difference</span><b class="${pay.discrepancy_total ? "ov-bad" : ""}">${rupees(pay.discrepancy_total)}</b><small class="muted">${inr.format(pay.reconciled)} of ${inr.format(pay.cycles)} checked against orders</small></div>
+        <div><span class="ov-tile-label">Commission take rate</span><b>${pay.take_rate == null ? "—" : `${pay.take_rate.toFixed(2)}%`}</b><small class="muted">service fee on checked orders</small></div>
+      </div>
+      ${pay.issues.length ? `<ul class="payout-issues">${pay.issues.slice(0, 4).map((i) => `<li><a href="#/reconciliation" data-payissue="${i.code}"><b>${inr.format(i.count)}</b> ${esc(i.label)} <span class="muted">show</span></a></li>`).join("")}</ul>` : ""}
+    </div>` : ""}
+    </div>
+    <div class="card" style="margin-top:12px">
       <div class="card-head"><h3>Outlets at a glance</h3><span class="muted">worst first · click to focus</span></div>
       <div class="cp-scroll"><table class="ov-table"><thead><tr><th>Outlet</th><th class="num">Rating</th><th class="num">To reply</th>
-        ${uptime ? '<th class="num">Status</th>' : ""}${stock ? '<th class="num">Items out</th>' : ""}</tr></thead><tbody>
+        ${uptime ? '<th class="num">Status</th>' : ""}${stock ? '<th class="num">Items out</th>' : ""}${pay?.cycles ? '<th class="num">Payouts to check</th>' : ""}</tr></thead><tbody>
         ${rows.map((r) => `<tr class="cp-click" data-outlet="${r.id}">
           <td><strong>${esc(r.name)}</strong><small class="muted">${esc(r.city || "")}</small></td>
           ${bad(r.rating != null && r.rating < 3.5, r.rating != null ? `${fmt(r.rating, "rating")} ★` : '<span class="muted">—</span>')}
           ${bad(r.pending > 0, r.pending || '<span class="muted">0</span>')}
           ${uptime ? bad(r.offline, r.offline ? "Offline" : r.uptime != null ? `<span class="muted">${fmt(r.uptime, "percent")}</span>` : '<span class="muted">—</span>') : ""}
-          ${stock ? bad(r.out > 0, r.out || '<span class="muted">0</span>') : ""}</tr>`).join("")}
+          ${stock ? bad(r.out > 0, r.out || '<span class="muted">0</span>') : ""}
+          ${pay?.cycles ? bad(r.pay > 0, r.pay || '<span class="muted">0</span>') : ""}</tr>`).join("")}
       </tbody></table></div>
     </div>`;
 
+  page.querySelectorAll("[data-payissue]").forEach((el) => el.addEventListener("click", (e) => {
+    e.preventDefault(); e.stopPropagation();
+    Object.assign(payoutFilters, { issue: el.dataset.payissue, status: "", q: "" });
+    location.hash = "#/reconciliation";
+  }));
   page.querySelectorAll("[data-fix]").forEach((a) => a.addEventListener("click", () => {
     const set = shown[Number(a.dataset.fix)].set;
     if (set) Object.assign(reviewFilters, set);
@@ -1170,8 +1251,9 @@ function wireStaffBilling(page, clientId) {
 }
 
 // ---------- payout reconciliation ----------
-const payoutFilters = { status: "", q: "", open: null };
-const rupees = (v) => (v == null ? "—" : `${v < 0 ? "-" : ""}₹${inr.format(Math.abs(v))}`);
+const payoutFilters = { status: "", q: "", open: null, issue: "", view: "list" };
+const stmtSel = new Map();  // statement view: "outletId:platform" -> Set of unticked cycle ids
+const rupees = (v) => (v == null ? "—" : `${v < 0 && Math.round(Math.abs(v)) ? "-" : ""}₹${inr.format(Math.abs(v))}`);  // no "-₹0" for tiny negatives
 const cycleDates = (c) => (c.start_date === c.end_date ? dayLabel(c.start_date) : `${dayLabel(c.start_date)} – ${dayLabel(c.end_date)}`);
 
 function payoutStatusPill(c) {
@@ -1186,11 +1268,106 @@ function payoutCheckCell(c) {
   return '<span class="muted">After payment</span>';
 }
 
+// Ads & discounts performance from the payout statements: what was spent, what it likely brought, where it works
+const AD_VERDICT = {
+  works: ["Paying off", "good"], ok: ["Break-even", "warn"], costly: ["Costly", "bad"], no_lift: ["No clear lift", "warn"],
+  unclear: ["Unclear", "muted"], always_on: ["Same spend daily", "muted"], too_little: ["Not enough data", "muted"], no_ads: ["No ads", "muted"],
+};
+async function renderAds(page) {
+  const d = await api(`/brands/${state.brandId}/ads/performance`, filterParams());
+  const t = d.totals, p = d.previous;
+  const change = (now, before, lowerIsBetter = false) => {
+    if (now == null || !before) return "";
+    const pct = Math.round(100 * (now - before) / before);
+    if (!pct) return '<span class="ad-delta">same as before</span>';
+    const good = lowerIsBetter ? pct < 0 : pct > 0;
+    return `<span class="ad-delta ${good ? "good" : "bad"}">${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs previous ${state.days} days</span>`;
+  };
+  const tile = (label, value, sub, delta = "") => `<div class="card kpi"><span class="kpi-label">${label}</span><div class="kpi-value">${value}</div><span class="muted">${sub}</span>${delta}</div>`;
+  if (!t.ads && !t.discounts) {
+    page.innerHTML = '<div class="card empty-state"><h3>No ad spend found in this period</h3><p>Ad spend comes from Zomato and Swiggy payout statements. Pick a longer date range, or check that payouts are being collected.</p></div>';
+    return;
+  }
+  page.innerHTML = `
+    <div class="so-hero">
+      <div><div class="so-big">${compactINR(t.ads)}<small>spent on ads</small></div>
+        <p>${t.ad_pct ?? "—"}% of sales · plus ${compactINR(t.discounts)} in discounts · ${inr.format(t.orders)} orders · Zomato and Swiggy payouts</p></div>
+      <div class="so-now">Every ₹1 of ads came with<b>₹${t.roas ?? "—"} of sales</b></div>
+    </div>
+    <div class="grid ad-tiles" style="margin-bottom:20px">
+      ${tile("Ad spend", compactINR(t.ads), `${t.ad_pct ?? "—"}% of order value`, change(t.ads, p.ads, true))}
+      ${tile("Ads + discounts", `${t.growth_pct ?? "—"}%`, "of order value spent on growth", change(t.growth_pct, p.growth_pct, true))}
+      ${tile("Ad cost per order", t.ad_per_order != null ? `₹${inr.format(t.ad_per_order)}` : "—", "ad spend ÷ delivered orders", change(t.ad_per_order, p.ad_per_order, true))}
+      ${tile("Orders", inr.format(t.orders), `net payout ${compactINR(t.net_payout)}`, change(t.orders, p.orders))}
+    </div>
+    ${d.insights.length ? `<div class="ad-insights">${d.insights.map((i) => `<div class="ad-insight ${i.tone}"><b>${esc(i.title)}</b><p>${esc(i.text)}</p></div>`).join("")}</div>` : ""}
+    <div class="card" style="margin-bottom:20px"><div class="card-head"><h3>Payout weeks</h3>
+      <small class="muted">Monday to Sunday weeks that overlap your dates · change vs the week before</small></div>
+      <div class="table-wrap"><table class="ov-table ad-table"><thead><tr><th>Week</th><th class="num">Ad spend</th><th class="num">Discounts</th>
+        <th class="num">Orders</th><th class="num">Sales</th><th class="num">Ads % of sales</th><th class="num">Net payout</th><th>How it went</th></tr></thead><tbody>
+      ${d.weekly.map((w) => { const ch = (v, lowerIsBetter) => v == null || !v ? "" : `<br><span class="ad-delta ${(lowerIsBetter ? v < 0 : v > 0) ? "good" : "bad"}">${v > 0 ? "▲" : "▼"} ${Math.abs(v)}%</span>`;
+        return `<tr><td><b>${shortDate(w.week)} – ${shortDate(w.week_end)}</b>${w.partial ? '<br><span class="muted">week still running</span>' : ""}</td>
+        <td class="num">${compactINR(w.ads)}${ch(w.ads_change, true)}</td><td class="num">${compactINR(w.discounts)}${ch(w.discounts_change, true)}</td>
+        <td class="num">${inr.format(w.orders)}${ch(w.orders_change)}</td><td class="num">${compactINR(w.order_value)}</td>
+        <td class="num ${(w.ad_pct || 0) >= 15 ? "ad-hot" : ""}">${w.ad_pct ?? "—"}%</td><td class="num">${compactINR(w.net_payout)}</td>
+        <td>${esc(w.note)}</td></tr>`; }).join("")}</tbody></table></div></div>
+    <div class="card" style="margin-bottom:20px"><div class="card-head"><h3>${d.trend.length >= 3 ? "Week by week" : "Day by day"}</h3><small class="muted">bars: ad spend and discounts · line: orders</small></div>
+      <div style="height:220px"><canvas id="adTrend"></canvas></div></div>
+    <div class="card"><div class="card-head"><h3>Outlets: is the ad money working?</h3>
+      <small class="muted">ads' effect after allowing for discounts, season and trend · last 12 months</small></div>
+      <div class="table-wrap"><table class="ov-table ad-table"><thead><tr><th>Outlet</th><th class="num">Ad spend</th><th class="num">% of sales</th>
+        <th class="num">Orders/week<br>with · without ads</th><th class="num">Extra orders/week<br>from ads</th>
+        <th class="num">Cost per extra order<br>ads · discounts</th><th>Confidence</th><th>Verdict</th></tr></thead><tbody>
+      ${d.outlets.length ? "" : '<tr><td colspan="8" class="muted">No outlet has payouts in these dates yet.</td></tr>'}
+      ${d.outlets.map((o) => { const m = o.model, l = o.lift, [label, tone] = AD_VERDICT[m.verdict] || ["—", "muted"];
+        const money = (v) => (v != null ? `₹${inr.format(v)}` : "—");
+        return `<tr>
+        <td><b>${esc(o.outlet)}</b><br><span class="muted">${esc([o.city, o.platform === "swiggy" ? "Swiggy" : "Zomato"].filter(Boolean).join(" · "))}</span></td>
+        <td class="num">${compactINR(o.ads)}</td><td class="num ${(o.ad_pct || 0) >= 15 ? "ad-hot" : ""}">${o.ad_pct ?? "—"}%</td>
+        <td class="num">${l.with_ads ?? "—"} · ${l.without_ads ?? "—"}</td>
+        <td class="num">${m.extra_orders != null ? (m.extra_orders > 0 ? `+${m.extra_orders}` : m.extra_orders) : "—"}</td>
+        <td class="num">${money(m.cost_per_extra)} · ${money(m.disc_cost_per_extra)}<br><span class="muted">avg order ${money(m.avg_order)}</span></td>
+        <td>${m.confidence ? `<span class="ad-conf ${m.confidence}">${m.confidence}</span>` : "—"}</td>
+        <td><span class="ad-pill ${tone}">${label}</span></td></tr>`; }).join("")}</tbody></table></div>
+      <p class="muted" style="margin:10px 0 0">For each outlet, orders a day are modelled on ad spend, discounts, season (how busy the brand's other outlets were the same day:
+        festivals, weather, weekdays) and trend; store uptime and stock-outs join once they have 3 months of history. "Paying off" means an extra order from ads cost
+        under about a third of the average order, "Costly" over two thirds. "Unclear" means the data can't separate ads from everything else yet; a two-week pause at
+        one outlet is the surest test.</p></div>`;
+  const series = d.trend.length >= 3 ? d.trend : d.daily;
+  chart($("#adTrend"), {
+    data: {
+      labels: series.map((w) => shortDate(w.week || w.day)),
+      datasets: [
+        { type: "bar", label: "Ad spend", data: series.map((w) => w.ads), maxBarThickness: 48, backgroundColor: "#d9480f", stack: "s", yAxisID: "y" },
+        { type: "bar", label: "Discounts", data: series.map((w) => w.discounts), maxBarThickness: 48, backgroundColor: "#f5a524", stack: "s", yAxisID: "y" },
+        { type: "line", label: "Orders", data: series.map((w) => w.orders), borderColor: "#12a150", backgroundColor: "#12a150", tension: 0.35, pointRadius: 3, yAxisID: "y2" },
+      ],
+    },
+    options: {
+      maintainAspectRatio: false, interaction: { mode: "index", intersect: false },
+      plugins: { legend: { position: "top", align: "end" },
+        tooltip: { callbacks: { label: (c) => ` ${c.dataset.label}: ${c.dataset.yAxisID === "y2" ? inr.format(c.parsed.y) : compactINR(c.parsed.y)}` } } },
+      scales: {
+        x: { stacked: true, grid: { display: false } },
+        y: { stacked: true, grid: { color: "#eef1f5" }, border: { display: false }, ticks: { callback: (v) => compactINR(v) } },
+        y2: { position: "right", grid: { display: false }, border: { display: false }, ticks: { callback: (v) => inr.format(v) } },
+      },
+    },
+  });
+}
+
 async function renderReconciliation(page) {
-  const [summary, cycles] = await Promise.all([
+  const listParams = filterParams({ status: payoutFilters.status, q: payoutFilters.q, issue: payoutFilters.issue });
+  const [summary, cycles, combined] = await Promise.all([
     api(`/brands/${state.brandId}/payouts/summary`, filterParams()),
-    api(`/brands/${state.brandId}/payouts/cycles`, filterParams({ status: payoutFilters.status, q: payoutFilters.q, limit: 200 })),
+    api(`/brands/${state.brandId}/payouts/cycles`, { ...listParams, limit: 200 }),
+    api(`/brands/${state.brandId}/payouts/combined`, listParams).catch(() => null),
   ]);
+  const statements = payoutFilters.view === "statements" ? await api(`/brands/${state.brandId}/payouts/statements`, listParams) : null;
+  const exportUrl = new URL(`${API}/brands/${state.brandId}/payouts/export`, location.origin);
+  Object.entries(listParams).forEach(([k, v]) => { if (v !== "" && v != null) exportUrl.searchParams.set(k, v); });
+  const combinedXlsx = new URL(`${API}/brands/${state.brandId}/payouts/combined/xlsx`, location.origin);
+  Object.entries(listParams).forEach(([k, v]) => { if (v !== "" && v != null) combinedXlsx.searchParams.set(k, v); });
   page.innerHTML = `
     <div class="so-hero">
       <div><div class="so-big">${inr.format(summary.with_issues)}<small> payout${summary.with_issues === 1 ? "" : "s"} to check</small></div>
@@ -1202,17 +1379,41 @@ async function renderReconciliation(page) {
       <div class="card kpi"><span class="kpi-label">To be paid</span><div class="kpi-value">${rupees(summary.to_be_paid_total)}</div><span class="muted">${inr.format(summary.to_be_paid_cycles)} payouts${summary.carried_forward_cycles ? ` · ${inr.format(summary.carried_forward_cycles)} carried forward (${rupees(summary.carried_forward_total)})` : ""}</span></div>
       <div class="card kpi"><span class="kpi-label">Commission take rate</span><div class="kpi-value">${summary.take_rate == null ? "—" : `${summary.take_rate.toFixed(2)}%`}</div><span class="muted">service fee on checked orders</span></div>
     </div>
+    ${summary.new_lines?.length ? `<div class="card new-lines" style="margin-bottom:20px"><div class="card-head"><h3>New statement lines</h3>
+        <span class="muted">${state.me.is_staff ? "say what each one is, once" : "Codeonto is reviewing these"}</span></div>
+      <p class="muted" style="margin-top:0">These appeared on Zomato or Swiggy payout statements for the first time. Until reviewed they count as deductions not tied to orders, and aren't counted as ad spend.</p>
+      <table class="ov-table"><thead><tr><th>Platform</th><th>Line</th><th class="num">Payouts</th><th class="num">Total</th><th>Last seen</th><th></th></tr></thead><tbody>
+      ${summary.new_lines.map((l) => `<tr><td>${l.platform === "swiggy" ? "Swiggy" : "Zomato"}</td><td><b>${esc(l.label)}</b><br><span class="muted">${esc(l.section)}</span></td>
+        <td class="num">${inr.format(l.payouts)}</td><td class="num">${rupees(l.total)}</td><td class="muted">${shortDate(l.last_seen)}</td>
+        <td>${state.me.is_staff ? `<span class="btn-row">${[["order", "Order charge"], ["ad", "Ad spend"], ["deduction", "Other deduction"]].map(([k, t]) =>
+          `<button class="btn ${l.guess === k ? "blue" : "light"}" data-line="${l.id}" data-kind="${k}">${t}</button>`).join("")}</span>` : ""}</td></tr>`).join("")}
+      </tbody></table></div>` : ""}
     ${summary.issues.length ? `<div class="card" style="margin-bottom:20px"><div class="card-head"><h3>What needs checking</h3></div>
-      <ul class="payout-issues">${summary.issues.map((i) => `<li><b>${inr.format(i.count)}</b> ${esc(i.label)}</li>`).join("")}</ul></div>` : ""}
+      <ul class="payout-issues">${summary.issues.map((i) => `<li><button class="payout-issue-btn ${payoutFilters.issue === i.code ? "on" : ""}" data-payout-issue="${i.code}">
+        <b>${inr.format(i.count)}</b> ${esc(i.label)}<span class="muted">${payoutFilters.issue === i.code ? "showing · clear" : "show"}</span></button></li>`).join("")}</ul></div>` : ""}
+    ${combined?.platforms.length ? `<div class="card payout-combined" style="margin-bottom:20px">
+      <div class="card-head"><h3>Combined statement <a class="btn light" style="margin-left:10px" href="${combinedXlsx}" download>Export Excel</a></h3>
+        <span class="muted">${plural(combined.total.payouts, "payout")} matching these filters · ${inr.format(combined.total.orders)} orders · net ${rupees(combined.total.net_payout)}
+          (paid ${rupees(combined.total.paid)} · to be paid ${rupees(combined.total.to_be_paid)})</span></div>
+      <div class="payout-combined-grid">${combined.platforms.map((p) => `<div>
+        <h4>${p.platform === "swiggy" ? "Swiggy" : "Zomato"} <span class="muted">· ${plural(p.payouts, "payout")} · ${plural(p.outlets, "outlet")} · ${inr.format(p.orders)} orders</span></h4>
+        <table class="payout-statement"><tbody>${p.sections.map((sec) => `<tr class="section"><td>${esc(sec.label)}</td><td>${rupees(sec.value)}</td></tr>
+          ${sec.items.map((i) => `<tr><td class="muted">${esc(i.label)}</td><td class="muted">${rupees(i.value)}</td></tr>`).join("")}`).join("")}
+          <tr class="section total"><td>Net payout</td><td>${rupees(p.net_payout)}</td></tr></tbody></table></div>`).join("")}</div>
+      <p class="muted" style="margin:8px 0 0">Adds up every payout matching the filters (dates, outlets, platform, status, search), the same ones the list and the CSV use. Zomato and Swiggy statements are laid out differently, so each is combined on its own.</p>
+    </div>` : ""}
     <div class="card so-list">
       <div class="toolbar">
         <label class="payout-date">From <input id="payoutFrom" type="date" value="${range().start}" max="${isoDate(new Date())}"></label>
         <label class="payout-date">To <input id="payoutTo" type="date" value="${range().end}" max="${isoDate(new Date())}"></label>
         <input id="payoutSearch" type="search" placeholder="Search outlet or UTR…" value="${esc(payoutFilters.q)}">
+        <div class="segmented" id="payoutView">${[["list", "List"], ["statements", "Statement view"]].map(([v, l]) => `<button data-view="${v}" class="${payoutFilters.view === v ? "active" : ""}">${l}</button>`).join("")}</div>
+        ${payoutFilters.view === "statements" ? '<button class="btn blue" id="exportBook">Export Book</button>' : `<a class="btn light" href="${exportUrl}" download>Export CSV</a>`}
+        ${payoutFilters.issue ? `<button class="btn light" id="payoutIssueClear">${esc((summary.issues.find((i) => i.code === payoutFilters.issue) || {}).label || payoutFilters.issue)} ✕</button>` : ""}
         <div class="segmented" id="payoutStatus">${[["", "All"], ["issues", "To check"], ["paid", "Paid"], ["to_be_paid", "To be paid"]]
           .map(([v, l]) => `<button data-v="${v}" class="${payoutFilters.status === v ? "active" : ""}">${l}</button>`).join("")}</div>
       </div>
-      ${cycles.results.length ? `<div class="table-wrap payout-table"><table>
+      ${statements ? renderStatementBlocks(statements.groups) : cycles.results.length ? `<div class="table-wrap payout-table"><table>
         <thead><tr><th>Outlet</th><th>Cycle</th><th>Payout date</th><th>Status</th><th>UTR</th><th>Orders</th><th>Net payout</th><th>Check</th></tr></thead>
         <tbody>${cycles.results.map((c) => `<tr data-cycle="${c.id}" class="${String(payoutFilters.open) === String(c.id) ? "open" : ""}">
           <td><b>${esc(c.outlet)}</b><br><span class="muted">${esc([c.city, c.platform === "swiggy" ? "Swiggy" : "Zomato", c.res_id].filter(Boolean).join(" · "))}</span></td>
@@ -1243,7 +1444,81 @@ async function renderReconciliation(page) {
     const b = e.target.closest("button"); if (!b) return;
     payoutFilters.status = b.dataset.v; renderReconciliation(page);
   });
+  page.querySelectorAll("[data-line]").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    try { await apiJSON(`/brands/${state.brandId}/payouts/line-types/${b.dataset.line}`, "POST", { kind: b.dataset.kind }); toast("Saved"); renderReconciliation(page); }
+    catch (e) { toast(e.message); b.disabled = false; }
+  }));
+  page.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { payoutFilters.view = b.dataset.view; renderReconciliation(page); }));
+  if (statements) wireStatementBlocks(page, statements.groups);
+  $("#exportBook")?.addEventListener("click", () => {
+    const url = new URL(`${API}/brands/${state.brandId}/payouts/book`, location.origin);
+    Object.entries(listParams).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
+    const off = [...stmtSel.values()].reduce((n, set) => n + set.size, 0);
+    if (off) url.searchParams.set("cycles", statements.groups.flatMap((g) => g.cycles.filter((c) => !stmtSel.get(stmtKey(g))?.has(c.id)).map((c) => c.id)).join(","));
+    location.href = url;
+  });
+  page.querySelectorAll("[data-payout-issue]").forEach((b) => b.addEventListener("click", () => {
+    payoutFilters.issue = payoutFilters.issue === b.dataset.payoutIssue ? "" : b.dataset.payoutIssue;
+    if (payoutFilters.issue) payoutFilters.status = "";
+    renderReconciliation(page).then(() => $(".payout-table, .so-list")?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  }));
+  $("#payoutIssueClear")?.addEventListener("click", () => { payoutFilters.issue = ""; renderReconciliation(page); });
   page.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => togglePayoutDetail(b.closest("tr"), Number(b.dataset.open))));
+}
+
+// ---------- statement view: per outlet, its payout cycles as columns and the statement lines as rows ----------
+const stmtKey = (g) => `${g.outlet_id}:${g.platform}`;
+const paise = (v) => Math.round((v || 0) * 100);  // add money in whole paise so totals never drift
+
+function stmtTotals(g) {
+  const off = stmtSel.get(stmtKey(g)) || new Set();
+  const on = g.cycles.filter((c) => !off.has(c.id));
+  const net = on.reduce((n, c) => n + paise(c.net_payout), 0), paid = on.reduce((n, c) => n + paise(c.customer_paid), 0);
+  return { n: on.length, net: net / 100, margin: paid ? Math.round((net / paid) * 10000) / 100 : null };
+}
+
+function renderStatementBlocks(groups) {
+  if (!groups.length) return '<div class="empty-state"><h3>No payouts for these filters</h3><p>Pick other dates, outlets or status above.</p></div>';
+  const cell = (g, c) => (stmtSel.get(stmtKey(g))?.has(c.id) ? "off" : "");
+  return groups.map((g, gi) => {
+    const t = stmtTotals(g);
+    return `<div class="stmt-block" data-g="${gi}">
+      <div class="stmt-head"><div><b>${esc(g.outlet)}</b> <span class="stmt-chip">${esc(g.res_id || "")}</span>
+        <span class="stmt-chip ${g.platform}">${g.platform === "swiggy" ? "Swiggy" : "Zomato"}</span><br><span class="muted">${esc([g.brand_outlet, g.city].filter(Boolean).join(" · "))}</span></div>
+        <div class="stmt-total"><span>Selected combined total · ${t.n} of ${g.cycles.length}</span><b>${rupees(t.net)}</b>${t.margin != null ? `<em>${t.margin.toFixed(2)}% margin</em>` : ""}</div></div>
+      <div class="table-wrap stmt-wrap"><table class="stmt"><thead><tr><th class="stmt-first">Particulars</th>
+        ${g.cycles.map((c) => `<th class="${cell(g, c)}"><label class="stmt-pick"><input type="checkbox" data-cycle="${c.id}" ${cell(g, c) ? "" : "checked"}>
+          ${shortDate(c.start_date)}${c.end_date !== c.start_date ? ` – ${shortDate(c.end_date)}` : ""}</label>
+          <div>${payoutStatusPill(c)} ${c.margin != null ? `<span class="stmt-margin">${c.margin.toFixed(2)}%</span>` : ""}</div>
+          <small class="muted">${c.utr ? `UTR ${esc(c.utr)}` : "no UTR yet"}</small>${c.issues.length ? `<small class="stmt-issue">${esc(c.issues.join(", "))}</small>` : ""}</th>`).join("")}</tr></thead>
+        <tbody><tr class="stmt-orders"><td class="stmt-first">Total orders</td>${g.cycles.map((c) => `<td class="num ${cell(g, c)}">${inr.format(c.orders)}</td>`).join("")}</tr>
+        ${g.rows.map((r, ri) => `<tr class="stmt-sec" data-row="${gi}-${ri}"><td class="stmt-first">${r.items.length ? '<span class="stmt-caret">›</span>' : ""}${esc(r.label)}</td>
+            ${g.cycles.map((c) => `<td class="num ${cell(g, c)}">${r.values[c.id] != null ? rupees(r.values[c.id]) : "—"}</td>`).join("")}</tr>
+          ${r.items.map((it) => `<tr class="stmt-item" data-parent="${gi}-${ri}" hidden><td class="stmt-first muted">${esc(it.label)}</td>
+            ${g.cycles.map((c) => `<td class="num muted ${cell(g, c)}">${it.values[c.id] != null ? rupees(it.values[c.id]) : "—"}</td>`).join("")}</tr>`).join("")}`).join("")}
+        <tr class="stmt-net"><td class="stmt-first">Net payout</td>${g.cycles.map((c) => `<td class="num ${cell(g, c)}">${rupees(c.net_payout)}</td>`).join("")}</tr>
+        </tbody></table></div></div>`;
+  }).join("");
+}
+
+function wireStatementBlocks(page, groups) {
+  page.querySelectorAll(".stmt-sec").forEach((tr) => tr.addEventListener("click", () => {
+    const open = tr.classList.toggle("open");
+    page.querySelectorAll(`[data-parent="${tr.dataset.row}"]`).forEach((r) => { r.hidden = !open; });
+  }));
+  page.querySelectorAll(".stmt-block").forEach((block) => {
+    const g = groups[Number(block.dataset.g)];
+    block.querySelectorAll("[data-cycle]").forEach((box) => box.addEventListener("change", () => {
+      const key = stmtKey(g), off = stmtSel.get(key) || new Set(), id = Number(box.dataset.cycle);
+      box.checked ? off.delete(id) : off.add(id);
+      stmtSel.set(key, off);
+      const col = [...box.closest("tr").children].indexOf(box.closest("th"));
+      block.querySelectorAll("tr").forEach((tr) => tr.children[col]?.classList.toggle("off", !box.checked));
+      const t = stmtTotals(g);
+      block.querySelector(".stmt-total").innerHTML = `<span>Selected combined total · ${t.n} of ${g.cycles.length}</span><b>${rupees(t.net)}</b>${t.margin != null ? `<em>${t.margin.toFixed(2)}% margin</em>` : ""}`;
+    }));
+  });
 }
 
 async function togglePayoutDetail(tr, id) {
@@ -1263,16 +1538,35 @@ async function togglePayoutDetail(tr, id) {
     row.innerHTML = `<td colspan="8" class="muted">${esc(e.message)}</td>`;
     return;
   }
-  const flagged = (o) => o.issues.length > 0;
-  const orders = [...d.orders].sort((a, b) => flagged(b) - flagged(a));
   const label = (code) => d.issue_labels[code] || code;
+  // why each order may explain a payout that doesn't match: its own failed checks, plus orders that could account for the gap
+  const gap = d.issues.includes("payout_mismatch") ? Number(d.discrepancy || 0) : 0;
+  const reasons = (o) => {
+    const r = o.issues.map((c) => ({ text: label(c), money: true }));
+    if (gap && Math.abs(Math.abs(o.payout || 0) - Math.abs(gap)) <= 1) r.unshift({ text: `payout equals the ₹${inr.format(Math.abs(gap))} gap`, money: true, gap: true });
+    if (o.unsettled_amount) r.push({ text: `₹${inr.format(o.unsettled_amount)} not settled`, money: true });
+    return r;
+  };
+  const flagged = (o) => reasons(o).length > 0;
+  const orders = [...d.orders].sort((a, b) => (reasons(b).some((x) => x.gap) - reasons(a).some((x) => x.gap)) || (flagged(b) - flagged(a)));
+  const carried = d.issues.includes("deductions_carried");
+  const ORDER_SECTIONS = ["total_order_value", "total_customer_paid", "total_fees", "total_taxes", "order_level_deductions", "tax_deductions", "additions", "complaint_cancellation_charges"];
+  const bigLines = d.breakdown.filter((sec) => !ORDER_SECTIONS.includes(sec.id)).flatMap((sec) => sec.items.filter((i) => i.value < 0).map((i) => ({ ...i, section: sec.label })))
+    .sort((a, b) => a.value - b.value).slice(0, 3);
+  const nGap = d.orders.filter((o) => reasons(o).some((x) => x.gap)).length;
+  const nFlag = d.orders.filter(flagged).length;
+  const explain = carried ? `The orders match the statement. ${d.platform === "swiggy" ? "Swiggy" : "Zomato"} paid ₹0 because deductions not tied to orders (${bigLines.map((l) => `${l.label} ${rupees(l.value)}`).join(", ") || "see the statement"}) were bigger than what the orders earned; ${rupees(-(d.expected_payout || 0))} carries into the next payout`
+    : gap && !nGap && bigLines.length ? `No single order explains it. Biggest deductions not tied to orders: ${bigLines.map((l) => `${l.label} ${rupees(l.value)}`).join(", ")}`
+    : gap ? (nGap ? `${plural(nGap, "order")} ${nGap === 1 ? "has" : "have"} a payout equal to the gap, so ${nGap === 1 ? "it was" : "they were"} likely left out of the payout`
+      : nFlag ? `${plural(nFlag, "order")} flagged below may explain it` : "No single order explains it: likely a deduction or adjustment the order report doesn't show")
+    : nFlag ? `${plural(nFlag, "order")} flagged` : "";
   row.innerHTML = `<td colspan="8">
     ${d.issues.length ? `<ul class="payout-issues warn">${d.issues.map((i) => `<li>${esc(label(i))}</li>`).join("")}</ul>` : ""}
     <div class="payout-columns">
       <div>
         <h4>${d.platform === "swiggy" ? "Swiggy" : "Zomato"}'s statement</h4>
         ${d.breakdown.length ? `<table class="payout-statement"><tbody>${d.breakdown.map((s) => `<tr class="section"><td>${esc(s.label)}</td><td>${rupees(s.value)}</td></tr>
-          ${s.items.filter((i) => i.value).map((i) => `<tr><td class="muted">${esc(i.label)}</td><td class="muted">${rupees(i.value)}</td></tr>`).join("")}`).join("")}
+          ${s.items.filter((i) => i.value).map((i) => `<tr class="${(carried || gap) && bigLines.some((l) => l.label === i.label && l.value === i.value) ? "payout-culprit" : ""}"><td class="muted">${esc(i.label)}</td><td class="muted">${rupees(i.value)}</td></tr>`).join("")}`).join("")}
           <tr class="section total"><td>Net payout</td><td>${rupees(d.net_payout)}</td></tr></tbody></table>` : '<p class="muted">No statement available.</p>'}
       </div>
       <div>
@@ -1286,15 +1580,22 @@ async function togglePayoutDetail(tr, id) {
           : '<p class="muted">Orders are checked once this payout is paid.</p>'}
       </div>
     </div>
-    ${orders.length ? `<h4>Orders</h4><div class="table-wrap payout-orders"><table>
-      <thead><tr><th>Order ID</th><th>Date</th><th>Status</th><th>Order value</th><th>Fee %</th><th>Fees</th><th>Taxes</th><th>Other</th><th>Payout</th><th>Settlement</th></tr></thead>
-      <tbody>${orders.map((o) => `<tr class="${flagged(o) ? "flagged" : ""}" ${flagged(o) ? `title="${esc(o.issues.map(label).join(", "))}"` : ""}>
+    ${orders.length ? `<div class="payout-orders-head"><h4>Orders</h4>
+      ${gap || nFlag || carried ? `<span class="payout-explain ${gap ? "bad" : carried ? "warn" : ""}">${gap ? `Difference ${rupees(gap)} · ` : ""}${esc(explain)}</span>` : ""}
+      ${nFlag ? `<label class="muted"><input type="checkbox" class="payout-only-flagged"> Show only flagged orders</label>` : ""}</div>
+      <div class="table-wrap payout-orders"><table>
+      <thead><tr><th>Order ID</th><th>Date</th><th>Status</th><th>Order value</th><th>Fee %</th><th>Fees</th><th>Taxes</th><th>Other</th><th>Payout</th><th>Settlement</th><th>Why flagged</th></tr></thead>
+      <tbody>${orders.map((o) => `<tr class="${flagged(o) ? (reasons(o).some((x) => x.gap) ? "flagged gap" : "flagged") : ""}">
         <td>${esc(o.order_id)}</td>
         <td class="muted">${o.order_date ? new Date(o.order_date).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—"}</td>
         <td>${esc(o.status)}</td><td>${rupees(o.net_order_value)}</td><td>${o.base_fee_pct}%${o.service_fee_pct !== o.base_fee_pct ? ` <span class="muted">+${(o.service_fee_pct - o.base_fee_pct).toFixed(1)}% distance</span>` : ""}</td><td>${rupees(o.fees_total)}</td>
         <td>${rupees(o.government_charges)}</td><td>${rupees(o.other_deductions)}</td><td><b>${rupees(o.payout)}</b></td>
-        <td>${esc(o.settlement_status || "—")}${o.unsettled_amount ? ` <span class="muted">${rupees(o.unsettled_amount)} left</span>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
+        <td>${esc(o.settlement_status || "—")}${o.unsettled_amount ? ` <span class="muted">${rupees(o.unsettled_amount)} left</span>` : ""}</td>
+        <td>${reasons(o).map((x) => `<span class="ov-issue ${x.money ? "money" : ""}">${esc(x.text)}</span>`).join(" ")}</td></tr>`).join("")}</tbody></table></div>` : ""}
   </td>`;
+  row.querySelector(".payout-only-flagged")?.addEventListener("change", (e) => {
+    row.querySelectorAll(".payout-orders tbody tr").forEach((r) => { r.hidden = e.target.checked && !r.classList.contains("flagged"); });
+  });
 }
 
 // ---------- store uptime ----------
@@ -1415,11 +1716,14 @@ async function renderUptime(page) {
 
     <div class="grid cols-3" style="margin-bottom:20px">
       <div class="card kpi"><span class="kpi-label">Offline events</span><div class="kpi-value">${inr.format(summary.events)}</div></div>
-      <div class="card kpi"><span class="kpi-label">Avg downtime</span><div class="kpi-value">${downtimeText(summary.avg_downtime) || "—"}</div></div>
+      <div class="card kpi"><span class="kpi-label">Avg downtime</span>
+        <div class="kpi-value">${downtimeText(summary.avg_downtime) || (summary.offline_now ? `${inr.format(summary.offline_now)} ongoing` : "—")}</div>
+        <span class="muted">${summary.avg_downtime != null ? "for offline spells that ended" : summary.offline_now ? "none back online yet, so no average" : ""}</span></div>
       <div class="card kpi"><span class="kpi-label">Total downtime</span><div class="kpi-value">${downtimeText(summary.total_downtime) || "0m"}</div></div>
     </div>
 
-    ${summary.trend.length > 1 ? `<div class="card" style="margin-bottom:20px"><div class="card-head"><h3>Uptime by day</h3></div>
+    ${summary.trend.length ? `<div class="card" style="margin-bottom:20px"><div class="card-head"><h3>Uptime by day</h3>
+        ${summary.trend.length < 7 ? `<small class="muted">${plural(summary.trend.length, "day")} of checks so far · a trend line appears after a week</small>` : ""}</div>
       <div style="height:220px"><canvas id="uptimeChart"></canvas></div></div>` : ""}
 
     <div class="so-section"><h3>Outlets <small>uptime in this period, worst first · click to filter</small></h3>
@@ -1445,8 +1749,20 @@ async function renderUptime(page) {
           <td>${offlineFor(e)}</td></tr>`).join("")}</tbody></table>`
         : `<div class="empty-state"><h3>No offline events match</h3><p>Every checked outlet stayed online.</p></div>`}
     </div>`;
-  if (summary.trend.length > 1) {
+  if (summary.trend.length >= 7) {
     lineChart($("#uptimeChart"), summary.trend.map((d) => shortDate(d.date)), [{ label: "Uptime", data: summary.trend.map((d) => d.value) }], "percent");
+  } else if (summary.trend.length) {
+    // too few days for a line: one bar per day, on a full 0-100% scale so a short dip doesn't look like a crash
+    chart($("#uptimeChart"), {
+      type: "bar",
+      data: { labels: summary.trend.map((d) => shortDate(d.date)),
+        datasets: [{ label: "Uptime", data: summary.trend.map((d) => d.value), maxBarThickness: 56, borderRadius: 6,
+          backgroundColor: summary.trend.map((d) => (d.value >= 90 ? "#12a150" : d.value >= 75 ? "#f5a524" : "#e5484d")) }] },
+      options: { maintainAspectRatio: false, plugins: { legend: { display: false },
+          tooltip: { callbacks: { label: (c) => ` Uptime: ${fmt(c.parsed.y, "percent", false)}` } } },
+        scales: { x: { grid: { display: false } },
+          y: { min: 0, max: 100, grid: { color: "#eef1f5" }, border: { display: false }, ticks: { callback: (v) => `${v}%` } } } },
+    });
   }
   page.querySelectorAll("[data-outlet]").forEach((b) => b.addEventListener("click", () => {
     uptimeFilters.outlet = String(uptimeFilters.outlet) === b.dataset.outlet ? "" : b.dataset.outlet;
@@ -1654,6 +1970,7 @@ async function renderSetup(page, { creating = false } = {}) {
           <input id="outletSearch" type="search" placeholder="Search outlets…">
           <button class="btn light" id="toggleCsv">Bulk upload CSV</button>
           <button class="btn light" id="toggleBulk">${icon("plus")} Add from catalog</button>
+          <button class="btn light" id="suggestLinks" title="Find Zomato-only and Swiggy-only rows that are probably the same kitchen">Suggested links</button>
           <button class="btn light" id="mergeRows" title="Combine Zomato-only and Swiggy-only rows that share an area">Merge same-area rows</button>
           <button class="btn light" id="addOutlet">${icon("plus")} Empty row</button>
           <button class="btn blue" id="saveOutlets">Save outlets</button>
@@ -1736,6 +2053,7 @@ async function renderSetup(page, { creating = false } = {}) {
 
   // bulk add from catalog
   $("#mergeRows").addEventListener("click", mergeSameArea);
+  $("#suggestLinks").addEventListener("click", showLinkSuggestions);
   $("#toggleBulk").addEventListener("click", () => {
     $("#bulkPanel").hidden = !$("#bulkPanel").hidden;
     if (!$("#bulkPanel").hidden) { loadBulk(); $("#bulkSearch").focus(); }
@@ -1795,6 +2113,7 @@ async function renderGoogleCard(page, clientId) {
     ${info.connections.length ? info.connections.map((c) => `<div class="g-conn">
         <span class="g-email"><b>${esc(c.email)}</b><small class="muted">connected ${timeAgo(c.connected_at)}</small></span>
         <span class="status ${c.status === "connected" ? "replied" : "pending"}">${c.status === "connected" ? "connected" : "needs reconnecting"}</span>
+        ${canEdit && c.status === "connected" ? `<button class="btn light" data-gsync="${c.id}">Sync locations</button>` : ""}
         ${canEdit ? `<button class="btn light" data-disconnect="${c.id}">Disconnect</button>` : ""}</div>`).join("") : ""}
     ${canEdit ? `<button class="google-btn" id="googleConnect" ${info.configured ? "" : "disabled"}>
         <img src="assets/google.png" alt=""> ${info.connections.length ? "Connect another Google account" : "Connect with Google"}</button>
@@ -1805,6 +2124,14 @@ async function renderGoogleCard(page, clientId) {
     try { location.href = (await api("/google/connect", { client_id: clientId })).url; }
     catch (err) { toast(err.message); e.currentTarget.disabled = false; }
   });
+  card.querySelectorAll("[data-gsync]").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true; b.textContent = "Syncing…";
+    try {
+      await api(`/google/connections/${b.dataset.gsync}/sync`, {}, { method: "POST" });
+      toast("Fetching this account's Google locations. They'll appear in the Google list in a minute.");
+      setTimeout(() => render(), 45000);
+    } catch (err) { toast(err.message); b.disabled = false; b.textContent = "Sync locations"; }
+  }));
   card.querySelectorAll("[data-disconnect]").forEach((b) => b.addEventListener("click", async () => {
     if (!confirm("Disconnect this Google account? Reviews and numbers already saved stay, but new ones stop arriving.")) return;
     try { await api(`/google/connections/${b.dataset.disconnect}`, {}, { method: "DELETE" }); toast("Google disconnected"); render(); }
@@ -1832,6 +2159,46 @@ function takeId(row, platform, id) {
 const normArea = (r) => (r.area || r.outlet_name || "").toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 
 // Combine rows that hold different platforms' ids for the same area into one store.
+// Zomato-only and Swiggy-only rows that are probably one kitchen (names differ between platforms): nothing links until
+// someone ticks it and saves; saving moves the Swiggy row's whole history onto the kept row.
+async function showLinkSuggestions() {
+  if (setup.dirty && !confirm("Save or discard your unsaved outlet changes first? Suggestions are based on the saved outlets.")) return;
+  let d;
+  try { d = await api(`/brands/${state.brandId}/outlets/link-suggestions`); } catch (e) { toast(e.message); return; }
+  document.querySelector(".link-modal")?.remove();
+  const m = document.createElement("div");
+  m.className = "link-modal";
+  m.innerHTML = `<div class="card link-box">
+    <div class="card-head"><h3>Suggested links · ${plural(d.pairs.length, "pair")}</h3><button class="btn light" data-close>Close</button></div>
+    <p class="muted" style="margin-top:0">${inr.format(d.zomato_only)} Zomato-only and ${inr.format(d.swiggy_only)} Swiggy-only rows. Tick the pairs that are the same kitchen; confident ones are ticked for you.
+      Linking puts both IDs on one row and moves the Swiggy row's reviews, payouts, uptime and the rest onto it. Nothing changes until you save outlets.</p>
+    ${d.pairs.length ? `<div class="table-wrap"><table class="ov-table"><thead><tr><th><input type="checkbox" id="linkAll"></th><th>Zomato</th><th>Swiggy</th><th class="num">Match</th></tr></thead><tbody>
+      ${d.pairs.map((p, i) => `<tr><td><input type="checkbox" data-pair="${i}" ${p.sure ? "checked" : ""}></td>
+        <td><b>${esc(p.zomato.area || p.zomato.outlet_name)}</b><br><span class="muted">${esc(p.zomato.city || "")} · ${esc(p.zomato.zomato_id)}</span></td>
+        <td><b>${esc(p.swiggy.area || p.swiggy.outlet_name)}</b><br><span class="muted">${esc(p.swiggy.city || "")} · ${esc(p.swiggy.swiggy_id)}</span></td>
+        <td class="num">${Math.round(p.score * 100)}%${p.sure ? "" : '<br><span class="muted">check</span>'}</td></tr>`).join("")}</tbody></table></div>
+      <div class="btn-row" style="margin-top:12px"><button class="btn blue" id="linkApply">Link selected</button></div>`
+      : '<p class="muted">No likely pairs found. Link the rest by picking the other platform\'s ID on a row.</p>'}
+  </div>`;
+  document.body.appendChild(m);
+  m.addEventListener("click", (e) => { if (e.target === m || e.target.closest("[data-close]")) m.remove(); });
+  m.querySelector("#linkAll")?.addEventListener("change", (e) => m.querySelectorAll("[data-pair]").forEach((c) => { c.checked = e.target.checked; }));
+  m.querySelector("#linkApply")?.addEventListener("click", () => {
+    let linked = 0;
+    m.querySelectorAll("[data-pair]:checked").forEach((c) => {
+      const p = d.pairs[Number(c.dataset.pair)];
+      const keep = setup.rows.find((r) => r.id === p.zomato.id), drop = setup.rows.find((r) => r.id === p.swiggy.id);
+      if (!keep || !drop || keep.swiggy) return;
+      keep.swiggy = drop.swiggy; keep.labels.swiggy = drop.labels.swiggy;
+      setup.rows.splice(setup.rows.indexOf(drop), 1);
+      setup.deleted.push(drop.id);
+      linked++;
+    });
+    m.remove();
+    if (linked) { setup.dirty = true; renderOutletRows(); toast(`${plural(linked, "pair")} linked. Click Save outlets to keep it.`); }
+  });
+}
+
 function mergeSameArea() {
   let merged = 0, unsure = 0;
   const groups = new Map();
@@ -2008,7 +2375,7 @@ async function saveOutlets(moveConflicts) {
     if (res.status === 409 && body.conflicts) {
       const list = body.conflicts.map((c) => `• ${c.platform} ${c.id} → currently on "${c.mapped_to}"`).join("\n");
       btn.disabled = false;
-      if (confirm(`These IDs are already used in another store of this client:\n\n${list}\n\nMove them to this store? Their reviews and metrics move too.`)) return saveOutlets(true);
+      if (confirm(`These IDs are already used in another store of this client:\n\n${list}\n\nMove them to this store? All their history (reviews, payouts, uptime, stock-outs, metrics) moves too.`)) return saveOutlets(true);
       return;
     }
     if (!res.ok) throw new Error(body.detail || res.statusText);
@@ -2108,12 +2475,12 @@ async function renderCompetition(page) {
   page.querySelectorAll("[data-ctab]").forEach((b) => b.addEventListener("click", () => { state.compTab = b.dataset.ctab; render(); }));
   const body = $("#compBody");
   if (tab === "google") return renderGoogleComp(body);
-  if (!state.locationId) {
+  if (!singleId()) {
     body.innerHTML = `<div class="card empty-state">${icon("competitors")}<h3>Pick an outlet</h3>
       <p>${zName()} competition is set up per outlet. Choose one in the outlet filter above.</p></div>`;
     return;
   }
-  return renderMarketComp(body, state.locationId);
+  return renderMarketComp(body, singleId());
 }
 
 const zBase = (outletId) => `/brands/${state.brandId}/competition/${outletId}/${state.compTab}`;
@@ -2279,6 +2646,55 @@ function renderMarketArea(page, outletId, current, peek = false) {
   });
 }
 
+// pick menu photos, then cut out / re-background / add a logo on the server and download them as a zip
+function photoEditor(outletId, r) {
+  const form = $("#phForm");
+  if (!form) return;
+  const picks = () => [...document.querySelectorAll(".ph-pick:checked")].map((c) => c.value);
+  const sync = () => { const n = picks().length; $("#phCount").textContent = `${n} selected`; $("#phOpen").disabled = !n; };
+  document.querySelectorAll(".ph-pick").forEach((c) => c.addEventListener("change", sync));
+  $("#phAll").addEventListener("change", (e) => { document.querySelectorAll(".ph-pick").forEach((c) => { c.checked = e.target.checked; }); sync(); });
+  $("#phOpen").addEventListener("click", () => { form.hidden = false; });
+  $("#phClose").addEventListener("click", () => { form.hidden = true; });
+  form.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const ids = picks(), go = $("#phGo");
+    const base = `${API}${zBase(outletId)}/restaurants/${encodeURIComponent(r.res_id)}/images/edit`;
+    const job = [...crypto.getRandomValues(new Uint8Array(16))].map((b) => b.toString(16).padStart(2, "0")).join("");
+    const opts = (batch) => {
+      const fd = new FormData();
+      fd.append("job", job);
+      fd.append("item_ids", JSON.stringify(batch));
+      if (form.remove_bg.checked) fd.append("remove_bg", "1");
+      if (form.match_light.checked) fd.append("match_light", "1");
+      if (form.use_color.checked) fd.append("bg_color", form.bg_color.value);
+      if (form.bg_image.files[0]) fd.append("bg_image", form.bg_image.files[0]);
+      if (form.logo.files[0]) fd.append("logo", form.logo.files[0]);
+      ["logo_pos", "logo_size", "logo_opacity", "size", "dish_size", "pos_x", "pos_y", "tilt"].forEach((k) => fd.append(k, form[k].value));
+      return fd;
+    };
+    const fail = async (res) => { const b = await res.json().catch(() => ({})); throw new Error(b.detail || `${res.status} ${res.statusText}`); };
+    $("#phError").textContent = ""; go.disabled = true;
+    try {
+      let failed = 0;
+      for (let i = 0; i < ids.length; i += 4) {
+        go.textContent = `Editing ${Math.min(i + 4, ids.length)} of ${ids.length}…`;
+        const res = await apiFetch(base, { method: "POST", body: opts(ids.slice(i, i + 4)) });
+        if (!res.ok) await fail(res);
+        failed += (await res.json()).failed.length;
+      }
+      go.textContent = "Preparing zip…";
+      const res = await apiFetch(`${base}/${job}`);
+      if (!res.ok) await fail(res);
+      const url = URL.createObjectURL(await res.blob());
+      const a = Object.assign(document.createElement("a"), { href: url, download: (res.headers.get("content-disposition") || "").match(/filename="(.+)"/)?.[1] || "photos.zip" });
+      a.click(); setTimeout(() => URL.revokeObjectURL(url), 5000);
+      if (failed) $("#phError").textContent = `${failed} photos couldn't be edited; their names are in could-not-edit.txt in the zip.`;
+    } catch (x) { $("#phError").textContent = x.message; }
+    go.disabled = false; go.textContent = "Edit and download";
+  });
+}
+
 // one restaurant's page on a delivery app: offers, combos, best sellers, categories and what is out of stock
 async function showMarketRestaurant(outletId, resId, track, refresh = false) {
   const box = $("#zDetail");
@@ -2295,6 +2711,7 @@ async function showMarketRestaurant(outletId, resId, track, refresh = false) {
       <span class="btn-row"><small class="muted">menu read ${r.menu_refreshed_at ? timeAgo(r.menu_refreshed_at) : ""}</small>
         <button class="btn light" id="zRefresh">Refresh</button>
         ${r.is_us ? "" : `<a class="btn light" href="${API}${zBase(outletId)}/export?res_ids=${encodeURIComponent(r.res_id)}" download>${r.has_us ? "Export vs us" : "Export"}</a>`}
+        ${(r.items || []).some((i) => i.image) ? `<a class="btn light" href="${API}${zBase(outletId)}/restaurants/${encodeURIComponent(r.res_id)}/images" download>Download photos</a>` : ""}
         ${r.is_us || r.tracked ? "" : '<button class="btn blue" id="zTrackThis">Compare</button>'}</span></div>
     <div class="ov-tiles">
       <div class="ov-tile"><span class="ov-tile-label">Rating</span><div class="ov-tile-value">${r.rating != null ? r.rating.toFixed(1) : "—"}<small>★</small></div><span class="ov-tile-sub">${[r.votes ? `${esc(r.votes)} ratings` : "", esc(r.cost_for_two || ""), esc((r.cuisines || []).join(", "))].filter(Boolean).join(" · ")}</span></div>
@@ -2318,11 +2735,30 @@ async function showMarketRestaurant(outletId, resId, track, refresh = false) {
     ${(ins.no_photo || []).length ? `<details class="comp-menu"><summary>Without a photo · ${ins.no_photo.length} items</summary><div class="comp-svcs">${ins.no_photo.map((n) => `<span class="comp-svc">${esc(n)}</span>`).join("")}</div></details>` : ""}
     ${(ins.no_desc || []).length ? `<details class="comp-menu"><summary>Without a description · ${ins.no_desc.length} items</summary><div class="comp-svcs">${ins.no_desc.map((n) => `<span class="comp-svc">${esc(n)}</span>`).join("")}</div></details>` : ""}
     <details class="comp-menu"><summary>Full menu · ${(r.items || []).length} items</summary>
-      <table class="ov-table"><thead><tr><th>Item</th><th>Category</th><th class="num">Price</th><th>Tags</th></tr></thead><tbody>
-      ${(r.items || []).map((i) => `<tr class="${i.in_stock ? "" : "comp-oos"}"><td><span class="comp-diet ${i.veg ? "veg" : "nonveg"}"></span>${esc(i.name)}</td><td class="muted">${esc(i.category)}</td>
+      ${(r.items || []).some((i) => i.image) ? `<div class="ph-bar"><label><input type="checkbox" id="phAll"> Select all photos</label>
+        <span class="muted" id="phCount">0 selected</span><button class="btn blue" id="phOpen" disabled>Edit photos</button></div>
+      <form id="phForm" class="ph-form" hidden>
+        <label><input type="checkbox" name="remove_bg" checked> Remove background</label>
+        <label>Background colour <input type="color" name="bg_color" value="#ffffff"> <span class="muted"><input type="checkbox" name="use_color" checked> use</span></label>
+        <label>Background image <input type="file" name="bg_image" accept="image/*"></label>
+        <label>Dish size <input type="range" name="dish_size" min="20" max="100" value="84"></label>
+        <label>Dish left ↔ right <input type="range" name="pos_x" min="0" max="100" value="50"></label>
+        <label>Dish up ↕ down <input type="range" name="pos_y" min="0" max="100" value="50"></label>
+        <label>Table angle <input type="range" name="tilt" min="0" max="50" value="0"></label>
+        <label><input type="checkbox" name="match_light" checked> Match background lighting</label>
+        <label>Logo <input type="file" name="logo" accept="image/*"></label>
+        <label>Logo position <select name="logo_pos"><option value="br">Bottom right</option><option value="bl">Bottom left</option><option value="tr">Top right</option><option value="tl">Top left</option><option value="c">Centre</option></select></label>
+        <label>Logo size <input type="range" name="logo_size" min="5" max="60" value="20"></label>
+        <label>Logo opacity <input type="range" name="logo_opacity" min="10" max="100" value="100"></label>
+        <label>Output size <select name="size"><option value="1000">1000 × 1000</option><option value="800">800 × 800</option><option value="1200">1200 × 1200</option><option value="0">Keep original</option></select></label>
+        <span class="btn-row"><button class="btn blue" id="phGo">Edit and download</button><button type="button" class="btn light" id="phClose">Close</button></span>
+        <p class="login-error" id="phError"></p></form>` : ""}
+      <table class="ov-table"><thead><tr><th></th><th>Item</th><th>Category</th><th class="num">Price</th><th>Tags</th></tr></thead><tbody>
+      ${(r.items || []).map((i) => `<tr class="${i.in_stock ? "" : "comp-oos"}"><td>${i.image ? `<input type="checkbox" class="ph-pick" value="${esc(String(i.id))}">` : ""}</td><td>${i.image ? `<img class="comp-thumb" src="${esc(i.image)}" alt="" loading="lazy">` : '<span class="comp-thumb"></span>'}<span class="comp-diet ${i.veg ? "veg" : "nonveg"}"></span>${esc(i.name)}</td><td class="muted">${esc(i.category)}</td>
         <td class="num">₹${i.price ?? "—"}</td><td>${[...i.tags, i.in_stock ? "" : "Out of stock"].filter(Boolean).map((t) => `<span class="comp-svc">${esc(t)}</span>`).join("")}</td></tr>`).join("")}</tbody></table></details>
   </div>`;
   $("#zRefresh").addEventListener("click", () => showMarketRestaurant(outletId, resId, track, true));
+  photoEditor(outletId, r);
   $("#zTrackThis")?.addEventListener("click", (e) => { e.target.disabled = true; track(r, true); });
 }
 
@@ -2333,7 +2769,7 @@ async function renderGoogleComp(page) {
       <p>It compares each outlet's Google rating with nearby restaurants. An admin needs to add a Google Places API key to the server.</p></div>`;
     return;
   }
-  if (!state.locationId) return renderCompetitionAll(page, d.outlets);
+  if (!singleId()) return renderCompetitionAll(page, d.outlets);
   const o = d.outlets[0];
   if (!o) { page.innerHTML = `<div class="card empty-state"><h3>Outlet not found</h3></div>`; return; }
   if (!o.place) return renderLocate(page, o);
@@ -2716,8 +3152,10 @@ function showLogin() {
         <label>Password<input name="password" type="password" autocomplete="current-password" placeholder="Your password" required></label>
         <p class="login-error" id="loginError"></p>
         <button class="btn blue login-submit" type="submit">Sign in</button>
+        <button class="login-link" type="button" id="otpLink">Email me a login code instead</button>
         <button class="login-link" type="button" id="forgotLink">Forgot password?</button>`));
   $("#forgotLink").addEventListener("click", showForgot);
+  $("#otpLink").addEventListener("click", () => showOtp());
   $("#loginForm").addEventListener("submit", async (e) => {
     e.preventDefault();
     const f = new FormData(e.target);
@@ -2741,6 +3179,42 @@ function showLoginCard(title, fields, submit) {
     history.replaceState(null, "", location.pathname);  // drop any reset link so signing in doesn't return to it
     $("#loginScreen").remove();
     showLogin();
+  });
+}
+
+// sign in with a 6-digit code emailed to the account: step 1 asks for the email, step 2 for the code
+function showOtp(identifier = "") {
+  if (!identifier) {
+    showLoginCard("Sign in with a code", `
+      <p class="login-note">Enter the email on your Codeonto login and we'll send you a 6-digit code.</p>
+      <label>Email<input name="identifier" type="email" autocomplete="email" placeholder="you@brand.com" required autofocus></label>`, "Email me a code");
+    $("#loginForm").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const btn = e.target.querySelector('[type="submit"]'); btn.disabled = true;
+      const who = new FormData(e.target).get("identifier").trim();
+      try { await apiJSON("/auth/otp/request", "POST", { identifier: who }); showOtp(who); }
+      catch (err) { $("#loginError").textContent = err.message; btn.disabled = false; }
+    });
+    return;
+  }
+  showLoginCard("Enter your code", `
+    <p class="login-note">If <b>${esc(identifier)}</b> has a Codeonto login, a 6-digit code is on its way. It expires in 10 minutes.</p>
+    <label>Code<input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9 ]{6,7}" maxlength="7" placeholder="123456" required autofocus></label>
+    <button class="login-link" type="button" id="otpResend">Send a new code</button>`, "Sign in");
+  $("#otpResend").addEventListener("click", async (e) => {
+    e.target.disabled = true;
+    try { await apiJSON("/auth/otp/request", "POST", { identifier }); toast("If you can ask for another one, a new code is on its way (one a minute)."); }
+    catch (err) { toast(err.message); }
+    setTimeout(() => { e.target.disabled = false; }, 60000);
+  });
+  $("#loginForm").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = e.target.querySelector('[type="submit"]'); btn.disabled = true;
+    try {
+      await api("/auth/me").catch(() => null);  // sets the CSRF cookie
+      await apiJSON("/auth/otp/verify", "POST", { identifier, code: new FormData(e.target).get("code") });
+      location.reload();
+    } catch (err) { $("#loginError").textContent = err.message; btn.disabled = false; }
   });
 }
 
@@ -3146,13 +3620,18 @@ setTimeout(googleReturnNotice, 800);
 $("#brandSelect").addEventListener("change", (e) => loadBrand(Number(e.target.value)));
 $("#locationBtn").addEventListener("click", () => setOutletPicker($("#locationPop").hidden));
 $("#locationSearch").addEventListener("input", renderOutletList);
-$("#locationList").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-location]"); if (!b) return;
-  state.locationId = b.dataset.location;
-  showSelectedOutlet();
-  setOutletPicker(false);
-  render();
+$("#locationList").addEventListener("change", (e) => {
+  const box = e.target;
+  if (box.id === "locationAll") {
+    const q = $("#locationSearch").value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    platformLocations().filter((l) => q.every((w) => l.search.includes(w))).forEach((l) => (box.checked ? pickSel.add(String(l.id)) : pickSel.delete(String(l.id))));
+  } else if (box.dataset.location) {
+    box.checked ? pickSel.add(box.dataset.location) : pickSel.delete(box.dataset.location);
+  }
+  renderOutletList();
 });
+$("#locationApply").addEventListener("click", () => applyOutlets([...pickSel]));
+$("#locationClear").addEventListener("click", () => applyOutlets([]));
 $("#locationPop").addEventListener("keydown", (e) => {
   const items = [...$("#locationList").querySelectorAll("[data-location]")];
   const at = items.indexOf(document.activeElement);
@@ -3169,7 +3648,13 @@ document.addEventListener("click", (e) => { if (!e.target.closest("#outletFilter
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && !$("#locationPop").hidden) { setOutletPicker(false); $("#locationBtn").focus(); }
 });
-$("#platformSelect").addEventListener("change", (e) => { state.platform = e.target.value; render(); });
+$("#platformSelect").addEventListener("change", (e) => {
+  state.platform = e.target.value;
+  const onPlatform = new Set(platformLocations().map((l) => String(l.id)));
+  state.locationId = selIds().filter((id) => onPlatform.has(id)).join(",");
+  showSelectedOutlet();
+  render();
+});
 $("#rangeSeg").addEventListener("click", (e) => {
   const b = e.target.closest("button"); if (!b) return;
   if (b.dataset.custom) {  // open the date pickers, pre-filled with the range in use

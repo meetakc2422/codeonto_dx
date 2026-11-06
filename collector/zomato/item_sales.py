@@ -161,6 +161,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     for acc_id, outlets in groups.items():
         cookies = _cookies(db.load_credentials(by_id[acc_id]))
         res_ids = list(outlets)
+        refused = None
         for i in range(0, len(res_ids), BATCH):
             batch = res_ids[i:i + BATCH]
             for w_start, w_end in windows:
@@ -171,10 +172,13 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                     total += len(rows)
                     log.info("zomato item sales %s: %s stores, %s to %s: %s item-days", by_id[acc_id]["label"], len(batch), w_start, w_end, len(rows))
                 except PermissionError as e:
-                    log.error("zomato item sales: %s", e)
-                    return False
+                    log.error("zomato item sales %s: %s; skipping this login's stores", by_id[acc_id]["label"], e)
+                    ok = refused = False
+                    break
                 except Exception as e:
                     log.exception("zomato item sales %s failed: %s", by_id[acc_id]["label"], e)
                     ok = False
+            if refused is False:
+                break
     log.info("zomato item sales: %s item-days saved", total)
     return ok

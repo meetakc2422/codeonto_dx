@@ -127,17 +127,38 @@ def callback(request):
     return _back("connected")
 
 
-def _start_location_sync(label: str) -> None:
-    """Discover the new login's locations in the background (the collector job `google outlets`)."""
+def _start_location_sync(label: str) -> bool:
+    """Discover a login's locations in the background (the collector job `google outlets`). Output goes to
+    collector/logs/google-sync-<label>.log. False when this server has no collector set up."""
     collector = Path(settings.COLLECTOR_DIR)
     python = collector / ".venv" / "bin" / "python"
     if not python.exists():
-        return
+        logger.warning("Google location sync for %s skipped: no collector virtualenv at %s", label, python)
+        return False
     try:
+        (collector / "logs").mkdir(exist_ok=True)
+        log = open(collector / "logs" / f"google-sync-{label}.log", "ab")
         subprocess.Popen([str(python), str(collector / "run.py"), "google", "outlets", "--account", label], cwd=collector,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+                         stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
+        return True
     except OSError:
-        pass  # the scheduled sync will pick it up
+        logger.exception("Google location sync for %s could not start", label)
+        return False
+
+
+@api_view(["POST"])
+def sync(request, pk):
+    """Sync locations now for one connected Google account (same job as right after connecting)."""
+    conn = GoogleConnection.objects.filter(pk=pk).select_related("account").first()
+    if not conn:
+        raise ValidationError("Connection not found")
+    access.get_client(request.user, conn.client_id)
+    access.require_manage(request.user)
+    if conn.status != "connected" or not conn.account:
+        raise ValidationError("Reconnect this Google account first")
+    if not _start_location_sync(conn.account.label):
+        return Response({"detail": "Location sync isn't set up on this server yet; ask Codeonto to finish the setup."}, status=503)
+    return Response({"started": True})
 
 
 @api_view(["GET"])

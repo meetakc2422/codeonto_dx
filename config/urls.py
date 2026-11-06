@@ -11,6 +11,7 @@ from apps.stockouts import api as stockouts
 from apps.complaints import api as complaints
 from apps.insights import api as insights
 from apps.uptime import api as uptime
+from apps.payouts import ads as payout_ads
 from apps.payouts import api as payouts
 from apps.billing import api as billing
 from apps.listings import api as listings
@@ -18,7 +19,7 @@ from apps.alerts import api as alerts
 from apps.integrations import google_oauth
 from apps.assistant import api as assistant
 from apps.competition import api as competition
-from apps.competition import market_api, market_export
+from apps.competition import market_api, market_export, photos
 
 admin.site.site_header = "Codeonto admin"
 admin.site.site_title = "Codeonto"
@@ -27,6 +28,8 @@ admin.site.index_title = "Clients, brands & outlet mapping"
 api = [
     path("auth/me", auth_api.me),
     path("auth/login", auth_api.login_view),
+    path("auth/otp/request", auth_api.otp_request),
+    path("auth/otp/verify", auth_api.otp_verify),
     path("auth/logout", auth_api.logout_view),
     path("auth/password", auth_api.change_password),
     path("auth/password/forgot", auth_api.forgot_password),
@@ -43,6 +46,7 @@ api = [
     path("brands/<int:brand_id>/config", outlets.brand_config),
     path("brands/<int:brand_id>/outlets", outlets.brand_outlets),
     path("brands/<int:brand_id>/outlets/import", outlets.import_outlets),
+    path("brands/<int:brand_id>/outlets/link-suggestions", outlets.link_suggestions),
     path("catalog/<slug:platform>", outlets.catalog),
     path("brands/<int:brand_id>/kpis", metrics.brand_kpis),
     path("brands/<int:brand_id>/kpis/<slug:kpi_code>/trend", metrics.kpi_trend),
@@ -64,8 +68,15 @@ api = [
     path("billing/quote", billing.plan_quote),
     path("clients/<int:client_id>/billing", billing.client_billing),
     path("clients/<int:client_id>/billing/requests", billing.request_plan),
+    path("brands/<int:brand_id>/ads/performance", payout_ads.ads_performance),
     path("brands/<int:brand_id>/payouts/summary", payouts.payout_summary),
+    path("brands/<int:brand_id>/payouts/line-types/<int:line_id>", payouts.review_line),
     path("brands/<int:brand_id>/payouts/cycles", payouts.payout_cycles),
+    path("brands/<int:brand_id>/payouts/combined", payouts.payout_combined),
+    path("brands/<int:brand_id>/payouts/combined/xlsx", payouts.payout_combined_xlsx),
+    path("brands/<int:brand_id>/payouts/export", payouts.payout_export),
+    path("brands/<int:brand_id>/payouts/statements", payouts.payout_statements),
+    path("brands/<int:brand_id>/payouts/book", payouts.payout_book),
     path("brands/<int:brand_id>/payouts/cycles/<int:cycle_id>", payouts.payout_cycle_detail),
     path("brands/<int:brand_id>/uptime/summary", uptime.uptime_summary),
     path("brands/<int:brand_id>/uptime/episodes", uptime.offline_episodes),
@@ -85,9 +96,13 @@ api = [
     path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/us", market_api.set_us),
     path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/export", market_export.export),
     path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/restaurants/<str:res_id>", market_api.restaurant),
+    path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/restaurants/<str:res_id>/images", market_export.images),
+    path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/restaurants/<str:res_id>/images/edit", photos.edit_photos),
+    path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/restaurants/<str:res_id>/images/edit/<str:job>", photos.edit_photos_zip),
     path("google/connect", google_oauth.connect),
     path("assistant/chat", assistant.chat),
     path("google/connections/<int:pk>", google_oauth.disconnect),
+    path("google/connections/<int:pk>/sync", google_oauth.sync),
     path("clients/<int:client_id>/google", google_oauth.client_connections),
     path("brands/<int:brand_id>/alerts", alerts.brand_alerts),
 ]

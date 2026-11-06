@@ -7,7 +7,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from apps.billing.access import require_module
-from apps.outlets.access import get_brand, in_scope, require_outlet_edit
+from apps.outlets.access import get_brand, in_scope, require_outlet_edit, outlet_ids
 
 from .models import Complaint
 
@@ -31,8 +31,8 @@ def _filtered(request, brand_id):
     end = date.fromisoformat(qp["end"]) if qp.get("end") else date.today()
     start = date.fromisoformat(qp["start"]) if qp.get("start") else end - timedelta(days=29)
     qs = in_scope(Complaint.objects.filter(outlet__brand_id=brand_id, raised_at__date__range=(start, end)), request.user)
-    if qp.get("outlet_id"):
-        qs = qs.filter(outlet_id=qp["outlet_id"])
+    if outlet_ids(qp.get("outlet_id")):
+        qs = qs.filter(outlet_id__in=outlet_ids(qp.get("outlet_id")))
     if qp.get("platform"):
         qs = qs.filter(platform_id=qp["platform"])
     return qs, qp

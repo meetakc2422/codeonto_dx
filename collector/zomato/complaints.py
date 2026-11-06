@@ -152,8 +152,8 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                     log.exception("zomato complaints order %s failed: %s", order_id, e)
                     ok = False
         except PermissionError as e:
-            log.error("zomato complaints: %s", e)
-            return False
+            log.error("zomato complaints %s: %s; skipping this login's stores", by_id[acc_id]["label"], e)
+            ok = False
         except Exception as e:
             log.exception("zomato complaints %s failed: %s", by_id[acc_id]["label"], e)
             ok = False

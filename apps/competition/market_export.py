@@ -202,3 +202,52 @@ def export(request, brand_id, outlet_id, platform):
     resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     resp["Content-Disposition"] = f'attachment; filename="{name}"'
     return resp
+
+
+def _safe(name: str) -> str:
+    return re.sub(r"[^\w\- ]+", "", name or "").strip()[:80] or "item"
+
+
+@api_view(["GET"])
+def images(request, brand_id, outlet_id, platform, res_id):
+    """A zip of one restaurant's menu photos, one folder per category, from the menu as last read."""
+    import zipfile
+    from concurrent.futures import ThreadPoolExecutor
+
+    import httpx
+
+    mk = _market(platform)
+    _outlet(request, brand_id, outlet_id)
+    r = MarketRestaurant.objects.filter(platform=mk.code, res_id=res_id).first()
+    items = [i for i in (r.items if r else []) if i.get("image")]
+    if not items:
+        return Response({"detail": "No menu photos saved yet. Open or refresh the restaurant's menu first."}, status=404)
+
+    def get(url):
+        # Zomato hands out WebP (?output-format=webp), which many Windows PCs can't open; the same URL without it is JPEG
+        if "zmtcdn.com" in url:
+            url = url.split("?")[0]
+        try:
+            resp = httpx.get(url, timeout=20, follow_redirects=True)
+            return resp.content if resp.status_code == 200 else None
+        except httpx.HTTPError:
+            return None
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        blobs = list(pool.map(get, [i["image"] for i in items]))
+    buf, used = BytesIO(), set()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:
+        for i, data in zip(items, blobs):
+            if not data:
+                continue
+            path = f"{_safe(i.get('category'))}/{_safe(i.get('name'))}"
+            n, base = 2, path
+            while path in used:
+                path, n = f"{base} ({n})", n + 1
+            used.add(path)
+            ext = ".png" if data[:4] == b"\x89PNG" else ".webp" if data[8:12] == b"WEBP" else ".jpg"
+            z.writestr(path + ext, data)
+    name = f"{mk.code}-{_safe(r.name).lower().replace(' ', '-')}-photos.zip"
+    resp = HttpResponse(buf.getvalue(), content_type="application/zip")
+    resp["Content-Disposition"] = f'attachment; filename="{name}"'
+    return resp

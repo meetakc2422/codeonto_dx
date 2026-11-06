@@ -5,7 +5,7 @@ from django.utils import timezone
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from apps.outlets.access import brands_for, get_brand, in_scope
+from apps.outlets.access import brands_for, get_brand, in_scope, outlet_ids
 from apps.billing.access import require_module
 
 from .models import OfflineEpisode, UptimeDaily
@@ -24,8 +24,9 @@ def _filtered(request, brand_id):
     episodes = in_scope(OfflineEpisode.objects.filter(outlet__brand_id=brand_id), request.user).filter(
         Q(log_date__range=(start, end)) | Q(is_active=True))
     days = in_scope(UptimeDaily.objects.filter(outlet__brand_id=brand_id, day__range=(start, end)), request.user)
-    if qp.get("outlet_id"):
-        episodes, days = episodes.filter(outlet_id=qp["outlet_id"]), days.filter(outlet_id=qp["outlet_id"])
+    if outlet_ids(qp.get("outlet_id")):
+        ids = outlet_ids(qp.get("outlet_id"))
+        episodes, days = episodes.filter(outlet_id__in=ids), days.filter(outlet_id__in=ids)
     if qp.get("platform"):
         episodes, days = episodes.filter(platform_id=qp["platform"]), days.filter(platform_id=qp["platform"])
     return episodes, days, qp

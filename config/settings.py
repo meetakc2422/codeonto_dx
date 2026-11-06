@@ -140,7 +140,8 @@ EMAIL_HOST_USER = env("EMAIL_HOST_USER")
 EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD")
 EMAIL_USE_SSL = EMAIL_PORT == 465
 EMAIL_USE_TLS = EMAIL_PORT == 587
-DEFAULT_FROM_EMAIL = EMAIL_HOST_USER or "alerts@localhost"
+# the sender address; with Amazon SES EMAIL_HOST_USER is an access key, not an address, so set EMAIL_FROM
+DEFAULT_FROM_EMAIL = env("EMAIL_FROM") or env("DEFAULT_FROM_EMAIL") or (EMAIL_HOST_USER if "@" in (EMAIL_HOST_USER or "") else "") or "alerts@localhost"
 EMAIL_BACKEND = "django.core.mail.backends.smtp.EmailBackend" if EMAIL_HOST else "django.core.mail.backends.console.EmailBackend"
 
 # "Connect with Google" (clients link their Business Profile from the dashboard)
@@ -166,4 +167,7 @@ GOOGLE_MAPS_BROWSER_KEY = env("GOOGLE_MAPS_BROWSER_KEY", "")
 # Zomato customer-app session (headers) for competitor lookup; refresh with `manage.py zomato_app_session`
 ZOMATO_APP_SESSION_FILE = env("ZOMATO_APP_SESSION_FILE", str(BASE_DIR / "sessions" / "zomato_app.json"))
 # Swiggy customer-app session (headers) for competitor lookup; refresh with `manage.py swiggy_app_session`
+# optional: base URL of the Windows menu proxy (windows_zomato_proxy.py), e.g. http://1.2.3.4:5000. Zomato's edge blocks
+# datacenter IPs on /gw/menu, so production fetches menus through it; empty = call Zomato directly
+ZOMATO_MENU_PROXY_URL = env("ZOMATO_MENU_PROXY_URL", "")
 SWIGGY_APP_SESSION_FILE = env("SWIGGY_APP_SESSION_FILE", str(BASE_DIR / "sessions" / "swiggy_app.json"))

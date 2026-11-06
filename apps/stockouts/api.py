@@ -7,7 +7,7 @@ from django.http import HttpResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from apps.outlets.access import get_brand, in_scope
+from apps.outlets.access import get_brand, in_scope, outlet_ids
 from apps.billing.access import require_module
 
 from .models import StockOut
@@ -34,8 +34,8 @@ def _filtered(request, brand_id):
     end = date.fromisoformat(qp["end"]) if qp.get("end") else date.today()
     start = date.fromisoformat(qp["start"]) if qp.get("start") else end - timedelta(days=29)
     qs = in_scope(StockOut.objects.filter(outlet__brand_id=brand_id, log_date__range=(start, end)), request.user).select_related("outlet__brand")
-    if qp.get("outlet_id"):
-        qs = qs.filter(outlet_id=qp["outlet_id"])
+    if outlet_ids(qp.get("outlet_id")):
+        qs = qs.filter(outlet_id__in=outlet_ids(qp.get("outlet_id")))
     if qp.get("platform"):
         qs = qs.filter(platform_id=qp["platform"])
     if qp.get("mealtime"):

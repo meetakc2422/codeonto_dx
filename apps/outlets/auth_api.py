@@ -17,6 +17,7 @@ from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
 from .access import user_json
+from .models import LoginCode
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -135,3 +136,75 @@ def reset_password(request):
     user.save(update_fields=["password"])
     return Response({"ok": True})
 
+
+# ---------- login with an emailed one-time code ----------
+CODE_MINUTES = 10
+CODE_ATTEMPTS = 5
+CODES_PER_HOUR = 5
+CODE_GAP_SECONDS = 60
+
+
+def _code_hash(code: str) -> str:
+    import hashlib
+    import hmac
+    return hmac.new(settings.SECRET_KEY.encode(), code.encode(), hashlib.sha256).hexdigest()
+
+
+def _code_users(identifier: str):
+    return list(User.objects.filter(Q(username__iexact=identifier) | Q(email__iexact=identifier), is_active=True).exclude(email=""))
+
+
+@api_view(["POST"])
+@authentication_classes([])
+@permission_classes([AllowAny])
+def otp_request(request):
+    """{identifier: email or username}. Emails a 6-digit login code. Always the same answer, so it can't be used to
+    find out which accounts exist."""
+    import secrets
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    identifier = str(request.data.get("identifier") or "").strip()
+    now = timezone.now()
+    for user in _code_users(identifier) if identifier else []:
+        recent = LoginCode.objects.filter(user=user, created_at__gte=now - timedelta(hours=1))
+        if recent.count() >= CODES_PER_HOUR or recent.filter(created_at__gte=now - timedelta(seconds=CODE_GAP_SECONDS)).exists():
+            continue
+        code = f"{secrets.randbelow(10 ** 6):06d}"
+        LoginCode.objects.filter(user=user, used_at__isnull=True).update(used_at=now)  # only the newest code works
+        LoginCode.objects.create(user=user, code_hash=_code_hash(code), expires_at=now + timedelta(minutes=CODE_MINUTES))
+        _send_in_background(EmailMessage(
+            subject=f"{code} is your Codeonto login code",
+            body=(f"Hi {user.first_name or user.username},\n\nYour Codeonto login code is {code}\n\n"
+                  f"It works once and expires in {CODE_MINUTES} minutes. If you didn't try to sign in, you can ignore this email.\n"),
+            to=[user.email]))
+    return Response({"ok": True})
+
+
+@api_view(["POST"])
+@permission_classes([AllowAny])
+def otp_verify(request):
+    """{identifier, code}: signs in when the code matches that account's latest unused, unexpired code."""
+    import hmac
+
+    from django.utils import timezone
+
+    identifier = str(request.data.get("identifier") or "").strip()
+    code = "".join(ch for ch in str(request.data.get("code") or "") if ch.isdigit())
+    now = timezone.now()
+    users = _code_users(identifier) if identifier else []
+    for user in users:
+        lc = LoginCode.objects.filter(user=user, used_at__isnull=True, expires_at__gt=now).order_by("-created_at").first()
+        if not lc:
+            continue
+        lc.attempts += 1
+        if hmac.compare_digest(lc.code_hash, _code_hash(code)) and lc.attempts <= CODE_ATTEMPTS:
+            lc.used_at = now
+            lc.save(update_fields=["attempts", "used_at"])
+            login(request, user, backend="django.contrib.auth.backends.ModelBackend")
+            return Response(user_json(user))
+        if lc.attempts >= CODE_ATTEMPTS:
+            lc.used_at = now  # too many wrong guesses: this code is dead, ask for a new one
+        lc.save(update_fields=["attempts", "used_at"])
+    return Response({"detail": "That code is wrong or has expired. Ask for a new one."}, status=400)

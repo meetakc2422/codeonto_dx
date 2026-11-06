@@ -464,3 +464,46 @@ class PasswordRulesTests(Base):
         self.assertEqual(c.patch(url, {"password": "short"}, format="json").status_code, 400)
         self.assertEqual(c.patch(url, {"password": "password"}, format="json").status_code, 400)
         self.assertEqual(c.patch(url, {"password": "4829173650"}, format="json").status_code, 400)
+
+
+class OtpLoginTests(TestCase):
+    def setUp(self):
+        from unittest import mock
+        from django.contrib.auth import get_user_model
+        self.user = get_user_model().objects.create_user("otpuser", email="otp@example.com", password="x-Strong-pass-1")
+        self.c = APIClient()
+        patcher = mock.patch("apps.outlets.auth_api._send_in_background", side_effect=lambda m: m.send())
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _code(self):
+        import re
+        from django.core import mail
+        return re.search(r"\b(\d{6})\b", mail.outbox[-1].subject).group(1)
+
+    def test_code_signs_in_once(self):
+        from django.core import mail
+        self.assertEqual(self.c.post("/api/auth/otp/request", {"identifier": "OTP@example.com"}, format="json").status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        code = self._code()
+        self.assertEqual(self.c.post("/api/auth/otp/verify", {"identifier": "otp@example.com", "code": "000000" if code != "000000" else "111111"}, format="json").status_code, 400)
+        r = self.c.post("/api/auth/otp/verify", {"identifier": "otp@example.com", "code": code}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(self.c.get("/api/auth/me").status_code, 200)
+        self.assertEqual(APIClient().post("/api/auth/otp/verify", {"identifier": "otp@example.com", "code": code}, format="json").status_code, 400)
+
+    def test_unknown_email_same_answer_no_mail(self):
+        from django.core import mail
+        self.assertEqual(self.c.post("/api/auth/otp/request", {"identifier": "nobody@example.com"}, format="json").status_code, 200)
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_one_code_a_minute_and_dies_after_wrong_guesses(self):
+        from django.core import mail
+        self.c.post("/api/auth/otp/request", {"identifier": "otp@example.com"}, format="json")
+        self.c.post("/api/auth/otp/request", {"identifier": "otp@example.com"}, format="json")
+        self.assertEqual(len(mail.outbox), 1)
+        code = self._code()
+        wrong = "000000" if code != "000000" else "111111"
+        for _ in range(5):
+            self.c.post("/api/auth/otp/verify", {"identifier": "otp@example.com", "code": wrong}, format="json")
+        self.assertEqual(self.c.post("/api/auth/otp/verify", {"identifier": "otp@example.com", "code": code}, format="json").status_code, 400)

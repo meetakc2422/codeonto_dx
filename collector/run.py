@@ -29,8 +29,8 @@ from core.common import ConfigError, log, session_path, setup_logging  # noqa: E
 # per-account jobs or run_all(accounts, headless, force) for jobs that need every account
 # at once (e.g. outlets, to know what disappeared). Add a job: one module + one line here.
 TASKS = {
-    "zomato": {"session": "zomato.session", "outlets": "zomato.outlets", "reviews": "zomato.reviews", "stockouts": "zomato.stockouts", "uptime": "zomato.uptime", "payouts": "zomato.payouts", "business": "zomato.business", "timings": "zomato.timings", "complaints": "zomato.complaints", "item_sales": "zomato.item_sales"},
-    "swiggy": {"session": "swiggy.session", "outlets": "swiggy.outlets", "reviews": "swiggy.reviews", "business": "swiggy.business", "payouts": "swiggy.payouts", "complaints": "swiggy.complaints"},
+    "zomato": {"session": "zomato.session", "outlets": "zomato.outlets", "reviews": "zomato.reviews", "stockouts": "zomato.stockouts", "uptime": "zomato.uptime", "payouts": "zomato.payouts", "business": "zomato.business", "timings": "zomato.timings", "complaints": "zomato.complaints", "item_sales": "zomato.item_sales", "ratings": "zomato.ratings"},
+    "swiggy": {"session": "swiggy.session", "outlets": "swiggy.outlets", "reviews": "swiggy.reviews", "business": "swiggy.business", "payouts": "swiggy.payouts", "complaints": "swiggy.complaints", "ratings": "swiggy.ratings"},
     "google": {"session": "google_business.session", "outlets": "google_business.outlets", "reviews": "google_business.reviews", "performance": "google_business.performance", "profile": "google_business.profile"},
 }
 

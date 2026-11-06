@@ -86,6 +86,8 @@ def post(path: str, body: dict, lat: float, lng: float, city_id: int | None = No
             resp = httpx.post(url, headers=h, params=params, json=body, timeout=TIMEOUT)
     except httpx.HTTPError as e:
         raise ZomatoAppError(f"Couldn't reach Zomato: {e}") from e
+    if resp.status_code == 403 and "akamai" in (resp.headers.get("server") or "").lower():
+        raise ZomatoAppError("Zomato blocked this server's IP (403 Access Denied). Set ZOMATO_MENU_PROXY_URL to fetch through the Windows proxy.")
     if resp.status_code in (401, 403):
         raise ZomatoAppError(f"Zomato rejected the app session ({resp.status_code}). Refresh it with `manage.py zomato_app_session`.")
     if resp.status_code != 200:
@@ -255,9 +257,26 @@ def _place_params(place: dict) -> dict:
 
 def menu_raw(place: dict, res_id: str) -> dict:
     """The restaurant page as the app loads it: header (rating, offers) and full menu."""
+    if settings.ZOMATO_MENU_PROXY_URL:
+        return _menu_via_proxy(place, res_id)
     q = _place_params(place)
     return post(f"menu/{res_id}", {**q, "resID": res_id, "mode": "delivery", "type": "all", "tabId": "menu"},
                 place["lat"], place["lng"], place["city_id"], form=True, params=q)
+
+
+def _menu_via_proxy(place: dict, res_id: str) -> dict:
+    """menu_raw through the Windows menu proxy (/fetch-menu), which calls Zomato from a non-datacenter IP."""
+    h = _headers()
+    body = {"res_id": int(res_id), "lat": place["lat"], "lon": place["lng"], "city_id": str(place.get("city_id") or 1),
+            "access_token": h.get("x-zomato-access-token", "")}
+    try:
+        resp = httpx.post(f"{settings.ZOMATO_MENU_PROXY_URL.rstrip('/')}/fetch-menu", json=body, timeout=60)
+        data = resp.json()
+    except (httpx.HTTPError, ValueError) as e:
+        raise ZomatoAppError(f"Couldn't reach the Zomato menu proxy: {e}") from e
+    if not data.get("menu_json"):
+        raise ZomatoAppError("The Zomato menu proxy couldn't load this menu. Check the Windows proxy's log and session.")
+    return data["menu_json"]
 
 
 # app-made sections that repeat real menu items for this user; the real categories come after them
@@ -354,7 +373,7 @@ def menu_once(place: dict, res_id: str) -> dict:
                     + (["High repeat"] if "high-repeat" in it.get("tag_slugs", []) else []),
                     "reorder_score": rt.get("progress_value") if rt.get("rating_identifier") == "highly_reordered" else None,
                     "popularity": it.get("search_popularity_score"), "in_stock": it.get("item_state") == "available",
-                    "has_photo": bool(it.get("item_image_url")), "desc": it.get("desc", ""), "alias": it.get("search_alias", ""),
+                    "has_photo": bool(it.get("item_image_url")), "image": it.get("item_image_url") or "", "desc": it.get("desc", ""), "alias": it.get("search_alias", ""),
                     "_personal": personal}
     for i in items.values():
         i.pop("_personal")

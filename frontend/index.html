@@ -43,14 +43,16 @@
           <p id="pageSub" class="muted"></p>
         </div>
         <div class="filters" id="filters">
+          <select id="platformSelect" aria-label="Platform"></select>
           <div class="outlet-filter" id="outletFilter">
-            <button class="outlet-filter-btn" id="locationBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="locationPop" aria-label="Outlet"></button>
+            <button class="outlet-filter-btn" id="locationBtn" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="locationPop" aria-label="Outlets"></button>
             <div class="outlet-filter-pop" id="locationPop" hidden>
               <input id="locationSearch" type="search" placeholder="Search area, city or res ID" aria-label="Search outlets" autocomplete="off">
-              <div class="outlet-filter-list" id="locationList" role="listbox" aria-label="Outlets"></div>
+              <div class="outlet-filter-list" id="locationList" role="listbox" aria-multiselectable="true" aria-label="Outlets"></div>
+              <div class="outlet-filter-foot"><button class="btn light" id="locationClear" type="button">All outlets</button>
+                <span class="muted" id="locationCount"></span><button class="btn blue" id="locationApply" type="button">Apply</button></div>
             </div>
           </div>
-          <select id="platformSelect" aria-label="Platform"></select>
           <div class="segmented" id="rangeSeg">
             <button data-days="7">7D</button>
             <button data-days="30" class="active">30D</button>

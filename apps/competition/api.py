@@ -6,7 +6,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from apps.billing.access import require_module
-from apps.outlets.access import get_brand, in_scope, require_outlet_edit
+from apps.outlets.access import get_brand, in_scope, require_outlet_edit, outlet_ids
 from apps.outlets.models import BrandOutlet
 
 from . import places
@@ -57,8 +57,8 @@ def competition(request, brand_id):
     brand = get_brand(request.user, brand_id)
     require_module(request.user, brand, MODULE)
     outlets = in_scope(BrandOutlet.objects.filter(brand=brand, is_active=True), request.user, "pk")
-    if request.query_params.get("outlet_id"):
-        outlets = outlets.filter(pk=request.query_params["outlet_id"])
+    if outlet_ids(request.query_params.get("outlet_id")):
+        outlets = outlets.filter(pk__in=outlet_ids(request.query_params.get("outlet_id")))
     outlets = list(outlets.select_related("google_place__place").order_by("city", "area", "outlet_name"))
     tracked = {}
     for c in Competitor.objects.filter(outlet__in=outlets, is_tracked=True).select_related("place"):

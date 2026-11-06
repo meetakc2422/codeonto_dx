@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from apps.outlets.access import get_brand, in_scope, require_outlet_edit
+from apps.outlets.access import get_brand, in_scope, require_outlet_edit, outlet_ids
 
 from .models import Review, ReviewReply
 
@@ -27,8 +27,8 @@ def brand_reviews(request, brand_id):
     qp = request.query_params
     qs = (in_scope(Review.objects.filter(outlet__brand_id=brand_id), request.user)
           .select_related("outlet__brand").prefetch_related("replies"))
-    if qp.get("outlet_id"):
-        qs = qs.filter(outlet_id=qp["outlet_id"])
+    if outlet_ids(qp.get("outlet_id")):
+        qs = qs.filter(outlet_id__in=outlet_ids(qp.get("outlet_id")))
     if qp.get("platform"):
         qs = qs.filter(platform_id=qp["platform"])
     if qp.get("rating") in RATING_BANDS:
@@ -49,8 +49,8 @@ def reviews_summary(request, brand_id):
     end = date.fromisoformat(qp["end"]) if qp.get("end") else date.today()
     start = date.fromisoformat(qp["start"]) if qp.get("start") else end - timedelta(days=29)
     qs = in_scope(Review.objects.filter(outlet__brand_id=brand_id, reviewed_at__date__range=(start, end)), request.user)
-    if qp.get("outlet_id"):
-        qs = qs.filter(outlet_id=qp["outlet_id"])
+    if outlet_ids(qp.get("outlet_id")):
+        qs = qs.filter(outlet_id__in=outlet_ids(qp.get("outlet_id")))
     if qp.get("platform"):
         qs = qs.filter(platform_id=qp["platform"])
     totals = qs.aggregate(total=Count("id"), avg_rating=Avg("rating"),
