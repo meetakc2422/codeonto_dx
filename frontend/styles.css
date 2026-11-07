@@ -911,3 +911,42 @@ table.stmt .off { opacity: .35; }
 .brand-logo.login-logo .brand-mark { width: 42px; height: 42px; border-radius: 12px; margin-right: 12px; }
 .brand-logo.login-logo small { margin-bottom: 4px; font-size: 11px; }
 @media (prefers-reduced-motion: reduce) { .brand-mark { transition: none; } }
+
+/* ---------- Compass login, tightened ---------- */
+.brand-logo small { align-self: center; margin: 2px 0 0 10px; font: 600 10.5px/1 Inter, -apple-system, "Segoe UI", sans-serif; letter-spacing: .04em; text-transform: uppercase; padding: 5px 8px; }
+.login-screen { grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); }
+.login-brand { justify-content: flex-start; gap: 0; padding: 36px clamp(28px, 4vw, 56px) 28px; min-height: 100%; }
+.login-pitch { max-width: 540px; margin: auto 0; padding: 32px 0; }
+.login-eyebrow { display: inline-flex; align-items: center; gap: 8px; margin-bottom: 18px; padding: 6px 12px 6px 10px; border: 1px solid #fbd5c0; border-radius: 999px; background: rgba(255,255,255,.7); font-size: 12px; font-weight: 600; color: #c2410c; }
+.login-eyebrow i { width: 7px; height: 7px; border-radius: 50%; background: #16a34a; box-shadow: 0 0 0 3px rgba(22,163,74,.18); }
+.login-pitch h1 { font-size: clamp(28px, 3vw, 40px); line-height: 1.1; letter-spacing: -.03em; margin-bottom: 12px; }
+.login-pitch p { font-size: 15px; line-height: 1.55; margin-bottom: 22px; max-width: 470px; }
+.login-feats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.login-feats div { display: grid; gap: 3px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: rgba(255,255,255,.75); backdrop-filter: blur(6px); }
+.login-feats b { font-size: 13.5px; font-weight: 650; color: var(--text); }
+.login-feats span { font-size: 12.5px; line-height: 1.4; color: var(--muted); }
+.login-sample { display: flex; align-items: center; gap: 12px; margin-top: 14px; padding: 12px 14px; border-radius: 12px; background: #fff; border: 1px solid var(--border); box-shadow: 0 10px 30px -12px rgba(225,29,72,.3); }
+.login-sample .dot { width: 10px; height: 10px; flex: none; border-radius: 50%; background: #e5484d; box-shadow: 0 0 0 4px rgba(229,72,77,.15); }
+.login-sample div { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.login-sample b { font-size: 13.5px; color: var(--text); }
+.login-sample small { font-size: 12px; color: var(--muted); }
+.login-sample em { font-style: normal; font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: #be123c; background: #ffe4e6; padding: 4px 8px; border-radius: 999px; }
+.login-platforms { gap: 8px; }
+.login-platforms small { margin-right: 4px; font-size: 12px; font-weight: 500; color: var(--muted); }
+.login-platforms img { width: 30px; height: 30px; padding: 5px; border-radius: 8px; }
+.login-main { padding: 32px 24px; }
+.login-card { max-width: 400px; gap: 14px; padding: 32px; border-radius: 18px; background: #fff; }
+.login-card .brand-logo.login-logo-sm { display: none; }
+.login-head { margin-bottom: 6px; }
+.login-card h2 { font-size: 24px; letter-spacing: -.02em; }
+.login-card input { height: 44px; }
+.login-error:empty { display: none; }
+.login-card .login-submit { height: 44px; margin-top: 6px; }
+.login-link { padding: 2px; }
+.login-card .login-link + .login-link { margin-top: -6px; }
+@media (max-width: 860px) {
+  .login-card { padding: 28px 22px; }
+  .login-card .brand-logo.login-logo-sm { display: inline-flex; margin-bottom: 6px; font-size: 24px; }
+  .login-card .brand-logo.login-logo-sm .brand-mark { width: 34px; height: 34px; border-radius: 10px; }
+}
+@media (max-width: 1100px) { .login-feats { grid-template-columns: 1fr; } }

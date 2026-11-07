@@ -3265,15 +3265,23 @@ function loginShell(form) {
       <aside class="login-brand">
         <span class="brand-logo login-logo"><img class="brand-mark" src="assets/logo-mark.svg" alt="">Compass<small>by codeonto</small></span>
         <div class="login-pitch">
+          <span class="login-eyebrow"><i></i>Live monitoring for restaurant brands</span>
           <h1>Every outlet, every platform, <span>one dashboard.</span></h1>
           <p>Reviews, complaints, uptime, payouts and item sales from Zomato, Swiggy and Google, in one place.</p>
-          <ul class="login-points">
-            <li>Reply to reviews and complaints before they cost you ratings</li>
-            <li>Know the moment an outlet goes offline or an item runs out</li>
-            <li>Reconcile payouts without the spreadsheets</li>
-          </ul>
+          <div class="login-feats">
+            <div><b>⭐ Reviews &amp; complaints</b><span>Reply before they cost you ratings</span></div>
+            <div><b>📡 Store uptime</b><span>Know the moment an outlet goes offline</span></div>
+            <div><b>📦 Stock-outs</b><span>Catch items that run out mid-service</span></div>
+            <div><b>💸 Payouts</b><span>Reconcile every cycle, no spreadsheets</span></div>
+          </div>
+          <div class="login-sample" aria-hidden="true">
+            <span class="dot"></span>
+            <div><b>Outlet offline on Zomato</b><small>Example alert · sent on WhatsApp and email</small></div>
+            <em>Alert</em>
+          </div>
         </div>
         <div class="login-platforms">
+          <small>Works with</small>
           <img src="assets/zomato.png" alt="Zomato"><img src="assets/swiggy.png" alt="Swiggy"><img src="assets/google.png" alt="Google">
         </div>
       </aside>

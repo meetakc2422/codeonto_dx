@@ -7,3 +7,4 @@ openpyxl==3.1.5
 cryptography>=43
 pillow>=11
 rembg[cpu]==2.0.86
+sqlglot==30.26.0
