@@ -7,6 +7,7 @@ Codeonto's Zomato connector and the pipeline scrapers read).
 Per-account settings in .env (account "main" -> ZOMATO_MAIN_*):
     ZOMATO_MAIN_EMAIL            Zomato login email (OTP goes to this mailbox)
     ZOMATO_MAIN_IMAP_PASSWORD    mailbox password for IMAP
+    ZOMATO_MAIN_IMAP_HOST        optional: this login's own mail server (e.g. imap.gmail.com), else the shared one
 Shared: ZOMATO_IMAP_HOST (default imap.secureserver.net), ZOMATO_IMAP_PORT (993),
         ZOMATO_PUSH_URL + COOKIE_PUSH_SECRET (optional server push).
 """
@@ -38,8 +39,10 @@ def config(account: str) -> dict:
     return {
         "email": cfg[f"ZOMATO_{k}_EMAIL"],
         "imap_password": cfg[f"ZOMATO_{k}_IMAP_PASSWORD"],
-        "imap_host": os.getenv("ZOMATO_IMAP_HOST", "imap.secureserver.net"),
-        "imap_port": int(os.getenv("ZOMATO_IMAP_PORT", "993")),
+        # each login may use its own mail server (e.g. a Gmail address: imap.gmail.com + an app password);
+        # otherwise the shared ZOMATO_IMAP_HOST / ZOMATO_IMAP_PORT
+        "imap_host": os.getenv(f"ZOMATO_{k}_IMAP_HOST") or os.getenv("ZOMATO_IMAP_HOST", "imap.secureserver.net"),
+        "imap_port": int(os.getenv(f"ZOMATO_{k}_IMAP_PORT") or os.getenv("ZOMATO_IMAP_PORT", "993")),
     }
 
 
