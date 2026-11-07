@@ -171,3 +171,12 @@ ZOMATO_APP_SESSION_FILE = env("ZOMATO_APP_SESSION_FILE", str(BASE_DIR / "session
 # datacenter IPs on /gw/menu, so production fetches menus through it; empty = call Zomato directly
 ZOMATO_MENU_PROXY_URL = env("ZOMATO_MENU_PROXY_URL", "")
 SWIGGY_APP_SESSION_FILE = env("SWIGGY_APP_SESSION_FILE", str(BASE_DIR / "sessions" / "swiggy_app.json"))
+
+# WhatsApp alerts (Meta Cloud API) sent by `manage.py send_alerts`; templates are the ones approved for the business account
+WHATSAPP_PHONE_NUMBER_ID = env("WHATSAPP_PHONE_NUMBER_ID", "")
+WHATSAPP_BEARER_TOKEN = env("WHATSAPP_BEARER_TOKEN", "")
+WHATSAPP_TEMPLATE_LANG = env("WHATSAPP_TEMPLATE_LANG", "en")
+ALERT_OFFLINE_MIN_MINUTES = int(env("ALERT_OFFLINE_MIN_MINUTES", "10"))  # offline this long before alerting (no flapping)
+ALERT_LOOKBACK_HOURS = int(env("ALERT_LOOKBACK_HOURS", "6"))
+ALERT_AD_SPIKE_X = float(env("ALERT_AD_SPIKE_X", "2"))
+ALERT_AD_SPIKE_MIN = float(env("ALERT_AD_SPIKE_MIN", "500"))

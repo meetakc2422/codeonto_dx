@@ -10,7 +10,7 @@ while, the episode ends at the last check that saw the store offline, so the gap
 
 from datetime import datetime, timedelta, timezone
 
-from core import alerts, config as cfg, db, hours
+from core import alerts, config as cfg, db, hours, notify
 from core.common import ConfigError, log, require_env
 
 from .outlets import _cookies
@@ -158,4 +158,5 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             log.info("zomato uptime %s · %s (%s): went %s", s["brand"], s["outlet_name"], s["res_id"], change)
     log.info("zomato uptime: checked %s of %s stores, %s offline (%s went offline, %s came back)",
              checked, len(stores), offline, went_off, came_back)
+    notify.send(("offline", "online"))  # WhatsApp / email to the people who asked for them (Alerts settings)
     return ok

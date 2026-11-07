@@ -33,8 +33,17 @@ def _session_path() -> Path:
     return Path(settings.ZOMATO_APP_SESSION_FILE)
 
 
+def _stored() -> dict | None:
+    """The customer-app session saved in the database (Sessions page), which wins over the file."""
+    try:
+        from apps.integrations import sessions
+        return sessions.get("zomato", "customer_app")
+    except Exception:
+        return None
+
+
 def configured() -> bool:
-    return _session_path().exists()
+    return bool(_stored()) or _session_path().exists()
 
 
 class ZomatoAppError(Exception):
@@ -54,12 +63,20 @@ def import_curl(text: str) -> dict:
     path = _session_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"headers": headers, "updated_at": timezone.now().isoformat(timespec="seconds")}, indent=2))
+    try:  # keep the database copy (what the site reads first) in step with the file
+        from apps.integrations import sessions
+        sessions.put("zomato", "customer_app", {"headers": headers}, by="manage.py import")
+    except Exception:
+        log.warning("Could not save the zomato app session to the database; the file was saved")
     path.chmod(0o600)
     log.info("Saved %d Zomato app headers", len(headers))
     return headers
 
 
 def _headers() -> dict:
+    stored = _stored()
+    if stored and stored.get("headers"):
+        return stored["headers"]
     path = _session_path()
     if not path.exists():
         raise ZomatoAppError("Zomato isn't connected yet: an admin needs to run `manage.py zomato_app_session <curl file>` on the server.")

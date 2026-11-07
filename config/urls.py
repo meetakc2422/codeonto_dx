@@ -5,6 +5,8 @@ from django.views.static import serve
 
 from apps.metrics import api as metrics
 from apps.outlets import api as outlets
+from apps.alerts import recipients_api
+from apps.integrations import sessions_api
 from apps.outlets import auth_api, staff_api, team_api
 from apps.reviews import api as reviews
 from apps.stockouts import api as stockouts
@@ -27,6 +29,7 @@ admin.site.index_title = "Clients, brands & outlet mapping"
 
 api = [
     path("auth/me", auth_api.me),
+    path("staff/sessions", sessions_api.platform_sessions),
     path("auth/login", auth_api.login_view),
     path("auth/otp/request", auth_api.otp_request),
     path("auth/otp/verify", auth_api.otp_verify),
@@ -40,6 +43,9 @@ api = [
     path("industries", outlets.industries),
     path("clients", outlets.clients),
     path("clients/<int:client_id>/team", team_api.team),
+    path("clients/<int:client_id>/alert-recipients", recipients_api.recipients),
+    path("clients/<int:client_id>/alert-recipients/<int:rid>", recipients_api.recipient),
+    path("clients/<int:client_id>/alert-recipients/<int:rid>/test", recipients_api.recipient_test),
     path("clients/<int:client_id>/team/<int:user_id>", team_api.team_member),
     path("brands", outlets.brands),
     path("brands/<int:brand_id>", outlets.brand_detail),

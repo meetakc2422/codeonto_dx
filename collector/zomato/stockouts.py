@@ -10,7 +10,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
-from core import alerts, config as cfg, db, hours
+from core import alerts, config as cfg, db, hours, notify
 from core.common import ConfigError, log, require_env
 
 from .outlets import _cookies
@@ -193,7 +193,6 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         out_total += len(items); new_total += new; back_total += back
         log.info("zomato stockouts %s · %s (%s): %s out of stock, %s new, %s back", s["brand"], s["outlet_name"],
                  s["res_id"], len(items), new, back)
-    for client_id, p in pending.items():
-        alerts.stock_out_alert(client_id, p["name"], p["new"], p["back"])
+    notify.send(("oos", "oos_back"))  # WhatsApp / email per Alerts settings (scope, alert types, quiet hours)
     log.info("zomato stockouts: %s out of stock across %s stores (%s new, %s back)", out_total, len(stores), new_total, back_total)
     return ok

@@ -33,7 +33,11 @@ def send_email(to: list[str], subject: str, body_html: str) -> bool:
         log.info("Email not sent (%s): %s", "no recipients" if not to else "EMAIL_* not set in .env", subject)
         return False
     msg = MIMEMultipart("alternative")
-    msg["Subject"], msg["From"], msg["To"] = subject, user, ", ".join(to)
+    sender = os.getenv("EMAIL_FROM") or (user if "@" in user else "")  # with Amazon SES the SMTP user is an access key, not an address
+    if not sender:
+        log.info("Email not sent: set EMAIL_FROM in .env (the address mail comes from): %s", subject)
+        return False
+    msg["Subject"], msg["From"], msg["To"] = subject, sender, ", ".join(to)
     msg.attach(MIMEText(body_html, "html"))
     try:
         port = int(os.getenv("EMAIL_PORT", "465"))
@@ -42,7 +46,7 @@ def send_email(to: list[str], subject: str, body_html: str) -> bool:
             if port != 465:
                 s.starttls()
             s.login(user, password)
-            s.sendmail(user, to, msg.as_string())
+            s.sendmail(sender, to, msg.as_string())
         log.info("Email sent to %s: %s", ", ".join(to), subject)
         return True
     except Exception as e:  # an alert failing must never stop the collector

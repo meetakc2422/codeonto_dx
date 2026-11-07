@@ -225,8 +225,8 @@ function renderSidebar() {
     html += navLink("overview", "Overview");
   }
   html += `<div class="nav-group">Setup</div>${state.me?.outlet_limited ? "" : navLink("setup", "Brands & Outlets")}` +
-    (state.me?.can_manage && state.me?.client ? navLink("team", "Team") + navLink("billing", "Billing") : "") + navLink("profile", "Profile");
-  if (state.me?.is_staff) html += `<div class="nav-group">Client management</div>${navLink("clients", "Clients")}`;
+    (state.me?.can_manage && state.me?.client ? navLink("team", "Team") + navLink("alert-settings", "Alerts settings") + navLink("billing", "Billing") : "") + navLink("profile", "Profile");
+  if (state.me?.is_staff) html += `<div class="nav-group">Client management</div>${navLink("clients", "Clients")}${navLink("sessions", "Sessions")}`;
   $("#sidebar").innerHTML = html;
 }
 
@@ -328,6 +328,13 @@ async function render() {
   document.body.classList.remove("nav-open");
 
   // staff-only client management, independent of the selected brand
+  if (route === "sessions") {
+    if (!state.me.is_staff) { location.hash = "#/overview"; return; }
+    $("#filters").style.display = "none";
+    try { await renderSessions(page); }
+    catch (e) { page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(e.message)}</p></div>`; }
+    return;
+  }
   if (route === "clients") {
     if (!state.me.is_staff) { location.hash = "#/overview"; return; }
     $("#filters").style.display = "none";
@@ -347,6 +354,14 @@ async function render() {
   }
 
   // owners manage their own team; staff arrive from a client's page with its id in the address
+  if (route === "alert-settings") {
+    const clientId = Number(routeParam()) || state.me.client?.id;
+    if (!state.me.can_manage || !clientId) { location.hash = state.me.is_staff ? "#/clients" : "#/overview"; return; }
+    $("#filters").style.display = "none";
+    try { await renderAlertSettings(page, clientId); }
+    catch (e) { page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(e.message)}</p></div>`; }
+    return;
+  }
   if (route === "team") {
     const clientId = Number(routeParam()) || state.me.client?.id;
     if (!state.me.can_manage || !clientId) { location.hash = state.me.is_staff ? "#/clients" : "#/overview"; return; }
@@ -1465,6 +1480,133 @@ async function renderReconciliation(page) {
   }));
   $("#payoutIssueClear")?.addEventListener("click", () => { payoutFilters.issue = ""; renderReconciliation(page); });
   page.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => togglePayoutDetail(b.closest("tr"), Number(b.dataset.open))));
+}
+
+// ---------- alert settings: who gets WhatsApp / email alerts, for which outlets and alert types ----------
+async function renderAlertSettings(page, clientId) {
+  const d = await api(`/clients/${clientId}/alert-recipients`);
+  const base = `/clients/${clientId}/alert-recipients`;
+  const scopeText = (r) => r.outlet_ids.length ? plural(r.outlet_ids.length, "outlet") : r.brand_ids.length
+    ? d.brands.filter((b) => r.brand_ids.includes(b.id)).map((b) => b.name).join(", ") : "All outlets";
+  const card = (r) => `<div class="card al-card" data-r="${r.id ?? "new"}">
+    <div class="al-row">
+      <select name="channel"><option value="whatsapp" ${r.channel === "whatsapp" ? "selected" : ""}>WhatsApp</option><option value="email" ${r.channel === "email" ? "selected" : ""}>Email</option></select>
+      <input name="address" placeholder="${r.channel === "email" ? "ops@brand.com" : "919876543210"}" value="${esc(r.address)}">
+      <input name="name" placeholder="Name (e.g. Ops team)" value="${esc(r.name)}">
+      <label class="al-active"><input type="checkbox" name="is_active" ${r.is_active ? "checked" : ""}> Active</label>
+    </div>
+    <div class="al-toggles">${d.toggles.map((t) => `<label><input type="checkbox" name="${t.key}" ${r[t.key] ? "checked" : ""}> ${esc(t.label)}</label>`).join("")}</div>
+    <div class="al-row">
+      <span class="muted">For:</span>
+      <select name="scope"><option value="all" ${!r.brand_ids.length && !r.outlet_ids.length ? "selected" : ""}>All outlets</option>
+        <option value="brands" ${r.brand_ids.length && !r.outlet_ids.length ? "selected" : ""}>Chosen brands</option>
+        <option value="outlets" ${r.outlet_ids.length ? "selected" : ""}>Chosen outlets</option></select>
+      <span class="muted al-scope-text">${esc(scopeText(r))}</span>
+      <span class="muted" style="margin-left:auto">Quiet hours</span><input type="time" name="quiet_start" value="${r.quiet_start}"> to <input type="time" name="quiet_end" value="${r.quiet_end}">
+    </div>
+    <div class="al-pick" data-pick="brands" ${r.brand_ids.length && !r.outlet_ids.length ? "" : "hidden"}>${d.brands.map((b) => `<label><input type="checkbox" data-brand="${b.id}" ${r.brand_ids.includes(b.id) ? "checked" : ""}> ${esc(b.name)}</label>`).join("")}</div>
+    <div class="al-pick" data-pick="outlets" ${r.outlet_ids.length ? "" : "hidden"}><input type="search" class="al-search" placeholder="Search outlets…">
+      <div class="al-outlets">${d.outlets.map((o) => `<label data-q="${esc((o.name + " " + (o.city || "")).toLowerCase())}"><input type="checkbox" data-outlet="${o.id}" ${r.outlet_ids.includes(o.id) ? "checked" : ""}> ${esc(o.name)} <span class="muted">${esc(o.city || "")}</span></label>`).join("")}</div></div>
+    <div class="btn-row"><button class="btn blue" data-save>${r.id ? "Save" : "Add recipient"}</button>
+      ${r.id ? '<button class="btn light" data-test>Send test</button><button class="btn light" data-del>Remove</button>' : '<button class="btn light" data-cancel>Cancel</button>'}<span class="login-error" data-err></span></div>
+  </div>`;
+  const blank = { id: null, name: "", channel: "whatsapp", address: "", is_active: true, brand_ids: [], outlet_ids: [], quiet_start: "", quiet_end: "",
+    ...Object.fromEntries(d.toggles.map((t) => [t.key, true])) };
+  page.innerHTML = `<div class="page-head"><h2>Alerts settings</h2><p class="muted">Who gets WhatsApp or email alerts, for which outlets, and which alerts. Messages are grouped (one per alert type per check), and nothing is sent during a person's quiet hours.</p></div>
+    <div id="alList">${d.recipients.map(card).join("") || '<div class="card empty-state"><h3>No one gets alerts yet</h3><p>Add a WhatsApp number or email below.</p></div>'}</div>
+    <button class="btn blue" id="alAdd" style="margin:6px 0 18px">+ Add recipient</button>
+    <div class="card"><div class="card-head"><h3>Recent alerts</h3></div>
+      ${d.log.length ? `<div class="table-wrap"><table class="ov-table"><thead><tr><th>When</th><th>To</th><th>Alert</th><th>Message</th><th>Status</th></tr></thead><tbody>
+        ${d.log.map((l) => `<tr><td class="muted">${timeAgo(l.at)}</td><td>${esc(l.to)}</td><td>${esc(l.kind)}</td><td>${esc(l.summary)}</td>
+          <td>${l.status === "sent" ? '<span class="status replied">sent</span>' : `<span class="status pending" title="${esc(l.error)}">failed</span>`}</td></tr>`).join("")}</tbody></table></div>`
+        : '<p class="muted">No alerts sent yet.</p>'}</div>`;
+  const wire = (el) => {
+    const pick = (name) => el.querySelector(`[data-pick="${name}"]`);
+    el.querySelector('[name="scope"]').addEventListener("change", (e) => { pick("brands").hidden = e.target.value !== "brands"; pick("outlets").hidden = e.target.value !== "outlets"; });
+    el.querySelector(".al-search")?.addEventListener("input", (e) => {
+      const q = e.target.value.trim().toLowerCase();
+      el.querySelectorAll(".al-outlets label").forEach((l) => { l.hidden = q && !l.dataset.q.includes(q); });
+    });
+    const id = el.dataset.r === "new" ? null : Number(el.dataset.r), err = el.querySelector("[data-err]");
+    el.querySelector("[data-save]").addEventListener("click", async (e) => {
+      const v = (n) => el.querySelector(`[name="${n}"]`), scope = v("scope").value;
+      const body = { channel: v("channel").value, address: v("address").value, name: v("name").value, is_active: v("is_active").checked,
+        quiet_start: v("quiet_start").value, quiet_end: v("quiet_end").value,
+        brand_ids: scope === "brands" ? [...el.querySelectorAll("[data-brand]:checked")].map((c) => Number(c.dataset.brand)) : [],
+        outlet_ids: scope === "outlets" ? [...el.querySelectorAll("[data-outlet]:checked")].map((c) => Number(c.dataset.outlet)) : [],
+        ...Object.fromEntries(d.toggles.map((t) => [t.key, v(t.key).checked])) };
+      if (scope !== "all" && !body.brand_ids.length && !body.outlet_ids.length) { err.textContent = `Tick at least one ${scope === "brands" ? "brand" : "outlet"}, or choose All outlets.`; return; }
+      e.target.disabled = true;
+      try { await apiJSON(id ? `${base}/${id}` : base, id ? "PUT" : "POST", body); toast("Saved"); renderAlertSettings(page, clientId); }
+      catch (x) { err.textContent = x.message; e.target.disabled = false; }
+    });
+    el.querySelector("[data-test]")?.addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      try { await apiJSON(`${base}/${id}/test`, "POST", {}); toast("Test queued: the collector sends it on its next check, within about 5 minutes."); }
+      catch (x) { err.textContent = x.message; }
+      e.target.disabled = false;
+    });
+    el.querySelector("[data-del]")?.addEventListener("click", async () => {
+      if (!confirm("Remove this recipient? They stop getting alerts.")) return;
+      try { await api(`${base}/${id}`, {}, { method: "DELETE" }); toast("Removed"); renderAlertSettings(page, clientId); } catch (x) { err.textContent = x.message; }
+    });
+    el.querySelector("[data-cancel]")?.addEventListener("click", () => el.remove());
+  };
+  page.querySelectorAll(".al-card").forEach(wire);
+  $("#alAdd").addEventListener("click", () => {
+    if (page.querySelector('[data-r="new"]')) return;
+    $("#alList").querySelector(".empty-state")?.remove();
+    $("#alList").insertAdjacentHTML("beforeend", card(blank));
+    wire(page.querySelector('[data-r="new"]'));
+    page.querySelector('[data-r="new"] [name="address"]').focus();
+  });
+}
+
+// ---------- staff: Zomato / Swiggy login sessions, stored encrypted in the database for every machine to use ----------
+const SESSION_KINDS = {
+  merchant: { zomato: "Paste a request to zomato.com copied as cURL from the logged-in merchant dashboard (it carries the cookies), or the cookie JSON.",
+              swiggy: "Paste a request copied as cURL from the logged-in Swiggy partner app/dashboard (it carries access_token), or the session JSON." },
+  merchant_app: { zomato: "Paste the merchant app's “Restaurant ratings” request copied as cURL (x-zomato-access-token)." },
+  customer_app: { zomato: "Paste any request the Zomato customer app made to api.zomato.com, copied as cURL.",
+                  swiggy: "Paste any request the Swiggy customer app made, copied as cURL." },
+};
+
+async function renderSessions(page) {
+  const d = await api("/staff/sessions");
+  const when = (x) => (x ? `${timeAgo(x.updated_at)}<br><span class="muted">${esc(x.updated_by || "")}</span>` : '<span class="muted">not in database</span>');
+  const btn = (platform, kind, id, label) => `<button class="btn light" data-sess="${platform}|${kind}|${id ?? ""}|${esc(label)}">Refresh</button>`;
+  page.innerHTML = `<div class="page-head"><h2>Platform sessions</h2><p class="muted">Zomato and Swiggy logins, stored encrypted in the database. The Windows collector and this site read them from here, so a refresh here reaches every machine on its next run.</p></div>
+    <div class="card"><div class="card-head"><h3>Collector accounts</h3></div>
+      <div class="table-wrap"><table class="ov-table"><thead><tr><th>Account</th><th>Client</th><th>Reads from</th><th>Merchant dashboard</th><th></th><th>Merchant app (ratings)</th><th></th></tr></thead><tbody>
+      ${d.accounts.map((a) => `<tr class="${a.is_active ? "" : "muted"}"><td><b>${a.platform === "swiggy" ? "Swiggy" : "Zomato"} · ${esc(a.label)}</b>${a.is_active ? "" : " (inactive)"}</td>
+        <td>${esc(a.client)}</td><td>${a.reads_from === "database" ? '<span class="status replied">database</span>' : `<span class="muted">${esc(a.reads_from)}</span>`}</td>
+        <td>${when(a.merchant)}</td><td>${btn(a.platform, "merchant", a.id, `${a.platform} · ${a.label}`)}</td>
+        <td>${a.platform === "zomato" ? when(a.merchant_app) : '<span class="muted">—</span>'}</td><td>${a.platform === "zomato" ? btn(a.platform, "merchant_app", a.id, `${a.platform} · ${a.label} (merchant app)`) : ""}</td></tr>`).join("")}
+      </tbody></table></div>
+      <p class="muted" style="margin:10px 0 0">Saving a merchant session switches that account to read from the database. Collector logins (<code>run.py zomato session</code>) on any machine save here too once an account reads from the database.</p></div>
+    <div class="card" style="margin-top:14px"><div class="card-head"><h3>Competitor search (customer app)</h3></div>
+      <table class="ov-table"><tbody>${d.customer_app.map((c) => `<tr><td><b>${c.platform === "swiggy" ? "Swiggy" : "Zomato"}</b></td>
+        <td>${c.session ? when(c.session) : c.file ? '<span class="muted">server file only</span>' : '<span class="muted">not set</span>'}</td>
+        <td>${btn(c.platform, "customer_app", "", `${c.platform} customer app`)}</td></tr>`).join("")}</tbody></table></div>`;
+  page.querySelectorAll("[data-sess]").forEach((b) => b.addEventListener("click", () => {
+    const [platform, kind, id, label] = b.dataset.sess.split("|");
+    document.querySelector(".link-modal")?.remove();
+    const m = document.createElement("div");
+    m.className = "link-modal";
+    m.innerHTML = `<div class="card link-box"><div class="card-head"><h3>Refresh ${esc(label)}</h3><button class="btn light" data-close>Cancel</button></div>
+      <p class="muted" style="margin-top:0">${SESSION_KINDS[kind][platform] || ""} It's stored encrypted; nobody sees it again after saving.</p>
+      <textarea id="sessText" rows="10" style="width:100%;font-family:monospace;font-size:12px" placeholder="curl -H '...' ..."></textarea>
+      <p class="login-error" id="sessErr"></p><div class="btn-row"><button class="btn blue" id="sessSave">Save session</button></div></div>`;
+    document.body.appendChild(m);
+    m.addEventListener("click", (e) => { if (e.target === m || e.target.closest("[data-close]")) m.remove(); });
+    m.querySelector("#sessSave").addEventListener("click", async (e) => {
+      e.target.disabled = true;
+      try {
+        await apiJSON("/staff/sessions", "POST", { platform, kind, account_id: id ? Number(id) : null, text: m.querySelector("#sessText").value });
+        m.remove(); toast("Session saved"); renderSessions(page);
+      } catch (err) { m.querySelector("#sessErr").textContent = err.message; e.target.disabled = false; }
+    });
+  }));
 }
 
 // ---------- statement view: per outlet, its payout cycles as columns and the statement lines as rows ----------
@@ -3029,7 +3171,7 @@ async function renderClient(page, clientId) {
 
     <div class="grid cols-2-even">
       <div class="card">
-        <div class="card-head"><h3>Logins</h3><div class="btn-row"><a class="btn light" href="#/billing/${clientId}">Plan &amp; billing</a><a class="btn light" href="#/team/${clientId}">Manage team</a></div></div>
+        <div class="card-head"><h3>Logins</h3><div class="btn-row"><a class="btn light" href="#/billing/${clientId}">Plan &amp; billing</a><a class="btn light" href="#/team/${clientId}">Manage team</a><a class="btn light" href="#/alert-settings/${clientId}">Alerts settings</a></div></div>
         <table><thead><tr><th>Login</th><th>Role</th><th>Last login</th></tr></thead>
           <tbody>${c.user_list.length ? c.user_list.map((u) => `<tr>
             <td><b>${esc(u.username)}</b><br><span class="muted">${esc([u.name, u.email].filter(Boolean).join(" · "))}</span>${u.is_active ? "" : ' <span class="status pending">disabled</span>'}</td>

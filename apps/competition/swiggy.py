@@ -39,8 +39,17 @@ def _session_path() -> Path:
     return Path(settings.SWIGGY_APP_SESSION_FILE)
 
 
+def _stored() -> dict | None:
+    """The customer-app session saved in the database (Sessions page), which wins over the file."""
+    try:
+        from apps.integrations import sessions
+        return sessions.get("swiggy", "customer_app")
+    except Exception:
+        return None
+
+
 def configured() -> bool:
-    return _session_path().exists()
+    return bool(_stored()) or _session_path().exists()
 
 
 def import_curl(text: str) -> dict:
@@ -56,12 +65,20 @@ def import_curl(text: str) -> dict:
     path = _session_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps({"headers": headers, "updated_at": timezone.now().isoformat(timespec="seconds")}, indent=2))
+    try:  # keep the database copy (what the site reads first) in step with the file
+        from apps.integrations import sessions
+        sessions.put("swiggy", "customer_app", {"headers": headers}, by="manage.py import")
+    except Exception:
+        log.warning("Could not save the swiggy app session to the database; the file was saved")
     path.chmod(0o600)
     log.info("Saved %d Swiggy app headers", len(headers))
     return headers
 
 
 def _headers() -> dict:
+    stored = _stored()
+    if stored and stored.get("headers"):
+        return stored["headers"]
     path = _session_path()
     if not path.exists():
         raise SwiggyAppError("Swiggy isn't connected yet: an admin needs to run `manage.py swiggy_app_session <curl file>` on the server.")

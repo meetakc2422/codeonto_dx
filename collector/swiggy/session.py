@@ -12,7 +12,8 @@ Shared: SWIGGY_PUSH_URL + COOKIE_PUSH_SECRET (optional server push).
 
 import tempfile
 
-from core.common import ConfigError, account_key, log, push_to_server, require_env, save_session, session_path
+from core import db
+from core.common import ConfigError, account_key, log, push_to_server, require_env
 
 ORDERS_URL = "https://partner.swiggy.com/orders"
 # Pages that make the portal call vhc-composer with a full-privilege token
@@ -117,6 +118,6 @@ def run(account: str, headless: bool = False) -> bool:
     except Exception as e:
         log.warning("Session saved, but listing restaurants failed: %s", e)
         session["outlets"] = []
-    save_session(session_path("swiggy", account), session)
+    log.info("Swiggy session for '%s' saved to the %s", account, db.save_account_session("swiggy", account, session))
     push_to_server("SWIGGY_PUSH_URL", session)
     return True

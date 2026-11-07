@@ -772,7 +772,7 @@ a.btn.disabled { opacity: .45; pointer-events: none; }
 .ov-issue { font-size: 11px; font-weight: 600; padding: 2px 7px; border-radius: 999px; background: #f1f5f9; color: #475569; white-space: nowrap; }
 .ov-issue.money { background: #fff1f1; color: var(--red); }
 .payout-issue-btn { all: unset; cursor: pointer; display: inline-flex; gap: 6px; align-items: baseline; padding: 2px 6px; border-radius: 6px; }
-.payout-issue-btn:hover, .payout-issue-btn.on { background: #eef6fd; }
+.payout-issue-btn:hover, .payout-issue-btn.on { background: var(--blue-soft); }
 .payout-issue-btn .muted { font-size: 12px; text-decoration: underline; }
 .ov-issue[data-payissue] { cursor: pointer; } .ov-issue[data-payissue]:hover { outline: 1px solid currentColor; }
 .payout-issues a { color: inherit; text-decoration: none; } .payout-issues a .muted { text-decoration: underline; }
@@ -841,6 +841,20 @@ tr.stmt-sec { cursor: pointer; } tr.stmt-sec td { font-weight: 600; }
 tr.stmt-item td.stmt-first { padding-left: 30px; }
 tr.stmt-net td { font-weight: 700; background: #f5f8fc; } tr.stmt-net td.stmt-first { background: #f5f8fc; }
 table.stmt .off { opacity: .35; }
+
+/* alert settings */
+.al-card { margin-bottom: 12px; display: grid; gap: 10px; }
+.al-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.al-row input:not([type=checkbox]), .al-row select { height: 34px; border: 1px solid var(--border); border-radius: 8px; padding: 0 10px; font-size: 13.5px; }
+.al-row input[name=address] { min-width: 210px; } .al-row input[name=name] { min-width: 180px; }
+.al-active { margin-left: auto; font-size: 13px; }
+.al-toggles { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; }
+.al-pick { border: 1px solid var(--border); border-radius: 10px; padding: 10px; display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; }
+.al-pick[hidden] { display: none; }
+.al-pick .al-search { width: 100%; height: 32px; border: 1px solid var(--border); border-radius: 8px; padding: 0 10px; }
+.al-outlets { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 14px; max-height: 260px; overflow: auto; width: 100%; }
+.al-outlets label[hidden] { display: none; }
+
 /* ---------- Pulse light theme ---------- */
 :root { --brand-gradient: linear-gradient(90deg, #f97316, #e11d48); }
 .brand-logo { display: inline-flex; align-items: baseline; gap: 0; font-size: 24px; font-weight: 700; letter-spacing: -.03em; color: var(--text); text-decoration: none; white-space: nowrap; }

@@ -7,6 +7,8 @@
     python run.py all outlets                      # every account in ACCOUNTS
     python run.py all session --daily-at 06:00     # keep running, repeat daily
     python run.py all session --check              # validate .env only, no external calls
+    python run.py alerts send --every 15           # WhatsApp/email: low reviews, payout problems, ad spikes
+                                                   # (offline and stock-out alerts go out from those jobs)
 """
 
 import argparse
@@ -31,6 +33,7 @@ from core.common import ConfigError, log, session_path, setup_logging  # noqa: E
 TASKS = {
     "zomato": {"session": "zomato.session", "outlets": "zomato.outlets", "reviews": "zomato.reviews", "stockouts": "zomato.stockouts", "uptime": "zomato.uptime", "payouts": "zomato.payouts", "business": "zomato.business", "timings": "zomato.timings", "complaints": "zomato.complaints", "item_sales": "zomato.item_sales", "ratings": "zomato.ratings"},
     "swiggy": {"session": "swiggy.session", "outlets": "swiggy.outlets", "reviews": "swiggy.reviews", "business": "swiggy.business", "payouts": "swiggy.payouts", "complaints": "swiggy.complaints", "ratings": "swiggy.ratings"},
+    "alerts": {"send": "core.notify"},
     "google": {"session": "google_business.session", "outlets": "google_business.outlets", "reviews": "google_business.reviews", "performance": "google_business.performance", "profile": "google_business.profile"},
 }
 
@@ -126,7 +129,11 @@ def main() -> int:
     setup_logging()
 
     try:
-        if args.platform == "all":
+        if args.platform == "alerts":  # not tied to a platform login
+            if args.task not in TASKS["alerts"]:
+                parser.error("alerts has one task: send (e.g. `python run.py alerts send --every 15`)")
+            jobs = [("alerts", "-")]
+        elif args.platform == "all":
             jobs = [(p, a) for p, a in configured_accounts() if args.task in TASKS[p]]
         else:
             if args.task not in TASKS[args.platform]:

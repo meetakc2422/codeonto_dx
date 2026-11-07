@@ -5,6 +5,7 @@ covering complaints raised in the last SWIGGY_COMPLAINT_DAYS days (default 30), 
 decisions made after the first sync are picked up.
 """
 
+import re
 import time
 from datetime import date, datetime, timedelta, timezone
 
@@ -93,6 +94,21 @@ def _row(c: dict, outlet_id: int) -> dict:
     }
 
 
+def _fetch_skipping(creds: dict, batch: list[str], start, end, refused: list[str]) -> list[dict]:
+    """_fetch, but one outlet this login may not read no longer sinks the whole batch: on "Invalid Outlet ID /
+    Unauthorised" the batch is split in halves until the refused outlets are found; they're noted and skipped."""
+    try:
+        return _fetch(creds, batch, start, end)
+    except RuntimeError as e:
+        if not re.search(r"invalid outlet|unauthori", str(e), re.I):
+            raise
+        if len(batch) == 1:
+            refused.append(batch[0])
+            return []
+        mid = len(batch) // 2
+        return _fetch_skipping(creds, batch[:mid], start, end, refused) + _fetch_skipping(creds, batch[mid:], start, end, refused)
+
+
 def run_all(accounts: list[str], headless: bool = False, force: bool = False) -> bool:
     try:
         config("")
@@ -116,20 +132,25 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     creds = {a["id"]: db.load_credentials(a) for a in accs.values()}
     by_id = {a["id"]: a for a in accs.values()}
     groups: dict[int, dict[str, int]] = {}
+    visible = {i: {str(x) for x in c.get("outlets") or []} for i, c in creds.items()}
+    unreachable = []
     for s in stores:
-        # the account whose restaurant list has this id; else the catalog's owner; else the first account
-        acc_id = next((i for i, c in creds.items() if s["res_id"] in {str(x) for x in c.get("outlets") or []}), None)
+        # the account whose restaurant list has this id; else, when no login lists its outlets, the catalog's owner
+        acc_id = next((i for i, ids in visible.items() if str(s["res_id"]) in ids), None)
         if acc_id is None:
+            if any(visible.values()):  # the logins do list their outlets and none has this one: asking would fail the batch
+                unreachable.append(str(s["res_id"]))
+                continue
             acc_id = s["account_id"] if s["account_id"] in by_id else next(iter(by_id))
         groups.setdefault(acc_id, {})[str(s["res_id"])] = s["outlet_id"]
 
-    ok, new, total = True, 0, 0
+    ok, new, total, refused = True, 0, 0, []
     for acc_id, outlets in groups.items():
         res_ids = list(outlets)
         for i in range(0, len(res_ids), size):
             batch = res_ids[i:i + size]
             try:
-                rows = [_row(c, outlets[str(c.get("restaurantId"))]) for c in _fetch(creds[acc_id], batch, start, end)
+                rows = [_row(c, outlets[str(c.get("restaurantId"))]) for c in _fetch_skipping(creds[acc_id], batch, start, end, refused)
                         if c.get("complaintId") and str(c.get("restaurantId")) in outlets]
                 with db.transaction() as cur:
                     new += sum(complaints.save(cur, r) for r in rows)
@@ -141,5 +162,9 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             except Exception as e:
                 log.exception("swiggy complaints %s failed: %s", by_id[acc_id]["label"], e)
                 ok = False
+    if unreachable:
+        log.warning("swiggy complaints: %s mapped outlets aren't in any login's outlet list, skipped: %s", len(unreachable), ", ".join(unreachable))
+    if refused:
+        log.warning("swiggy complaints: Swiggy refused %s outlets, skipped: %s", len(refused), ", ".join(refused))
     log.info("swiggy complaints: %s saved, %s new", total, new)
     return ok

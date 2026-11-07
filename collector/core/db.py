@@ -45,14 +45,66 @@ def load_credentials(account: dict) -> dict:
     ref = account["credentials_ref"] or ""
     if ref.startswith("db:google:"):
         return _google_connection(account, int(ref.rsplit(":", 1)[1]))
+    if ref.startswith("db:session"):
+        data = load_session(account, "merchant")
+        if data is None:
+            raise ConfigError(f"Account {account['label']}: no session saved in the database yet. Refresh it on the Sessions page or run `run.py <platform> session`")
+        return data
     if not ref.startswith("file:"):
-        raise ConfigError(f"Account {account['label']}: credentials_ref must be file:/path or db:google:<id> (got '{ref or 'empty'}')")
+        raise ConfigError(f"Account {account['label']}: credentials_ref must be file:/path, db:session or db:google:<id> (got '{ref or 'empty'}')")
     path = Path(ref[5:]).expanduser()
     if not path.is_absolute():  # file:sessions/x.json: relative to the collector folder, so one database row works on any machine
         path = PROJECT_DIR / path
     if not path.exists():
         raise ConfigError(f"Account {account['label']}: session file not found: {path}")
     return json.loads(path.read_text())
+
+
+def _fernet():
+    from cryptography.fernet import Fernet
+    return Fernet(require_env("GOOGLE_TOKEN_KEY")["GOOGLE_TOKEN_KEY"].encode())
+
+
+def load_session(account: dict, kind: str) -> dict | None:
+    """An account's session saved (encrypted) in platform_sessions by the Sessions page or a collector login."""
+    from cryptography.fernet import InvalidToken
+
+    with transaction() as cur:
+        cur.execute("SELECT data_enc FROM platform_sessions WHERE account_id = %s AND kind = %s", (account["id"], kind))
+        row = cur.fetchone()
+    if not row:
+        return None
+    try:
+        return json.loads(_fernet().decrypt(row["data_enc"].encode()).decode())
+    except InvalidToken:
+        raise ConfigError(f"Account {account['label']}: saved session cannot be decrypted; GOOGLE_TOKEN_KEY differs from the dashboard's")
+
+
+def store_session(account: dict, platform: str, kind: str, data: dict) -> None:
+    """Save (encrypted) an account's session to platform_sessions; the site and every collector read it from there."""
+    import platform as _host
+
+    enc, by = _fernet().encrypt(json.dumps(data).encode()).decode(), f"collector@{_host.node()}"[:150]
+    with transaction() as cur:
+        cur.execute("UPDATE platform_sessions SET data_enc = %s, updated_by = %s, updated_at = now() WHERE account_id = %s AND kind = %s",
+                    (enc, by, account["id"], kind))
+        if not cur.rowcount:
+            cur.execute("INSERT INTO platform_sessions (platform, account_id, kind, data_enc, updated_by, updated_at) VALUES (%s, %s, %s, %s, %s, now())",
+                        (platform, account["id"], kind, enc, by))
+
+
+def save_account_session(platform: str, label: str, data: dict, stamp: bool = True) -> str:
+    """After a login: save the session where this account reads it from (the database for db:session accounts,
+    otherwise its file, as before). Returns where it went."""
+    from .common import save_session, session_path
+
+    with transaction() as cur:
+        account = get_account(cur, platform, label)
+    if (account["credentials_ref"] or "").startswith("db:session"):
+        store_session(account, platform, "merchant", data)
+        return "database"
+    save_session(session_path(platform, label), data, stamp=stamp)
+    return "file"
 
 
 def _google_connection(account: dict, connection_id: int) -> dict:

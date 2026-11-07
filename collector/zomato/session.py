@@ -18,7 +18,8 @@ import re
 import time
 from datetime import datetime
 
-from core.common import ConfigError, account_key, log, push_to_server, require_env, save_session, session_path, PROJECT_DIR
+from core import db
+from core.common import ConfigError, account_key, log, push_to_server, require_env, PROJECT_DIR
 
 LOGIN_URL = "https://www.zomato.com/partners/o2-business/"
 OTP_SUBJECT = "Log in to Zomato"
@@ -175,6 +176,6 @@ def run(account: str, headless: bool = False) -> bool:
     if not cookies:
         log.error("Zomato refresh failed for '%s'", account)
         return False
-    save_session(session_path("zomato", account), cookies, stamp=False)
+    log.info("Zomato session for '%s' saved to the %s", account, db.save_account_session("zomato", account, cookies, stamp=False))
     push_to_server("ZOMATO_PUSH_URL", cookies)
     return True

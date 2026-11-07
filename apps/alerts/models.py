@@ -27,3 +27,23 @@ class Alert(models.Model):
 
     def __str__(self):
         return f"{self.kind} · {self.outlet}"
+
+
+class AlertDelivery(models.Model):
+    """One alert message sent (or attempted) to one recipient. ref identifies what it was about, e.g. offline:123
+    (an offline episode) or review:456, so the same thing is never sent twice to the same person."""
+
+    recipient = models.ForeignKey("stockouts.AlertRecipient", on_delete=models.SET_NULL, null=True, related_name="deliveries")
+    client = models.ForeignKey("outlets.Client", on_delete=models.CASCADE, related_name="+")
+    kind = models.CharField(max_length=30)
+    ref = models.CharField(max_length=160)
+    channel = models.CharField(max_length=10)
+    address = models.CharField(max_length=255)
+    status = models.CharField(max_length=10, help_text="sent, failed")
+    summary = models.TextField(blank=True)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "alert_deliveries"
+        indexes = [models.Index(fields=["client", "created_at"]), models.Index(fields=["kind", "ref"])]

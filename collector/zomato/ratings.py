@@ -39,7 +39,14 @@ def import_curl(account: str, text: str) -> int:
     if "x-zomato-access-token" not in headers:
         raise ConfigError("No x-zomato-access-token in that cURL: copy a merchant-app request to api.zomato.com")
     m = re.search(r'res_id\\?"\s*:\s*\\?"(\d+)', text)
-    save_session(_app_path(account), {"headers": headers, "res_id": m.group(1) if m else None})
+    data = {"headers": headers, "res_id": m.group(1) if m else None}
+    try:  # the database copy is what every machine reads; the file stays as a fallback
+        with db.transaction() as cur:
+            acc = db.get_account(cur, "zomato", account)
+        db.store_session(acc, "zomato", "merchant_app", data)
+    except Exception as e:
+        log.warning("zomato ratings: couldn't save %s's merchant-app session to the database (%s); saved to the file only", account, e)
+    save_session(_app_path(account), data)
     return len(headers)
 
 
@@ -107,12 +114,12 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     ok, saved, seen = True, 0, set()
     for label, acc in accs.items():
         path = _app_path(label)
-        if not path.exists():
-            log.warning("zomato ratings %s: no merchant-app session (%s); skipping. Import one with `python -m zomato.ratings import %s <curl file>`",
+        saved_session = db.load_session(acc, "merchant_app") or (json.loads(path.read_text()) if path.exists() else None)
+        if not saved_session:
+            log.warning("zomato ratings %s: no merchant-app session (Sessions page, or %s); skipping. Import one with `python -m zomato.ratings import %s <curl file>`",
                         label, path.name, label)
             continue
         own = [str(s["res_id"]) for s in stores if s["account_id"] == acc["id"]] or list(outlet_of)
-        saved_session = json.loads(path.read_text())
         headers = saved_session["headers"]
         if saved_session.get("res_id"):  # the outlet the copied request was made from: known to open for this login
             own = [saved_session["res_id"], *[r for r in own if r != saved_session["res_id"]]]
@@ -158,6 +165,8 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
 
 
 if __name__ == "__main__":
+    from core.common import setup_logging
+    setup_logging()
     if len(sys.argv) == 4 and sys.argv[1] == "import":
         print(f"saved {import_curl(sys.argv[2], open(sys.argv[3]).read())} headers for {sys.argv[2]}")
     else:
