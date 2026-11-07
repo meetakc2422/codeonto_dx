@@ -1,7 +1,17 @@
 from django.conf import settings
 from django.contrib import admin
 from django.urls import path, re_path
-from django.views.static import serve
+from django.views.static import serve as _serve
+
+
+
+def serve(request, path, document_root=None):
+    """The dashboard's files, with Cache-Control: no-cache so browsers check for a new version on every load (a cheap
+    304 when nothing changed) and never keep running an old app.js after a deploy."""
+    resp = _serve(request, path, document_root=document_root)
+    resp["Cache-Control"] = "no-cache"
+    return resp
+
 
 from apps.metrics import api as metrics
 from apps.outlets import api as outlets
