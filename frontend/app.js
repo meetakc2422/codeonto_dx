@@ -3263,7 +3263,7 @@ function loginShell(form) {
   return `
     <div class="login-screen" id="loginScreen">
       <aside class="login-brand">
-        <span class="brand-logo login-logo">P<i>u</i>lse<small>by codeonto</small></span>
+        <span class="brand-logo login-logo"><img class="brand-mark" src="assets/logo-mark.svg" alt="">Compass<small>by codeonto</small></span>
         <div class="login-pitch">
           <h1>Every outlet, every platform, <span>one dashboard.</span></h1>
           <p>Reviews, complaints, uptime, payouts and item sales from Zomato, Swiggy and Google, in one place.</p>
@@ -3279,7 +3279,7 @@ function loginShell(form) {
       </aside>
       <main class="login-main">
         <form class="login-card" id="loginForm">
-          <span class="brand-logo login-logo login-logo-sm">P<i>u</i>lse<small>by codeonto</small></span>
+          <span class="brand-logo login-logo login-logo-sm"><img class="brand-mark" src="assets/logo-mark.svg" alt="">Compass<small>by codeonto</small></span>
           ${form}
         </form>
       </main>
