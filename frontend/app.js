@@ -1571,16 +1571,37 @@ const SESSION_KINDS = {
                   swiggy: "Paste any request the Swiggy customer app made, copied as cURL." },
 };
 
+// the automatic "log in again" button: queued here, run by the collector worker on the Windows server
+const fmtClock = (x) => new Date(x).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+function sessionHealth(a) {
+  if (a.expired_at) return `<span class="status sess-bad" title="${esc(a.expired_reason || "")}">Expired ${timeAgo(a.expired_at)}</span>`;
+  return a.reads_from === "database" ? '<span class="status replied">OK</span>' : '<span class="muted">—</span>';
+}
+function loginButton(a) {
+  const r = a.refresh;
+  if (r && (r.status === "queued" || r.status === "running")) {
+    const what = r.status === "queued" ? "Waiting for the collector…" : "Logging in…";
+    return `<button class="btn light" disabled title="${esc(what)}">⏳ Refreshing…</button>
+      <div class="sess-note">${esc(what)} Started by ${esc(r.requested_by)} at ${fmtClock(r.requested_at)}</div>`;
+  }
+  const last = !r ? "" : r.status === "done"
+    ? `<div class="sess-note ok">✓ Logged in again ${timeAgo(r.finished_at)} by ${esc(r.worker || "collector")}</div>`
+    : `<div class="sess-note bad">✕ Last try failed ${timeAgo(r.finished_at)}: ${esc(r.error || "unknown error")}</div>`;
+  return `<button class="btn blue" data-login="${a.id}" data-label="${esc(`${a.platform} · ${a.label}`)}">Log in again</button>${last}`;
+}
+
+let sessionsPoll = null;
 async function renderSessions(page) {
+  clearTimeout(sessionsPoll);
   const d = await api("/staff/sessions");
   const when = (x) => (x ? `${timeAgo(x.updated_at)}<br><span class="muted">${esc(x.updated_by || "")}</span>` : '<span class="muted">not in database</span>');
-  const btn = (platform, kind, id, label) => `<button class="btn light" data-sess="${platform}|${kind}|${id ?? ""}|${esc(label)}">Refresh</button>`;
+  const btn = (platform, kind, id, label) => `<button class="btn light" data-sess="${platform}|${kind}|${id ?? ""}|${esc(label)}">Paste session</button>`;
   page.innerHTML = `<div class="page-head"><h2>Platform sessions</h2><p class="muted">Zomato and Swiggy logins, stored encrypted in the database. The Windows collector and this site read them from here, so a refresh here reaches every machine on its next run.</p></div>
     <div class="card"><div class="card-head"><h3>Collector accounts</h3></div>
-      <div class="table-wrap"><table class="ov-table"><thead><tr><th>Account</th><th>Client</th><th>Reads from</th><th>Merchant dashboard</th><th></th><th>Merchant app (ratings)</th><th></th></tr></thead><tbody>
+      <div class="table-wrap"><table class="ov-table"><thead><tr><th>Account</th><th>Client</th><th>Status</th><th>Merchant dashboard</th><th>Automatic login</th><th></th><th>Merchant app (ratings)</th><th></th></tr></thead><tbody>
       ${d.accounts.map((a) => `<tr class="${a.is_active ? "" : "muted"}"><td><b>${a.platform === "swiggy" ? "Swiggy" : "Zomato"} · ${esc(a.label)}</b>${a.is_active ? "" : " (inactive)"}</td>
-        <td>${esc(a.client)}</td><td>${a.reads_from === "database" ? '<span class="status replied">database</span>' : `<span class="muted">${esc(a.reads_from)}</span>`}</td>
-        <td>${when(a.merchant)}</td><td>${btn(a.platform, "merchant", a.id, `${a.platform} · ${a.label}`)}</td>
+        <td>${esc(a.client)}</td><td>${sessionHealth(a)}<div class="sess-note">reads from ${esc(a.reads_from)}</div></td>
+        <td>${when(a.merchant)}</td><td class="sess-login">${loginButton(a)}</td><td>${btn(a.platform, "merchant", a.id, `${a.platform} · ${a.label}`)}</td>
         <td>${a.platform === "zomato" ? when(a.merchant_app) : '<span class="muted">—</span>'}</td><td>${a.platform === "zomato" ? btn(a.platform, "merchant_app", a.id, `${a.platform} · ${a.label} (merchant app)`) : ""}</td></tr>`).join("")}
       </tbody></table></div>
       <p class="muted" style="margin:10px 0 0">Saving a merchant session switches that account to read from the database. Collector logins (<code>run.py zomato session</code>) on any machine save here too once an account reads from the database.</p></div>
@@ -1588,6 +1609,22 @@ async function renderSessions(page) {
       <table class="ov-table"><tbody>${d.customer_app.map((c) => `<tr><td><b>${c.platform === "swiggy" ? "Swiggy" : "Zomato"}</b></td>
         <td>${c.session ? when(c.session) : c.file ? '<span class="muted">server file only</span>' : '<span class="muted">not set</span>'}</td>
         <td>${btn(c.platform, "customer_app", "", `${c.platform} customer app`)}</td></tr>`).join("")}</tbody></table></div>`;
+  page.querySelectorAll("[data-login]").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    b.textContent = "⏳ Queuing…";
+    try {
+      await apiJSON(`/staff/sessions/${b.dataset.login}/refresh`, "POST", {});
+      toast(`Logging in to ${b.dataset.label} again. This takes a minute or two.`);
+    } catch (err) {
+      toast(err.status === 409 ? "Someone already started a refresh for this login" : `Couldn't start: ${err.message}`);
+    }
+    renderSessions(page);
+    checkSessionAlerts();
+  }));
+  // while a login is queued or running, keep the page current so everyone sees the same state
+  if (d.accounts.some((a) => a.refresh && ["queued", "running"].includes(a.refresh.status))) {
+    sessionsPoll = setTimeout(() => { if (currentRoute() === "sessions" && page.isConnected) renderSessions(page).catch(() => {}); }, 5000);
+  } else checkSessionAlerts();
   page.querySelectorAll("[data-sess]").forEach((b) => b.addEventListener("click", () => {
     const [platform, kind, id, label] = b.dataset.sess.split("|");
     document.querySelector(".link-modal")?.remove();
@@ -1825,7 +1862,22 @@ async function checkOffline() {
   }
 }
 
+// staff: a banner while any Zomato / Swiggy login has expired, linking to the Sessions page to log in again
+async function checkSessionAlerts() {
+  const bar = $("#sessionBanner");
+  if (!bar || !state.me?.is_staff) return;
+  let d;
+  try { d = await api("/staff/sessions/alerts"); } catch { return; }
+  if (!d.expired.length) { bar.hidden = true; return; }
+  const names = d.expired.map((a) => `${a.platform === "swiggy" ? "Swiggy" : "Zomato"} · ${esc(a.label)}${a.refreshing ? " (logging in…)" : ""}`).join(", ");
+  bar.innerHTML = `<span>⚠ ${d.expired.length === 1 ? "A platform login has" : `${d.expired.length} platform logins have`} expired: <b>${names}</b>. Data from ${d.expired.length === 1 ? "it" : "them"} stops updating until it's logged in again.</span>
+    <a class="btn light" href="#/sessions">Open Sessions</a>`;
+  bar.hidden = false;
+}
+
 function startOfflineWatch() {
+  checkSessionAlerts();
+  setInterval(checkSessionAlerts, 120000);
   checkOffline();
   setInterval(checkOffline, OFFLINE_CHECK_MS);
   document.addEventListener("visibilitychange", checkOffline);  // catch up as soon as the tab is back

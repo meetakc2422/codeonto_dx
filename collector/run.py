@@ -7,6 +7,7 @@
     python run.py all outlets                      # every account in ACCOUNTS
     python run.py all session --daily-at 06:00     # keep running, repeat daily
     python run.py all session --check              # validate .env only, no external calls
+    python run.py worker                           # keep running: do login refreshes staff ask for on the Sessions page
     python run.py alerts send --every 15           # WhatsApp/email: low reviews, payout problems, ad spikes
                                                    # (offline and stock-out alerts go out from those jobs)
 """
@@ -81,6 +82,9 @@ def run_jobs(jobs: list[tuple[str, str]], task: str, headless: bool, force: bool
                 ok = module.run(account, headless=headless) and ok
             except Exception as e:  # one account failing must not stop the rest
                 log.exception("%s %s/%s crashed: %s", task, platform, account, e)
+                if isinstance(e, PermissionError) and "expired" in str(e).lower():
+                    from core.db import mark_session_expired_by_label
+                    mark_session_expired_by_label(platform, account, f"{platform} {task}: {e}")
                 ok = False
     return ok
 
@@ -115,7 +119,7 @@ def run_daily(at: str, jobs, task: str, headless: bool) -> None:
 def main() -> int:
     all_tasks = sorted({t for tasks in TASKS.values() for t in tasks})
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("platform", choices=[*TASKS, "all"])
+    parser.add_argument("platform", choices=[*TASKS, "all", "worker"])
     parser.add_argument("task", nargs="?", default="session", choices=all_tasks, help="default: session")
     parser.add_argument("--account", action="append", help="Account name (repeatable), e.g. main, mn, ggn")
     parser.add_argument("--headless", action="store_true", help="Run browsers without a window (servers)")
@@ -127,6 +131,10 @@ def main() -> int:
                         help="outlets: allow deactivating more than 20%% of a catalog in one run")
     args = parser.parse_args()
     setup_logging()
+
+    if args.platform == "worker":  # long-running: picks up refresh requests from the site
+        from core import worker
+        return worker.main(headless=args.headless, once=args.once)
 
     try:
         if args.platform == "alerts":  # not tied to a platform login

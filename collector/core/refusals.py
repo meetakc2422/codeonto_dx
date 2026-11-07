@@ -26,6 +26,9 @@ class Refusals:
         log.warning("%s %s: refused, skipping (%s)", self.job, store, err)
         if self.in_a_row[account] >= self.limit:
             self.dead.add(account)
+            if isinstance(account, int):  # the platform_accounts id: show staff the login has expired
+                from .db import mark_session_expired
+                mark_session_expired(account, f"{self.job}: {self.in_a_row[account]} refusals in a row ({err})")
             log.error("%s: %s refusals in a row on this login; session probably expired, run `run.py zomato session`. "
                       "Its other stores are skipped this run.", self.job, self.in_a_row[account])
 

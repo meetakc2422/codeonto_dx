@@ -42,6 +42,9 @@ class PlatformAccount(TimeStamped):
         default=list, blank=True,
         help_text="Outlet ids to take from this login, when it can see far more than we serve. Empty = every outlet it can access.")
     last_synced_at = models.DateTimeField(null=True, blank=True)
+    session_expired_at = models.DateTimeField(
+        null=True, blank=True, help_text="Set when the platform started refusing this login; cleared when a new session is saved")
+    session_error = models.CharField(max_length=300, blank=True, help_text="What the platform said when it refused")
 
     class Meta:
         db_table = "platform_accounts"

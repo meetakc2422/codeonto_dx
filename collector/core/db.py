@@ -91,6 +91,8 @@ def store_session(account: dict, platform: str, kind: str, data: dict) -> None:
         if not cur.rowcount:
             cur.execute("INSERT INTO platform_sessions (platform, account_id, kind, data_enc, updated_by, updated_at) VALUES (%s, %s, %s, %s, %s, now())",
                         (platform, account["id"], kind, enc, by))
+        if kind == "merchant":  # a fresh login: the account is no longer expired
+            cur.execute("UPDATE platform_accounts SET session_expired_at = NULL, session_error = '' WHERE id = %s", (account["id"],))
 
 
 def save_account_session(platform: str, label: str, data: dict, stamp: bool = True) -> str:
@@ -132,3 +134,25 @@ def active_account_ids(cur, platform: str) -> set[int]:
 
 def mark_account_synced(cur, account_id: int) -> None:
     cur.execute("UPDATE platform_accounts SET last_synced_at = now(), updated_at = now() WHERE id = %s", (account_id,))
+
+
+def mark_session_expired(account_id: int, reason: str) -> None:
+    """Flag a login the platform keeps refusing, so the site shows it to staff (banner + Sessions page). Never raises:
+    a job reporting an expired session must not crash because of the report."""
+    try:
+        with transaction() as cur:
+            cur.execute("""UPDATE platform_accounts SET session_expired_at = COALESCE(session_expired_at, now()), session_error = %s
+                           WHERE id = %s""", (str(reason)[:300], account_id))
+    except Exception as e:  # noqa: BLE001
+        from .common import log
+        log.warning("Couldn't mark account %s as expired: %s", account_id, e)
+
+
+def mark_session_expired_by_label(platform: str, label: str, reason: str) -> None:
+    try:
+        with transaction() as cur:
+            account = get_account(cur, platform, label)
+        mark_session_expired(account["id"], reason)
+    except Exception as e:  # noqa: BLE001
+        from .common import log
+        log.warning("Couldn't mark %s/%s as expired: %s", platform, label, e)

@@ -287,7 +287,8 @@ def _menu_via_proxy(place: dict, res_id: str) -> dict:
     body = {"res_id": int(res_id), "lat": place["lat"], "lon": place["lng"], "city_id": str(place.get("city_id") or 1),
             "access_token": h.get("x-zomato-access-token", "")}
     try:
-        resp = httpx.post(f"{settings.ZOMATO_MENU_PROXY_URL.rstrip('/')}/fetch-menu", json=body, timeout=60)
+        secret = {"X-Proxy-Secret": settings.ZOMATO_MENU_PROXY_SECRET} if settings.ZOMATO_MENU_PROXY_SECRET else {}
+        resp = httpx.post(f"{settings.ZOMATO_MENU_PROXY_URL.rstrip('/')}/fetch-menu", json=body, headers=secret, timeout=60)
         data = resp.json()
     except (httpx.HTTPError, ValueError) as e:
         raise ZomatoAppError(f"Couldn't reach the Zomato menu proxy: {e}") from e

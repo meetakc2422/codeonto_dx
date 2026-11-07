@@ -170,6 +170,8 @@ ZOMATO_APP_SESSION_FILE = env("ZOMATO_APP_SESSION_FILE", str(BASE_DIR / "session
 # optional: base URL of the Windows menu proxy (windows_zomato_proxy.py), e.g. http://1.2.3.4:5000. Zomato's edge blocks
 # datacenter IPs on /gw/menu, so production fetches menus through it; empty = call Zomato directly
 ZOMATO_MENU_PROXY_URL = env("ZOMATO_MENU_PROXY_URL", "")
+# shared secret sent as X-Proxy-Secret; must match MENU_PROXY_SECRET in the collector .env on that machine
+ZOMATO_MENU_PROXY_SECRET = env("ZOMATO_MENU_PROXY_SECRET", "")
 SWIGGY_APP_SESSION_FILE = env("SWIGGY_APP_SESSION_FILE", str(BASE_DIR / "sessions" / "swiggy_app.json"))
 
 # WhatsApp alerts (Meta Cloud API) sent by `manage.py send_alerts`; templates are the ones approved for the business account

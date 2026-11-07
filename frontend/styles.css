@@ -855,6 +855,17 @@ table.stmt .off { opacity: .35; }
 .al-outlets { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 14px; max-height: 260px; overflow: auto; width: 100%; }
 .al-outlets label[hidden] { display: none; }
 
+/* platform login health: expired badge, automatic login button, staff banner */
+.status.sess-bad { background: #fff1f1; color: #c92a2a; }
+.sess-note { margin-top: 4px; font-size: 12px; line-height: 1.35; color: var(--muted); max-width: 260px; }
+.sess-note.ok { color: #12a150; }
+.sess-note.bad { color: #c92a2a; }
+.sess-login .btn { white-space: nowrap; }
+.sess-banner { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0 0 14px; padding: 10px 14px;
+  border: 1px solid #ffc9c9; border-radius: 10px; background: #fff5f5; color: #a61e1e; font-size: 13.5px; }
+.sess-banner[hidden] { display: none; }
+.sess-banner .btn { flex: none; }
+
 /* ---------- Compass light theme ---------- */
 :root { --brand-gradient: linear-gradient(90deg, #f97316, #e11d48); }
 .brand-logo { display: inline-flex; align-items: center; gap: 0; font-size: 24px; font-weight: 700; letter-spacing: -.03em; color: var(--text); text-decoration: none; white-space: nowrap; }
