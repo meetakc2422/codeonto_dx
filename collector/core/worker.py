@@ -81,8 +81,23 @@ def run_one(req: dict, headless: bool) -> None:
     log.info("Refresh %s %s%s", name, "done" if ok else "failed", f": {error}" if error else "")
 
 
+def release_own() -> int:
+    """A worker that was stopped mid-login leaves its request 'running'. On start, fail those at once (instead of
+    after the 15-minute timeout) so the button on the site unlocks."""
+    with db.transaction() as cur:
+        cur.execute("""UPDATE session_refreshes SET status = 'failed', finished_at = now(),
+                          error = 'The worker was restarted during this login. Click Log in again.'
+                        WHERE status = 'running' AND worker = %s""", (worker_name(),))
+        return cur.rowcount
+
+
 def main(headless: bool = False, once: bool = False) -> int:
     log.info("Login refresh worker started as %s (checks every %ss)", worker_name(), POLL_SECONDS)
+    try:
+        if n := release_own():
+            log.info("Released %s login(s) this worker was running when it stopped", n)
+    except Exception as e:  # noqa: BLE001
+        log.warning("Couldn't release unfinished logins: %s", e)
     while True:
         try:
             req = claim()
