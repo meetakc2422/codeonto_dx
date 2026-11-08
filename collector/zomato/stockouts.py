@@ -150,10 +150,12 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     if not stores:
         return True
 
+    def login_of(s):
+        return s["account_id"] if s["account_id"] in by_id else default
+
     def work(s):
-        acc_id = s["account_id"] if s["account_id"] in by_id else default
         try:
-            return s, _fetch(creds[acc_id], s["res_id"]), None
+            return s, _fetch(creds[login_of(s)], s["res_id"]), None
         except Exception as e:
             return s, None, e
 
@@ -165,11 +167,19 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
 
     now, ok, out_total, new_total, back_total = datetime.now(timezone.utc), True, 0, 0, 0
     pending: dict[int, dict] = {}  # client_id -> what changed this run, sent as one alert per client
+    expired: set = set()  # logins refused this pass: their stores are skipped, the other logins carry on
     for s, items, err in results:
         if isinstance(err, PermissionError):
-            log.error("zomato stockouts: %s", err)
-            alerts.incident("Zomato session expired", str(err), "Run `python run.py zomato session`, then restart the stock-out job.")
-            return False
+            acc_id = login_of(s)
+            if acc_id not in expired:
+                expired.add(acc_id)
+                label = by_id[acc_id]["label"]
+                log.error("zomato stockouts: login '%s' was refused (%s); its stores are skipped this pass", label, err)
+                db.mark_session_expired(acc_id, f"zomato stockouts: {err}")
+                alerts.incident(f"Zomato session expired: {label}", str(err),
+                                f"Use Log in again on the Sessions page, or run `python run.py zomato session --account {label}`.")
+            ok = False
+            continue
         if isinstance(err, RateLimited):
             log.error("zomato stockouts: %s; stopping this pass, next cycle retries", err)
             alerts.incident("Zomato rate limit (429)", str(err), "The stock-out job backs off until its next cycle. If it keeps happening, raise the interval (--every 10).")

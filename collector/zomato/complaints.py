@@ -153,6 +153,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                     ok = False
         except PermissionError as e:
             log.error("zomato complaints %s: %s; skipping this login's stores", by_id[acc_id]["label"], e)
+            db.mark_session_expired(acc_id, f"zomato complaints: {e}")
             ok = False
         except Exception as e:
             log.exception("zomato complaints %s failed: %s", by_id[acc_id]["label"], e)

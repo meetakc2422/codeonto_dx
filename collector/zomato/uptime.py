@@ -126,7 +126,8 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             statuses |= _fetch(_cookies(db.load_credentials(account)))
         except PermissionError as e:
             log.error("zomato uptime %s: %s", name, e)
-            alerts.incident("Zomato session expired", str(e), "Run `python run.py zomato session`, then restart the uptime job.")
+            db.mark_session_expired(account["id"], f"zomato uptime: {e}")
+            alerts.incident(f"Zomato session expired: {name}", str(e), f"Use Log in again on the Sessions page, or run `python run.py zomato session --account {name}`.")
             ok = False
         except RateLimited as e:
             log.error("zomato uptime %s: %s; next cycle retries", name, e)
