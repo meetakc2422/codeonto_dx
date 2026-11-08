@@ -10,7 +10,7 @@ exist, set WHATSAPP_IMAGE_CARDS=0 so alerts go out as text.
 
 .env:
     WHATSAPP_BEARER_TOKEN           token with whatsapp_business_management (the one alerts already use)
-    WHATSAPP_BUSINESS_ACCOUNT_ID    the WABA id: WhatsApp Manager -> Overview (not the phone number id)
+    WHATSAPP_BUSINESS_ACCOUNT_ID    the WABA id: WhatsApp Manager -> Overview (not the phone number id); WHATSAPP_WABA_ID works too
     WHATSAPP_TEMPLATE_LANG          default en"""
 
 import sys
@@ -68,6 +68,9 @@ def create(waba: str, token: str, name: str, body: str, sample: list[str], lang:
 
 def main(apply: bool) -> int:
     setup_logging()
+    import os
+    if not os.getenv("WHATSAPP_BUSINESS_ACCOUNT_ID") and os.getenv("WHATSAPP_WABA_ID"):  # same id, shorter name
+        os.environ["WHATSAPP_BUSINESS_ACCOUNT_ID"] = os.environ["WHATSAPP_WABA_ID"]
     try:
         env = require_env("WHATSAPP_BEARER_TOKEN", "WHATSAPP_BUSINESS_ACCOUNT_ID")
         have = existing(env["WHATSAPP_BUSINESS_ACCOUNT_ID"], env["WHATSAPP_BEARER_TOKEN"])
