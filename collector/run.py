@@ -22,8 +22,12 @@ from pathlib import Path
 
 # Always run inside the collector's own virtualenv (it has Playwright, Google auth, psycopg),
 # even when started with some other `python`.
-_VENV_PYTHON = Path(__file__).resolve().parent / ".venv" / "bin" / "python"
-if _VENV_PYTHON.exists() and Path(sys.prefix).resolve() != _VENV_PYTHON.parent.parent.resolve():
+_VENV = Path(__file__).resolve().parent / ".venv"
+_VENV_PYTHON = _VENV / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+if _VENV_PYTHON.exists() and Path(sys.prefix).resolve() != _VENV.resolve():
+    if os.name == "nt":  # Windows has no real exec: run the venv's python as a child and pass its exit code on
+        import subprocess
+        sys.exit(subprocess.call([str(_VENV_PYTHON), *sys.argv]))
     os.execv(str(_VENV_PYTHON), [str(_VENV_PYTHON), *sys.argv])
 
 from core.common import ConfigError, log, session_path, setup_logging  # noqa: E402
