@@ -35,7 +35,10 @@ TEMPLATES = [
      "Good news for {{1}}: {{2}} outlet(s) are back online on Zomato as of {{3}}.\n\n{{4}}\n\nOpen your dashboard for details.",
      ["Foodiness", "1", "6:02 pm, 8 Nov", "Sector 63 (Noida), was offline 33 min"]),
     ("WHATSAPP_TEMPLATE_GENERIC", "restaurant_offline_alert",
-     "Alert: {{1}} for {{2}} at {{3}} on {{4}}.\n\n{{5}}\n\nOpen your dashboard for details.",
+     "Hello, this is an automated alert from your restaurant monitoring service. We noticed {{1}} for {{2}} "
+     "at {{3}} on the {{4}} platform.\n\nHere are the details:\n{{5}}\n\n"
+     "Please open your dashboard to review this alert and take action if needed. "
+     "You will keep receiving these updates whenever something needs your attention.",
      ["Low reviews (3)", "Foodiness", "5:29 pm, 8 Nov", "Zomato", "Sector 63: 2 star review about late delivery"]),
 ]
 
