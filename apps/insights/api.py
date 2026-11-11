@@ -235,7 +235,8 @@ def _flags(r: dict, avg_complaint_rate: float) -> list[str]:
         flags.append(f"Out of stock {r['stockout_hours']:.0f} h ({r['stockouts']} times), ₹{r['stockout_loss']:,.0f} of sales missed")
     elif not STOCKOUT_LOSS_SHOWN and per_outlet >= 24 and r["revenue"] > 0:
         times = "once" if r["stockouts"] == 1 else f"{r['stockouts']} times"
-        flags.append(f"Out of stock for {r['stockout_hours']:.0f} h in total this period ({times}), over a day per outlet")
+        each = f", about {per_outlet:.0f} h per outlet" if r["outlets"] > 1 else ""
+        flags.append(f"Out of stock for {r['stockout_hours']:.0f} h in total this period ({times}){each}")
     if r["rated"] >= 5 and r["bad_review_pct"] >= 30:
         flags.append(f"{r['bad_review_pct']:.0f}% of {r['rated']} item ratings are 1–2★")
     return flags
