@@ -133,5 +133,8 @@ urlpatterns = [
     *[path(f"api/{p.pattern}", p.callback) for p in api],
     # Dashboard (static SPA)
     path("", serve, {"path": "index.html", "document_root": settings.FRONTEND_DIR}),
+    # plain HTML (no JavaScript) so Google's OAuth verification can read them
+    path("privacy", serve, {"path": "privacy.html", "document_root": settings.FRONTEND_DIR}),
+    path("terms", serve, {"path": "terms.html", "document_root": settings.FRONTEND_DIR}),
     re_path(r"^(?P<path>(app\.js|styles\.css|assets/.+))$", serve, {"document_root": settings.FRONTEND_DIR}),
 ]
