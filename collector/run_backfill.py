@@ -190,6 +190,9 @@ def main():
     say(f"Backfill {start}..{end}: zomato {len(ids['zomato'])} outlets, swiggy {len(ids['swiggy'])} outlets, {total} runs to do"
         + (f" ({len(done)} already done)" if done else ""))
     if args.dry_run or not total:
+        for p, found in ids.items():
+            if found:
+                say(f"  {p} res_ids ({len(found)}): {', '.join(found)}")
         for tasks in plan.values():
             for t in tasks:
                 say(f"  would run {t['platform']} {t['job']} {len(t['ids'])} outlets " + (f"{t['window'][0]}..{t['window'][1]}" if t["window"] else "by pages"))
