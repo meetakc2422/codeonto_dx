@@ -224,10 +224,11 @@ function renderSidebar() {
       if (m.locked) return navLink(m.code, m.name, `<em class="soon locked-badge">${icon("lock")}Upgrade</em>`);
       return navLink(m.code, m.name, hasData ? "" : '<em class="soon">soon</em>');
     };
-    const common = mods.filter((m) => m.scope === "common");
+    const HIDDEN_NAV = ["ai_replies", "reports", "alerts"];  // taken off the sidebar for now
+    const common = mods.filter((m) => m.scope === "common" && !HIDDEN_NAV.includes(m.code));
     const industry = mods.filter((m) => m.scope === "industry");
     html += `<div class="nav-group">Reputation</div>${common.map(link).join("")}` +
-      (industry.length ? `<div class="nav-group">Marketplace</div>${industry.map(link).join("")}` : "");
+      (industry.length ? `<div class="nav-group">Aggregator management</div>${industry.map(link).join("")}` : "");
   } else {
     html += navLink("overview", "Overview");
   }
