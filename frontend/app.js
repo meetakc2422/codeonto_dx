@@ -4086,7 +4086,9 @@ async function sendAsk(text) {
     try { sessionStorage.setItem("ss_ask_thread", res.thread_id); } catch { /* */ }
     $("#askThinking").outerHTML = `<div class="ask-msg bot">${askMarkdown(res.answer)}${askQueries(res.queries)}</div>`;
   } catch (e) {
-    $("#askThinking").outerHTML = `<div class="ask-msg bot err">${esc(e.message)}</div>`;
+    $("#askThinking").outerHTML = e.message === "Not configured yet"
+      ? `<div class="ask-msg bot muted">The assistant isn't configured yet.</div>`
+      : `<div class="ask-msg bot err">${esc(e.message)}</div>`;
   }
   assistant.busy = false; $("#askSend").disabled = false;
   box.scrollTop = box.scrollHeight;

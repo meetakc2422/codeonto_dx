@@ -31,7 +31,8 @@ def chat(request):
     if len(message) > 2000:
         return Response({"detail": "Please keep the question under 2000 characters"}, status=400)
     if not settings.ANTHROPIC_API_KEY or not settings.ASSISTANT_DATABASE_URL or not settings.ASSISTANT_SCOPE_SECRET:
-        return Response({"detail": "The assistant is not set up yet: add ANTHROPIC_API_KEY and run `manage.py setup_assistant_role`."}, status=503)
+        # setup steps are for us, not the client: ANTHROPIC_API_KEY in .env, then `manage.py setup_assistant_role`
+        return Response({"detail": "Not configured yet", "code": "not_configured"}, status=503)
     recent = AssistantLog.objects.filter(user=request.user, created_at__gte=timezone.now() - timedelta(hours=1)).count()
     if recent >= settings.ASSISTANT_MESSAGES_PER_HOUR:
         return Response({"detail": "You have reached the hourly limit for assistant questions. Try again later."}, status=429)
