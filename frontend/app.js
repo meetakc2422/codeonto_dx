@@ -2077,7 +2077,9 @@ async function renderStockOuts(page) {
   const restored = summary.restored;
   const { start, end } = range();
   const isToday = start === end;
-  const periodWord = isToday ? "today" : "in this period";
+  const hasToday = end === isoDate(new Date());  // "now" only means something when the period runs to today
+  const periodWord = !isToday ? "in this period" : hasToday ? "today" : `on ${dayLabel(end)}`;
+  const beforeWord = !isToday ? "this period" : hasToday ? "today" : dayLabel(end);
   const outlets = new Map();
   rows.forEach((r) => {
     const o = outlets.get(r.outlet_id) || { id: r.outlet_id, name: r.outlet_name, city: r.city || "Other", out: 0, total: 0 };
@@ -2105,17 +2107,17 @@ async function renderStockOuts(page) {
         <p>across ${summary.outlets_affected} outlet${summary.outlets_affected === 1 ? "" : "s"} · ${inr.format(restored)} back in stock · avg downtime ${downtimeText(summary.avg_downtime) || "—"}${summary.long_off ? ` · ${inr.format(summary.long_off)} off for ${summary.long_off_days}+ days` : ""}</p>
         ${SHOW_STOCK_LOSS ? `<p class="so-lost" title="Estimate: each item's usual sales for the hours it was out, using the outlet's own hour-by-hour order pattern${summary.lost_unpriced ? `. ${summary.lost_unpriced} stock-outs have no sales history, so no ₹` : ""}">
           <b>${rupees(summary.lost_sales)}</b> of sales missed in this period <small>(estimate)</small></p>` : ""}</div>
-      <div class="so-now">Now serving<b>${now}</b></div>
+      ${hasToday ? `<div class="so-now">Now serving<b>${now}</b></div>` : ""}
     </div>
 
     <div class="so-section"><h3>By mealtime <small>stock-outs that started ${periodWord}, by when they were first spotted · click to filter</small></h3>
       <div class="so-meals">${summary.by_meal.map((m) => {
         const meta = MEALS.find((x) => x.name === m.meal);
-        return `<button class="so-meal ${stockFilters.meal === m.meal ? "on" : ""} ${m.meal === now ? "now" : ""}" data-meal="${m.meal}" style="--tone:${meta.tone}">
-          ${m.meal === now ? '<em>NOW</em>' : ""}<span class="so-meal-name">${m.meal}</span><span class="so-meal-hours">${meta.hours}</span>
+        return `<button class="so-meal ${stockFilters.meal === m.meal ? "on" : ""} ${hasToday && m.meal === now ? "now" : ""}" data-meal="${m.meal}" style="--tone:${meta.tone}">
+          ${hasToday && m.meal === now ? '<em>NOW</em>' : ""}<span class="so-meal-name">${m.meal}</span><span class="so-meal-hours">${meta.hours}</span>
           <b>${inr.format(m.count)}</b><span class="so-bar"><i style="width:${(m.count / maxMeal) * 100}%"></i></span></button>`;
       }).join("")}</div>
-      ${summary.earlier ? `<button class="so-earlier ${stockFilters.status === "earlier" ? "on" : ""}" id="sEarlier"><b>+${inr.format(summary.earlier)}</b> still out from before ${isToday ? "today" : "this period"} · not in the cards above · click to see</button>`
+      ${summary.earlier ? `<button class="so-earlier ${stockFilters.status === "earlier" ? "on" : ""}" id="sEarlier"><b>+${inr.format(summary.earlier)}</b> still out from before ${beforeWord} · not in the cards above · click to see</button>`
         : ""}${summary.long_off ? `<button class="so-earlier ${stockFilters.status === "long" ? "on" : ""}" id="sLong"><b>+${inr.format(summary.long_off)}</b> off for ${summary.long_off_days}+ days · probably taken off the menu · click to see</button>` : ""}</div>
 
     ${outletList.length > 1 ? `<div class="so-section">${stockFilters.city
@@ -2135,7 +2137,7 @@ async function renderStockOuts(page) {
     <div class="card so-list">
       <div class="toolbar">
         <input id="sq" type="search" placeholder="Search item…" value="${esc(stockFilters.q)}">
-        <div class="segmented" id="sStatus">${[["new", isToday ? "New today" : "New in period"],
+        <div class="segmented" id="sStatus">${[["new", isToday ? `New ${periodWord}` : "New in period"],
           ["earlier", `Still out from before${summary.earlier ? ` (${inr.format(summary.earlier)})` : ""}`],
           ["restored", "Back"], ["long", `Off ${summary.long_off_days}+ days${summary.long_off ? ` (${inr.format(summary.long_off)})` : ""}`]]
           .map(([v, l]) => `<button data-v="${v}" class="${stockFilters.status === v ? "active" : ""}">${l}</button>`).join("")}</div>
