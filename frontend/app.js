@@ -2079,7 +2079,7 @@ async function renderStockOuts(page) {
   const hasToday = end === isoDate(new Date());  // "now" only means something when the period runs to today
   // cards: with today in the period, what is out right now by the meal it went out in (+ how many went out today);
   // for a past period, what went out in it
-  const mealNum = (m) => (hasToday ? m.out : m.count);
+  const mealNum = (m) => m.count;
   const maxMeal = Math.max(1, ...summary.by_meal.map(mealNum));
   const periodWord = !isToday ? "in this period" : hasToday ? "today" : `on ${dayLabel(end)}`;
   const outlets = new Map();
@@ -2112,12 +2112,12 @@ async function renderStockOuts(page) {
       ${hasToday ? `<div class="so-now">Now serving<b>${now}</b></div>` : ""}
     </div>
 
-    <div class="so-section"><h3>By mealtime <small>${hasToday ? "out of stock right now, by the meal it went out in" : `stock-outs that started ${periodWord}, by when they were first spotted`} · click to filter</small></h3>
+    <div class="so-section"><h3>By mealtime <small>stock-outs that started ${periodWord}, by the meal they went out in · click to filter</small></h3>
       <div class="so-meals">${summary.by_meal.map((m) => {
         const meta = MEALS.find((x) => x.name === m.meal);
         return `<button class="so-meal ${stockFilters.meal === m.meal ? "on" : ""} ${hasToday && m.meal === now ? "now" : ""}" data-meal="${m.meal}" style="--tone:${meta.tone}">
           ${hasToday && m.meal === now ? '<em>NOW</em>' : ""}<span class="so-meal-name">${m.meal}</span><span class="so-meal-hours">${meta.hours}</span>
-          <b>${inr.format(mealNum(m))}</b>${hasToday ? `<small class="so-meal-new">${m.count ? `+${inr.format(m.count)} new ${periodWord}` : `none new ${periodWord}`}</small>` : ""}
+          <b>${inr.format(mealNum(m))}</b>
           <span class="so-bar"><i style="width:${(mealNum(m) / maxMeal) * 100}%"></i></span></button>`;
       }).join("")}</div>
       ${summary.long_off ? `<button class="so-earlier ${stockFilters.status === "long" ? "on" : ""}" id="sLong"><b>+${inr.format(summary.long_off)}</b> off for ${summary.long_off_days}+ days · probably taken off the menu · click to see</button>` : ""}</div>
