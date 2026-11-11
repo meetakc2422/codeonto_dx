@@ -260,7 +260,7 @@ def track(request, brand_id, outlet_id, platform):
         return Response({"tracked": False})
     if mine.exclude(restaurant__res_id=res_id).count() >= MAX_TRACKED:
         return Response({"detail": f"You can compare up to {MAX_TRACKED} {m.name} restaurants per outlet. Remove one first."}, status=400)
-    place = _area(outlet, m)
+    place = _spot(request, outlet, m)  # the spot the search was run from, so what was found can be opened
     if not place:
         return Response({"detail": f"Set the outlet's {m.name} location first."}, status=400)
     try:

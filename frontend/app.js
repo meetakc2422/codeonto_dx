@@ -2876,8 +2876,8 @@ async function renderMarketComp(page, outletId) {
 
   const err = (e) => { $("#zError").textContent = e.message; };
   const track = async (r, on) => {
-    try { await apiJSON(`${zBase(outletId)}/track`, "POST", { res_id: r.res_id, tracked: on, name: r.name, distance_km: r.distance_km, delivery_time: r.delivery_time }); render(); }
-    catch (e) { err(e); }
+    try { await apiJSON(`${zBase(outletId)}/track`, "POST", { res_id: r.res_id, tracked: on, name: r.name, distance_km: r.distance_km, delivery_time: r.delivery_time, spot: zPeek(outletId)?.spot }); render(); return true; }
+    catch (e) { err(e); return false; }
   };
   const setUs = async (resId) => {
     try { await apiJSON(`${zBase(outletId)}/us`, "POST", { res_id: resId }); render(); } catch (e) { err(e); }
@@ -2938,7 +2938,7 @@ async function renderMarketComp(page, outletId) {
     const x = results[Number(b.dataset.zres)];
     if (b.dataset.act === "view") showMarketRestaurant(outletId, x.res_id, track);
     else if (b.dataset.act === "us") setUs(x.res_id);
-    else { b.disabled = true; b.textContent = "Adding…"; track(x, true); }
+    else { b.disabled = true; b.textContent = "Adding…"; track(x, true).then((ok) => { if (!ok) { b.disabled = false; b.textContent = "Compare"; } }); }
   });
 }
 
