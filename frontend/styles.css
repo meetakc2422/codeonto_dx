@@ -533,6 +533,9 @@ a.ov-fix-row:hover { background: #faf6f2; }
 .range-pop label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
 .range-pop input { border: 1px solid var(--border); border-radius: 8px; padding: 7px 10px; font: inherit; color: var(--text); accent-color: var(--blue); }
 .range-pop[hidden] { display: none; }
+.range-quick { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 6px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.range-quick button { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 5px 11px; font: inherit; font-size: 12.5px; color: var(--text); cursor: pointer; }
+.range-quick button:hover { border-color: var(--blue); color: var(--blue); }
 
 .google-btn { display: inline-flex; align-items: center; gap: 10px; background: #fff; color: #1f1f1f; border: 1px solid #dadce0; border-radius: 999px;
   height: 40px; padding: 0 18px 0 12px; font: 500 14px/1 Inter, Arial, sans-serif; cursor: pointer; }

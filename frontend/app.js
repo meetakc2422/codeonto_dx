@@ -87,7 +87,8 @@ async function api(path, params = {}, opts = {}) {
   return res.json();
 }
 
-function isoDate(d) { return d.toISOString().slice(0, 10); }
+// local calendar date (toISOString is UTC, which is still "yesterday" before 5:30 am IST)
+function isoDate(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; }
 function range() {
   if (state.custom) return { start: state.custom.start, end: state.custom.end };
   const end = new Date();
@@ -96,7 +97,10 @@ function range() {
 }
 const dayLabel = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
 function periodLabel() {
-  return state.custom ? `${dayLabel(state.custom.start)} – ${dayLabel(state.custom.end)}` : `last ${state.days} days`;
+  if (!state.custom) return `last ${state.days} days`;
+  if (state.custom.label) return state.custom.label;
+  const { start, end } = state.custom;
+  return start === end ? dayLabel(start) : `${dayLabel(start)} – ${dayLabel(end)}`;
 }
 
 function filterParams(extra = {}) {
@@ -197,8 +201,8 @@ function lineChart(canvas, labels, datasets, unit) {
 function shortDate(d) { return new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" }); }
 
 // ---------- shell ----------
-function applyCustomRange(start, end) {
-  state.custom = { start, end };
+function applyCustomRange(start, end, label = "") {
+  state.custom = { start, end, label };
   state.days = Math.round((new Date(end) - new Date(start)) / 86400000) + 1;  // labels like "vs previous N days" stay right
   $("#rangeSeg .active")?.classList.remove("active"); $("#customBtn").classList.add("active");
   $("#customBtn").textContent = periodLabel();
@@ -475,7 +479,7 @@ function kpiCards(kpis, moduleIcon, sparks = {}) {
       <div class="kpi-top"><span class="kpi-label">${esc(k.name)}</span>${kpiBadge(k, moduleIcon)}</div>
       <div class="kpi-value">${fmt(k.value, k.unit)}</div>
       ${sparks[k.code] ? sparkline(sparks[k.code]) : ""}
-      <div class="kpi-foot">${changeChip(k)}<span>vs previous ${state.days} days</span></div>
+      <div class="kpi-foot">${changeChip(k)}<span>vs previous ${state.days === 1 ? "day" : state.days + " days"}</span></div>
     </div>`).join("")}</div>`;
 }
 
@@ -547,7 +551,7 @@ async function renderOverview(page) {
     .forEach((s) => fixes.push({ tone: "amber", tag: "Out of stock", title: s.item_name,
       sub: `${s.outlet_name} · out for ${timeAgo(s.first_detected_at).replace(" ago", "")}`, href: "#/stock_outs", cta: "View" }));
   if (rating?.change_pct != null && rating.change_pct <= -2) fixes.push({ tone: "amber", tag: "Rating", title: `Average rating down ${Math.abs(rating.change_pct).toFixed(1)}%`,
-    sub: `vs previous ${state.days} days`, href: "#/reviews", set: { status: "", rating: "neg" }, cta: "See why" });
+    sub: `vs previous ${state.days === 1 ? "day" : state.days + " days"}`, href: "#/reviews", set: { status: "", rating: "neg" }, cta: "See why" });
   const shown = fixes.slice(0, 5);
 
   // ---- 3. one row per outlet, worst first ----
@@ -1336,7 +1340,7 @@ async function renderAds(page) {
     const pct = Math.round(100 * (now - before) / before);
     if (!pct) return '<span class="ad-delta">same as before</span>';
     const good = lowerIsBetter ? pct < 0 : pct > 0;
-    return `<span class="ad-delta ${good ? "good" : "bad"}">${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs previous ${state.days} days</span>`;
+    return `<span class="ad-delta ${good ? "good" : "bad"}">${pct > 0 ? "▲" : "▼"} ${Math.abs(pct)}% vs previous ${state.days === 1 ? "day" : state.days + " days"}</span>`;
   };
   const tile = (label, value, sub, delta = "") => `<div class="card kpi"><span class="kpi-label">${label}</span><div class="kpi-value">${value}</div><span class="muted">${sub}</span>${delta}</div>`;
   if (!t.ads && !t.discounts) {
@@ -3915,6 +3919,18 @@ $("#rangeApply").addEventListener("click", () => {
   if (!start || !end) return toast("Pick both dates");
   if (start > end) return toast("The start date is after the end date");
   applyCustomRange(start, end);
+});
+// quick picks: Today, Yesterday, Last 7/30 days, This month, Last month
+$("#rangeQuick").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-quick]"); if (!b) return;
+  const q = b.dataset.quick, now = new Date(), day = (n) => { const d = new Date(now); d.setDate(d.getDate() - n); return isoDate(d); };
+  let start, end = isoDate(now);
+  if (q === "today") start = end;
+  else if (q === "yesterday") start = end = day(1);
+  else if (q === "month") start = isoDate(new Date(now.getFullYear(), now.getMonth(), 1));
+  else if (q === "lastmonth") { start = isoDate(new Date(now.getFullYear(), now.getMonth() - 1, 1)); end = isoDate(new Date(now.getFullYear(), now.getMonth(), 0)); }
+  else start = day(Number(q) - 1);
+  applyCustomRange(start, end, b.textContent);
 });
 document.addEventListener("click", (e) => { if (!e.target.closest("#rangePop, #rangeSeg")) $("#rangePop").hidden = true; });
 $("#menuToggle").addEventListener("click", () => {
