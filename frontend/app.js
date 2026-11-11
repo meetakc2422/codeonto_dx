@@ -2046,7 +2046,7 @@ const MEALS = [
   { name: "Dinner", hours: "7 – 11 pm", from: 19, to: 23, tone: "#408fca" },
   { name: "Late Night Dinner", hours: "11 pm – 5 am", from: 23, to: 29, tone: "#0b1229" },
 ];
-const stockFilters = { status: "new", q: "", meal: "", outlet: "", city: "" };
+const stockFilters = { status: "active", q: "", meal: "", outlet: "", city: "" };
 let stockRows = [];
 let stockShowMinor = false;
 let stockAllOutlets = false;
@@ -2073,13 +2073,15 @@ async function renderStockOuts(page) {
   stockRows = rows;
   stockShowMinor = false;
   const now = currentMeal();
-  const maxMeal = Math.max(1, ...summary.by_meal.map((m) => m.count));
+  // cards: with today in the period, what is out right now by the meal it went out in (+ how many went out today);
+  // for a past period, what went out in it
+  const mealNum = (m) => (end === isoDate(new Date()) ? m.out : m.count);
+  const maxMeal = Math.max(1, ...summary.by_meal.map(mealNum));
   const restored = summary.restored;
   const { start, end } = range();
   const isToday = start === end;
   const hasToday = end === isoDate(new Date());  // "now" only means something when the period runs to today
   const periodWord = !isToday ? "in this period" : hasToday ? "today" : `on ${dayLabel(end)}`;
-  const beforeWord = !isToday ? "this period" : hasToday ? "today" : dayLabel(end);
   const outlets = new Map();
   rows.forEach((r) => {
     const o = outlets.get(r.outlet_id) || { id: r.outlet_id, name: r.outlet_name, city: r.city || "Other", out: 0, total: 0 };
@@ -2110,15 +2112,15 @@ async function renderStockOuts(page) {
       ${hasToday ? `<div class="so-now">Now serving<b>${now}</b></div>` : ""}
     </div>
 
-    <div class="so-section"><h3>By mealtime <small>stock-outs that started ${periodWord}, by when they were first spotted · click to filter</small></h3>
+    <div class="so-section"><h3>By mealtime <small>${hasToday ? "out of stock right now, by the meal it went out in" : `stock-outs that started ${periodWord}, by when they were first spotted`} · click to filter</small></h3>
       <div class="so-meals">${summary.by_meal.map((m) => {
         const meta = MEALS.find((x) => x.name === m.meal);
         return `<button class="so-meal ${stockFilters.meal === m.meal ? "on" : ""} ${hasToday && m.meal === now ? "now" : ""}" data-meal="${m.meal}" style="--tone:${meta.tone}">
           ${hasToday && m.meal === now ? '<em>NOW</em>' : ""}<span class="so-meal-name">${m.meal}</span><span class="so-meal-hours">${meta.hours}</span>
-          <b>${inr.format(m.count)}</b><span class="so-bar"><i style="width:${(m.count / maxMeal) * 100}%"></i></span></button>`;
+          <b>${inr.format(mealNum(m))}</b>${hasToday ? `<small class="so-meal-new">${m.count ? `+${inr.format(m.count)} new ${periodWord}` : `none new ${periodWord}`}</small>` : ""}
+          <span class="so-bar"><i style="width:${(mealNum(m) / maxMeal) * 100}%"></i></span></button>`;
       }).join("")}</div>
-      ${summary.earlier ? `<button class="so-earlier ${stockFilters.status === "earlier" ? "on" : ""}" id="sEarlier"><b>+${inr.format(summary.earlier)}</b> still out from before ${beforeWord} · not in the cards above · click to see</button>`
-        : ""}${summary.long_off ? `<button class="so-earlier ${stockFilters.status === "long" ? "on" : ""}" id="sLong"><b>+${inr.format(summary.long_off)}</b> off for ${summary.long_off_days}+ days · probably taken off the menu · click to see</button>` : ""}</div>
+      ${summary.long_off ? `<button class="so-earlier ${stockFilters.status === "long" ? "on" : ""}" id="sLong"><b>+${inr.format(summary.long_off)}</b> off for ${summary.long_off_days}+ days · probably taken off the menu · click to see</button>` : ""}</div>
 
     ${outletList.length > 1 ? `<div class="so-section">${stockFilters.city
       ? `<h3><button class="so-back" id="sCities">‹ All cities</button> ${esc(stockFilters.city)} <small>items out of stock now · click an outlet to filter</small></h3>`
@@ -2137,9 +2139,8 @@ async function renderStockOuts(page) {
     <div class="card so-list">
       <div class="toolbar">
         <input id="sq" type="search" placeholder="Search item…" value="${esc(stockFilters.q)}">
-        <div class="segmented" id="sStatus">${[["new", isToday ? `New ${periodWord}` : "New in period"],
-          ["earlier", `Still out from before${summary.earlier ? ` (${inr.format(summary.earlier)})` : ""}`],
-          ["restored", "Back"], ["long", `Off ${summary.long_off_days}+ days${summary.long_off ? ` (${inr.format(summary.long_off)})` : ""}`]]
+        <div class="segmented" id="sStatus">${[["active", `Out now (${inr.format(summary.active - summary.long_off)})`],
+          ["new", isToday ? `New ${periodWord}` : "New in period"], ["restored", "Back"], ["long", `Off ${summary.long_off_days}+ days${summary.long_off ? ` (${inr.format(summary.long_off)})` : ""}`]]
           .map(([v, l]) => `<button data-v="${v}" class="${stockFilters.status === v ? "active" : ""}">${l}</button>`).join("")}</div>
         <button class="btn light" id="sClear" ${stockFilters.meal || stockFilters.outlet || stockFilters.city ? "" : "hidden"}>Clear filters</button>
         <button class="btn blue" id="sExport" style="margin-left:auto">Export to Excel</button>
@@ -2149,7 +2150,7 @@ async function renderStockOuts(page) {
 
   page.querySelectorAll("[data-meal]").forEach((b) => b.addEventListener("click", () => {
     stockFilters.meal = stockFilters.meal === b.dataset.meal ? "" : b.dataset.meal;
-    if (stockFilters.meal) stockFilters.status = "new";
+    if (stockFilters.meal) stockFilters.status = hasToday ? "active" : "new";
     renderStockOuts(page);
   }));
   page.querySelectorAll("[data-outlet]").forEach((b) => b.addEventListener("click", () => {
@@ -2166,9 +2167,6 @@ async function renderStockOuts(page) {
     renderStockOuts(page);
   });
   $("#sLong")?.addEventListener("click", () => { stockFilters.status = "long"; stockFilters.meal = ""; renderStockOuts(page); });
-  $("#sEarlier")?.addEventListener("click", () => {
-    stockFilters.status = "earlier"; stockFilters.meal = ""; renderStockOuts(page);
-  });
   $("#sStatus").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
     stockFilters.status = b.dataset.v;
@@ -2201,7 +2199,7 @@ function statusMatch(r) {
   switch (stockFilters.status) {
     case "restored": return !r.is_active;
     case "long": return r.long_off;
-    case "earlier": return r.is_active && r.earlier && !r.long_off;
+    case "active": return r.is_active && !r.long_off;
     case "new": return !r.earlier && !r.long_off;
     default: return true;
   }
@@ -2212,7 +2210,7 @@ function drawStockItems() {
   const q = stockFilters.q.toLowerCase();
   const rows = stockRows.filter((r) =>
     statusMatch(r) &&
-    (!stockFilters.meal || (r.mealtime === stockFilters.meal && !r.earlier)) &&
+    (!stockFilters.meal || (r.mealtime === stockFilters.meal && (stockFilters.status === "active" || !r.earlier))) &&
     (!stockFilters.outlet || String(r.outlet_id) === String(stockFilters.outlet)) &&
     (!stockFilters.city || r.city === stockFilters.city) &&
     (!q || r.item_name.toLowerCase().includes(q)));
@@ -2250,7 +2248,7 @@ function drawStockItems() {
       <div class="so-item-state">${it.out ? `<span class="status pending">${it.out} out</span>` : `<span class="status replied">back</span>`}
         <small class="muted">${it.out ? `longest out ${timeAgo(it.list.filter((r) => r.is_active).reduce((a, r) => (new Date(r.first_detected_at) < new Date(a.first_detected_at) ? r : a)).first_detected_at).replace(" ago", "")}` : `down ${downtimeText(it.longest)}`}</small></div>
       <div class="so-item-more" hidden>${detail(it)}</div>
-    </div>`).join("") : `<div class="empty-state"><h3>${stockFilters.status === "new" && !stockFilters.q ? "No new stock-outs in this period" : "No stock-outs match these filters"}</h3></div>`) + more;
+    </div>`).join("") : `<div class="empty-state"><h3>${stockFilters.q ? "No stock-outs match these filters" : stockFilters.status === "new" ? "No new stock-outs in this period" : stockFilters.status === "active" ? "Nothing is out of stock right now" : "No stock-outs match these filters"}</h3></div>`) + more;
   $("#sMinor")?.addEventListener("click", () => { stockShowMinor = true; drawStockItems(); });
   $("#stockList").querySelectorAll(".so-item").forEach((row) => row.addEventListener("click", (e) => {
     if (e.target.closest(".so-item-more")) return;  // clicks inside the detail table do not collapse it

@@ -997,3 +997,4 @@ table.stmt .off { opacity: .35; }
   .login-card .brand-logo.login-logo-sm .brand-mark { width: 34px; height: 34px; border-radius: 10px; }
 }
 @media (max-width: 1100px) { .login-feats { grid-template-columns: 1fr; } }
+.so-meal-new { font-size: 12px; color: var(--muted); }

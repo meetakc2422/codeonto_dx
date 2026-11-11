@@ -74,9 +74,11 @@ def _filtered(request, brand_id):
         qs = qs.filter(outlet_id__in=outlet_ids(qp.get("outlet_id")))
     if qp.get("platform"):
         qs = qs.filter(platform_id=qp["platform"])
-    if qp.get("mealtime"):  # a meal means stock-outs that started in that meal within the period
+    if qp.get("mealtime"):  # the meal it went out in; outside "out now", only those that started in the period
         old = [k for k, v in MEAL_LABELS.items() if v == qp["mealtime"]]
-        qs = qs.filter(mealtime__in=[qp["mealtime"], *old], log_date__gte=start)
+        qs = qs.filter(mealtime__in=[qp["mealtime"], *old])
+        if qp.get("status") not in ("active", "out", "long"):
+            qs = qs.filter(log_date__gte=start)
     return qs, qp
 
 
@@ -131,10 +133,12 @@ def stock_outs_summary(request, brand_id):
                           avg_downtime=Avg("downtime_minutes"))
     totals["avg_downtime"] = round(float(totals["avg_downtime"])) if totals["avg_downtime"] is not None else None
     start = _period_start(qp)
-    meal_counts = {}
+    meal_counts, meal_out = defaultdict(int), defaultdict(int)  # started in the period / out right now (not off for days)
     for r in qs.filter(log_date__gte=start).values("mealtime").annotate(count=Count("id")):
-        label = MEAL_LABELS.get(r["mealtime"], r["mealtime"])
-        meal_counts[label] = meal_counts.get(label, 0) + r["count"]
+        meal_counts[MEAL_LABELS.get(r["mealtime"], r["mealtime"])] += r["count"]
+    for r in (qs.filter(is_active=True).exclude(first_detected_at__lt=_long_cutoff())
+              .values("mealtime").annotate(count=Count("id"))):
+        meal_out[MEAL_LABELS.get(r["mealtime"], r["mealtime"])] += r["count"]
     losses = _losses(list(qs), qp)
     lost = [v[1] for v in losses.values() if v[1] is not None]
     by_item = defaultdict(lambda: {"lost": 0.0, "hours": 0.0, "outlets": set(), "out_now": 0})
@@ -156,7 +160,7 @@ def stock_outs_summary(request, brand_id):
         "earlier": qs.filter(is_active=True, log_date__lt=start).exclude(first_detected_at__lt=_long_cutoff()).count(),  # still out, started before the period
         "long_off": qs.filter(is_active=True, first_detected_at__lt=_long_cutoff()).count(),
         "long_off_days": LONG_OFF_DAYS,
-        "by_meal": [{"meal": m, "count": meal_counts.get(m, 0)} for m in MEALS],
+        "by_meal": [{"meal": m, "count": meal_counts.get(m, 0), "out": meal_out.get(m, 0)} for m in MEALS],
         "top_items": list(qs.values("item_name").annotate(count=Count("id")).order_by("-count")[:8]),
         "by_outlet": [{"outlet_id": r["outlet_id"], "outlet": f"{r['outlet__outlet_name']}", "active": r["active"], "events": r["events"]}
                       for r in qs.values("outlet_id", "outlet__outlet_name").annotate(
