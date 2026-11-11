@@ -216,7 +216,7 @@ def _local(ts):
 
 @api_view(["GET"])
 def stock_outs_export(request, brand_id):
-    """The stock-outs the page is showing, as an Excel workbook: one sheet of episodes, one summary per dish."""
+    """The stock-outs the page is showing, as an Excel workbook of insights: totals, by meal, by dish and by outlet (hours out)."""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
@@ -225,49 +225,88 @@ def stock_outs_export(request, brand_id):
     qs = _status(qs, qp)
     if qp.get("q"):
         qs = qs.filter(item_name__icontains=qp["q"])
-    rows = list(qs.order_by("-first_detected_at")[:50000])
-    losses = _losses(rows, qp)
+    rows = list(qs.select_related("outlet__brand").order_by("-first_detected_at")[:50000])
+    now = datetime.now(IST)
+    start = _period_start(qp)
+    end = date.fromisoformat(qp["end"]) if qp.get("end") else date.today()
+    lo, hi, _ = _range_bounds(start, end)
+
+    def hours(r):  # how long it has been out (still counting when it is not back yet)
+        return max(((r.restored_at or now) - r.first_detected_at).total_seconds() / 3600, 0)
+
+    def hm(h):
+        return f"{int(h)}h {int(round((h - int(h)) * 60))}m"
+
+    def group(key):
+        out = {}
+        for r in rows:
+            d = out.setdefault(key(r), {"events": 0, "now": 0, "hours": 0.0, "longest": 0.0, "items": set(), "outlets": set()})
+            h = hours(r)
+            d["events"] += 1
+            d["now"] += bool(r.is_active)
+            d["hours"] += h
+            d["longest"] = max(d["longest"], h)
+            d["items"].add(r.item_name)
+            d["outlets"].add(r.outlet_id)
+        return out
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "Stock-outs"
-    head = ["Brand", "Outlet", "Platform", "Item", "Category", "Mealtime", "Status", "Went out (IST)", "Back in (IST)",
-            "Downtime (min)", "Platform says back"] + (["Sales missed (₹, estimate)"] if EXPORT_LOSS else [])
-    ws.append(head)
+    ws.title = "Summary"
+    total_h = sum(hours(r) for r in rows)
+    ws.append(["Measure", "Value"])
+    for k, v in [
+        ("Period", f"{start.isoformat()} to {end.isoformat()}"),
+        ("Stock-outs", len(rows)),
+        ("Out right now", sum(bool(r.is_active) for r in rows)),
+        ("Back in stock", sum(not r.is_active for r in rows)),
+        ("Different dishes affected", len({r.item_name for r in rows})),
+        ("Outlets affected", len({r.outlet_id for r in rows})),
+        ("Total hours out", round(total_h, 1)),
+        ("Average time out", hm(total_h / len(rows)) if rows else "—"),
+        ("Longest out", hm(max((hours(r) for r in rows), default=0))),
+    ]:
+        ws.append([k, v])
+    ws.append([])
+    ws.append(["Meal", "Stock-outs (first meal out in)", "Hours out"])
+    meals = defaultdict(lambda: [0, 0.0])
     for r in rows:
-        ws.append([r.outlet.brand.name, r.outlet.display_name.split(" · ", 1)[-1], r.platform_id, r.item_name, r.category,
-                   _meal(r), "Out of stock" if r.is_active else "Back in stock", _local(r.first_detected_at),
-                   _local(r.restored_at), r.downtime_minutes,
-                   (r.back_at or "").replace("Out of stock till ", "")]
-                  + ([None if losses[r.id][1] is None else round(losses[r.id][1])] if EXPORT_LOSS else []))
+        for m in _meal_hits(r, lo, hi, now) or {_meal(r)}:
+            meals[m][0] += 1
+            meals[m][1] += hours(r)
+    for m in MEALS:
+        ws.append([m, meals[m][0], round(meals[m][1], 1)])
+    ws.append([])
+    ws.append(["Platform", "Stock-outs", "Hours out"])
+    for plat, d in sorted(group(lambda r: r.platform_id).items()):
+        ws.append([str(plat).title(), d["events"], round(d["hours"], 1)])
 
-    by_item: dict[tuple, dict] = {}
-    for r in rows:
-        d = by_item.setdefault((r.item_name, r.category), {"events": 0, "now": 0, "down": 0, "outlets": set(), "lost": 0.0})
-        d["events"] += 1
-        d["now"] += r.is_active
-        d["down"] += r.downtime_minutes or 0
-        d["outlets"].add(r.outlet_id)
-        d["lost"] += losses[r.id][1] or 0
-    summary = wb.create_sheet("By dish")
-    summary.append(["Item", "Category", "Times out of stock", "Out now (outlets)", "Outlets affected", "Total downtime (min)"]
-                   + (["Sales missed (₹, estimate)"] if EXPORT_LOSS else []))
-    for (item, category), d in sorted(by_item.items(), key=lambda kv: (-(kv[1]["lost"] if EXPORT_LOSS else 0), -kv[1]["now"], -kv[1]["events"])):
-        summary.append([item, category, d["events"], d["now"], len(d["outlets"]), d["down"]] + ([round(d["lost"])] if EXPORT_LOSS else []))
+    dish = wb.create_sheet("By dish")
+    dish.append(["Item", "Category", "Times out", "Out now (outlets)", "Outlets affected", "Total hours out", "Avg time out", "Longest out"])
+    cat = {r.item_name: r.category for r in rows}
+    for name, d in sorted(group(lambda r: r.item_name).items(), key=lambda kv: (-kv[1]["hours"], kv[0])):
+        dish.append([name, cat.get(name, ""), d["events"], d["now"], len(d["outlets"]), round(d["hours"], 1),
+                     hm(d["hours"] / d["events"]), hm(d["longest"])])
 
-    for sheet in (ws, summary):
-        for cell in sheet[1]:
-            cell.font = Font(bold=True, color="FFFFFF")
-            cell.fill = PatternFill("solid", fgColor="0B1229")
-            cell.alignment = Alignment(vertical="center")
+    outlet = wb.create_sheet("By outlet")
+    outlet.append(["Outlet", "Platform", "Dishes affected", "Stock-outs", "Out now", "Total hours out", "Avg time out", "Longest out"])
+    info = {r.outlet_id: (r.outlet.display_name.split(" · ", 1)[-1], r.platform_id) for r in rows}
+    for oid, d in sorted(group(lambda r: r.outlet_id).items(), key=lambda kv: (-kv[1]["now"], -kv[1]["hours"])):
+        outlet.append([info[oid][0], str(info[oid][1]).title(), len(d["items"]), d["events"], d["now"], round(d["hours"], 1),
+                       hm(d["hours"] / d["events"]), hm(d["longest"])])
+
+    for sheet in (ws, dish, outlet):
+        for row in sheet.iter_rows():
+            if row[0].value in ("Measure", "Meal", "Platform", "Item", "Outlet"):
+                for cell in row:
+                    if cell.value is not None:
+                        cell.font = Font(bold=True, color="FFFFFF")
+                        cell.fill = PatternFill("solid", fgColor="0B1229")
+                        cell.alignment = Alignment(vertical="center")
         sheet.freeze_panes = "A2"
-        sheet.auto_filter.ref = sheet.dimensions
         for i, col in enumerate(sheet.columns, 1):
             width = max((len(str(c.value)) for c in list(col)[:300] if c.value is not None), default=8)
             sheet.column_dimensions[get_column_letter(i)].width = min(max(width + 2, 10), 48)
-    for col in ("H", "I"):
-        for cell in ws[col][1:]:
-            cell.number_format = "dd mmm yyyy hh:mm"
 
     buf = BytesIO()
     wb.save(buf)
