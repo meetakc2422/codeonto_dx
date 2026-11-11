@@ -12,7 +12,7 @@ import re
 import time
 from datetime import date, timedelta
 
-from core import config as cfg, db, derive
+from core import alerts, config as cfg, db, derive
 from core.refusals import Refusals
 from core.common import ConfigError, log, require_env
 
@@ -24,6 +24,9 @@ URL = cfg.text("ZOMATO_BUSINESS_REPORT_URL", cfg.text("ZOMATO_API_BASE", "https:
                "&start_date={s}&end_date={e}")
 TIME_FILTER = cfg.text("ZOMATO_REPORT_TIME_FILTER", "ist_day")
 CHUNK_DAYS = cfg.integer("ZOMATO_REPORT_CHUNK_DAYS", 10)  # the report accepts at most 10 days at a time
+# One outlet never delivers this many orders in a day. When Zomato can't apply the outlet filter (the login doesn't see
+# that outlet) it answers with the whole account's totals instead; a day above this means that happened.
+MAX_DAILY_ORDERS = cfg.integer("ZOMATO_MAX_DAILY_ORDERS_PER_OUTLET", 2000)
 
 _MAP = cfg.mapping("zomato_business_report")  # mappings/zomato_business_report.json
 KPI_CODES = derive.kpi_codes(_MAP)
@@ -137,8 +140,13 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     creds = {a["id"]: _cookies(db.load_credentials(a)) for a in accs.values()}
     default = next(iter(by_id))
     ok = True
+    unknown: list[str] = []
     refusals = Refusals("zomato business")
     for s in stores:
+        if s["account_id"] is None:
+            # no login is known to see this outlet: the first login is tried, and if it can't see the outlet Zomato
+            # answers with that login's account totals; the MAX_DAILY_ORDERS check below refuses to save those
+            unknown.append(f"{s['brand']} · {s['outlet_name']} ({s['res_id']})")
         acc_id = s["account_id"] if s["account_id"] in by_id else default
         cookies = creds[acc_id]
         if refusals.is_dead(acc_id):
@@ -147,6 +155,17 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             n = 0
             for start, stop in windows:
                 rows = derive.kpi_rows(_fetch(cookies, s["res_id"], start, stop), _MAP)
+                too_big = [(d, v) for code, d, v, _ in rows if code == "delivered_orders" and v > MAX_DAILY_ORDERS]
+                if too_big:
+                    d, v = max(too_big, key=lambda x: x[1])
+                    log.error("zomato business %s · %s (%s): %s delivered orders on %s is not one outlet's day (account "
+                              "totals?); this window was not saved", s["brand"], s["outlet_name"], s["res_id"], int(v), d)
+                    alerts.incident(f"Zomato business report looks wrong: {s['brand']} · {s['outlet_name']}",
+                                    f"Res {s['res_id']}: {int(v)} delivered orders on {d}, more than one outlet can do "
+                                    f"(limit {MAX_DAILY_ORDERS}). Zomato probably sent the whole account's totals. Nothing was saved.",
+                                    "Check this outlet's Zomato id and which login can see it (Brands & Outlets, Sessions).")
+                    ok = False
+                    continue
                 with db.transaction() as cur:
                     for code, day, value, weight in rows:
                         cur.execute(
@@ -165,4 +184,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             log.exception("zomato business %s failed: %s", s["res_id"], e)
             ok = False
     refusals.summary()
+    if unknown:
+        log.warning("zomato business: %s store(s) have no known Zomato login (run `run.py zomato outlets`), the first "
+                    "login was used: %s", len(unknown), "; ".join(unknown[:10]))
     return ok
