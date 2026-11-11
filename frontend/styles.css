@@ -481,6 +481,9 @@ a.btn { text-decoration: none; }
 .so-rank-row:hover { background: #fafbfd; } .so-rank-row.on { background: var(--blue-soft); outline: 1px solid var(--blue); }
 .so-more { margin-top: 8px; }
 .so-back { background: none; border: 0; padding: 0 8px 0 0; font: inherit; color: var(--blue); cursor: pointer; }
+.so-earlier { display: block; margin-top: 10px; background: none; border: 1px dashed var(--line, #d8dde6); border-radius: 10px; padding: 10px 14px; font: inherit; color: var(--muted, #667085); text-align: left; cursor: pointer; width: 100%; }
+.so-earlier b { color: var(--text, #111827); margin-right: 4px; }
+.so-earlier:hover, .so-earlier.on { border-color: var(--blue); color: var(--blue); }
 .so-rank-row small { font-size: 11px; margin-left: 6px; }
 @media (max-width: 700px) { .so-rank { grid-template-columns: 1fr; } }
 .so-lost { margin-top: 8px !important; color: #fff !important; font-size: 15px; } .so-lost small { color: #b4c0d8; }
@@ -552,10 +555,10 @@ a.ov-fix-row:hover { background: #faf6f2; }
 .kpi-logos img + img { margin-left: -12px; }
 
 .so-item { cursor: pointer; } .so-item:hover { background: #fafbfd; }
-.so-item-more { grid-column: 1 / -1; cursor: default; padding: 4px 0 6px; }
+.so-item-more { grid-column: 1 / -1; cursor: default; padding: 4px 0 6px; overflow-x: auto; }
 .so-item.open { background: #faf6f2; }
 .so-detail { font-size: 12.5px; background: #fff; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
-.so-detail th, .so-detail td { padding: 7px 10px; }
+.so-detail th, .so-detail td { padding: 7px 10px; white-space: nowrap; }
 
 .filters { position: relative; }
 .range-pop { position: absolute; right: 0; top: calc(100% + 8px); z-index: 30; background: #fff; border: 1px solid var(--border); border-radius: 12px;

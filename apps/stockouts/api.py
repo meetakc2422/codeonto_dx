@@ -19,6 +19,8 @@ IST = ZoneInfo("Asia/Kolkata")
 EXPORT_LOSS = False
 MEAL_LABELS = {"Snacks": "Evening Snacks", "Late Night": "Late Night Dinner"}
 MEALS = ["Breakfast", "Lunch", "Evening Snacks", "Dinner", "Late Night Dinner"]
+# out longer than this = most likely taken off the menu on purpose; listed apart so it doesn't swamp the real stock-outs
+LONG_OFF_DAYS = 3
 
 
 def _meal(s: StockOut) -> str:
@@ -40,8 +42,20 @@ def metro(city: str) -> str:
     return (city or "").strip().replace("_", " ").title() or "Other"
 
 
-def _json(s: StockOut, loss=None) -> dict:
-    return {"lost": None if loss is None else round(loss), "city": metro(s.outlet.city), "id": s.id, "item_name": s.item_name, "category": s.category, "platform": s.platform_id,
+def _period_start(qp) -> date:
+    end = date.fromisoformat(qp["end"]) if qp.get("end") else date.today()
+    return date.fromisoformat(qp["start"]) if qp.get("start") else end - timedelta(days=29)
+
+
+def _long_cutoff():
+    return datetime.now(IST) - timedelta(days=LONG_OFF_DAYS)
+
+
+def _json(s: StockOut, loss=None, start: date | None = None, hours=None) -> dict:
+    return {"period_minutes": None if hours is None else round(hours * 60),  # time out inside the selected period only
+            "earlier": bool(start and s.log_date < start),
+            "long_off": bool(s.is_active and s.first_detected_at and s.first_detected_at < _long_cutoff()),
+            "lost": None if loss is None else round(loss), "city": metro(s.outlet.city), "id": s.id, "item_name": s.item_name, "category": s.category, "platform": s.platform_id,
             "outlet_id": s.outlet_id, "outlet_name": s.outlet.display_name,
             "mealtime": _meal(s), "is_active": s.is_active, "back_at": s.back_at, "first_detected_at": s.first_detected_at,
             "restored_at": s.restored_at, "downtime_minutes": s.downtime_minutes}
@@ -60,10 +74,28 @@ def _filtered(request, brand_id):
         qs = qs.filter(outlet_id__in=outlet_ids(qp.get("outlet_id")))
     if qp.get("platform"):
         qs = qs.filter(platform_id=qp["platform"])
-    if qp.get("mealtime"):
+    if qp.get("mealtime"):  # a meal means stock-outs that started in that meal within the period
         old = [k for k, v in MEAL_LABELS.items() if v == qp["mealtime"]]
-        qs = qs.filter(mealtime__in=[qp["mealtime"], *old])
+        qs = qs.filter(mealtime__in=[qp["mealtime"], *old], log_date__gte=start)
     return qs, qp
+
+
+def _status(qs, qp):
+    """The list's status tabs. 'All' and 'Out now' leave out items off for days (their own tab)."""
+    st, long_q = qp.get("status"), Q(is_active=True, first_detected_at__lt=_long_cutoff())
+    if st == "out":  # every item out now (the page splits them itself)
+        return qs.filter(is_active=True)
+    if st == "active":
+        return qs.filter(is_active=True).exclude(long_q)
+    if st == "restored":
+        return qs.filter(is_active=False)
+    if st == "long":
+        return qs.filter(long_q)
+    if st == "earlier":  # still out, started before the period (the ones off for days have their own tab)
+        return qs.filter(is_active=True, log_date__lt=_period_start(qp)).exclude(long_q)
+    if st == "new":  # started in the period
+        return qs.filter(log_date__gte=_period_start(qp))
+    return qs
 
 
 def _losses(rows: list, qp) -> dict:
@@ -81,16 +113,14 @@ def _losses(rows: list, qp) -> dict:
 @api_view(["GET"])
 def brand_stock_outs(request, brand_id):
     qs, qp = _filtered(request, brand_id)
-    if qp.get("status") == "active":
-        qs = qs.filter(is_active=True)
-    elif qp.get("status") == "restored":
-        qs = qs.filter(is_active=False)
+    qs = _status(qs, qp)
     if qp.get("q"):
         qs = qs.filter(item_name__icontains=qp["q"])
     offset, limit = int(qp.get("offset", 0)), min(int(qp.get("limit", 50)), 5000)
     rows = list(qs[offset:offset + limit])
     losses = _losses(rows, qp)
-    return Response([_json(s, losses[s.id][1]) for s in rows])
+    start = _period_start(qp)
+    return Response([_json(s, losses[s.id][1], start, losses[s.id][0]) for s in rows])
 
 
 @api_view(["GET"])
@@ -100,8 +130,9 @@ def stock_outs_summary(request, brand_id):
                           restored=Count("id", filter=Q(is_active=False)),
                           avg_downtime=Avg("downtime_minutes"))
     totals["avg_downtime"] = round(float(totals["avg_downtime"])) if totals["avg_downtime"] is not None else None
+    start = _period_start(qp)
     meal_counts = {}
-    for r in qs.values("mealtime").annotate(count=Count("id")):
+    for r in qs.filter(log_date__gte=start).values("mealtime").annotate(count=Count("id")):
         label = MEAL_LABELS.get(r["mealtime"], r["mealtime"])
         meal_counts[label] = meal_counts.get(label, 0) + r["count"]
     losses = _losses(list(qs), qp)
@@ -122,6 +153,9 @@ def stock_outs_summary(request, brand_id):
         "top_losses": [{"item_name": k, "lost": round(d["lost"]), "hours": round(d["hours"], 1), "outlets": len(d["outlets"]),
                         "out_now": d["out_now"]} for k, d in top[:5] if d["lost"] >= 1],
         "outlets_affected": qs.filter(is_active=True).values("outlet_id").distinct().count(),
+        "earlier": qs.filter(is_active=True, log_date__lt=start).exclude(first_detected_at__lt=_long_cutoff()).count(),  # still out, started before the period
+        "long_off": qs.filter(is_active=True, first_detected_at__lt=_long_cutoff()).count(),
+        "long_off_days": LONG_OFF_DAYS,
         "by_meal": [{"meal": m, "count": meal_counts.get(m, 0)} for m in MEALS],
         "top_items": list(qs.values("item_name").annotate(count=Count("id")).order_by("-count")[:8]),
         "by_outlet": [{"outlet_id": r["outlet_id"], "outlet": f"{r['outlet__outlet_name']}", "active": r["active"], "events": r["events"]}
@@ -144,10 +178,7 @@ def stock_outs_export(request, brand_id):
     from openpyxl.utils import get_column_letter
 
     qs, qp = _filtered(request, brand_id)
-    if qp.get("status") == "active":
-        qs = qs.filter(is_active=True)
-    elif qp.get("status") == "restored":
-        qs = qs.filter(is_active=False)
+    qs = _status(qs, qp)
     if qp.get("q"):
         qs = qs.filter(item_name__icontains=qp["q"])
     rows = list(qs.order_by("-first_detected_at")[:50000])

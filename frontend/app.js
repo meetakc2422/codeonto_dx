@@ -2046,7 +2046,7 @@ const MEALS = [
   { name: "Dinner", hours: "7 – 11 pm", from: 19, to: 23, tone: "#408fca" },
   { name: "Late Night Dinner", hours: "11 pm – 5 am", from: 23, to: 29, tone: "#0b1229" },
 ];
-const stockFilters = { status: "", q: "", meal: "", outlet: "", city: "" };
+const stockFilters = { status: "new", q: "", meal: "", outlet: "", city: "" };
 let stockRows = [];
 let stockShowMinor = false;
 let stockAllOutlets = false;
@@ -2066,7 +2066,7 @@ async function renderStockOuts(page) {
     api(`/brands/${state.brandId}/stock-outs/summary`, filterParams()),
     // active rows sort first, so ask for each kind separately or the restored ones fall off the end
     Promise.all([
-      api(`/brands/${state.brandId}/stock-outs`, filterParams({ status: "active", limit: 5000 })),
+      api(`/brands/${state.brandId}/stock-outs`, filterParams({ status: "out", limit: 5000 })),
       api(`/brands/${state.brandId}/stock-outs`, filterParams({ status: "restored", limit: 5000 })),
     ]).then(([a, r]) => [...a, ...r]),
   ]);
@@ -2075,6 +2075,9 @@ async function renderStockOuts(page) {
   const now = currentMeal();
   const maxMeal = Math.max(1, ...summary.by_meal.map((m) => m.count));
   const restored = summary.restored;
+  const { start, end } = range();
+  const isToday = start === end;
+  const periodWord = isToday ? "today" : "in this period";
   const outlets = new Map();
   rows.forEach((r) => {
     const o = outlets.get(r.outlet_id) || { id: r.outlet_id, name: r.outlet_name, city: r.city || "Other", out: 0, total: 0 };
@@ -2099,19 +2102,21 @@ async function renderStockOuts(page) {
     <div class="so-hero">
       <div><span class="so-live"><i></i> Live</span>
         <div class="so-big">${inr.format(summary.active)}<small> items out of stock right now</small></div>
-        <p>across ${summary.outlets_affected} outlet${summary.outlets_affected === 1 ? "" : "s"} · ${inr.format(restored)} back in stock · avg downtime ${downtimeText(summary.avg_downtime) || "—"}</p>
+        <p>across ${summary.outlets_affected} outlet${summary.outlets_affected === 1 ? "" : "s"} · ${inr.format(restored)} back in stock · avg downtime ${downtimeText(summary.avg_downtime) || "—"}${summary.long_off ? ` · ${inr.format(summary.long_off)} off for ${summary.long_off_days}+ days` : ""}</p>
         ${SHOW_STOCK_LOSS ? `<p class="so-lost" title="Estimate: each item's usual sales for the hours it was out, using the outlet's own hour-by-hour order pattern${summary.lost_unpriced ? `. ${summary.lost_unpriced} stock-outs have no sales history, so no ₹` : ""}">
           <b>${rupees(summary.lost_sales)}</b> of sales missed in this period <small>(estimate)</small></p>` : ""}</div>
       <div class="so-now">Now serving<b>${now}</b></div>
     </div>
 
-    <div class="so-section"><h3>By mealtime <small>when each stock-out was first spotted · click to filter</small></h3>
+    <div class="so-section"><h3>By mealtime <small>stock-outs that started ${periodWord}, by when they were first spotted · click to filter</small></h3>
       <div class="so-meals">${summary.by_meal.map((m) => {
         const meta = MEALS.find((x) => x.name === m.meal);
         return `<button class="so-meal ${stockFilters.meal === m.meal ? "on" : ""} ${m.meal === now ? "now" : ""}" data-meal="${m.meal}" style="--tone:${meta.tone}">
           ${m.meal === now ? '<em>NOW</em>' : ""}<span class="so-meal-name">${m.meal}</span><span class="so-meal-hours">${meta.hours}</span>
           <b>${inr.format(m.count)}</b><span class="so-bar"><i style="width:${(m.count / maxMeal) * 100}%"></i></span></button>`;
-      }).join("")}</div></div>
+      }).join("")}</div>
+      ${summary.earlier ? `<button class="so-earlier ${stockFilters.status === "earlier" ? "on" : ""}" id="sEarlier"><b>+${inr.format(summary.earlier)}</b> still out from before ${isToday ? "today" : "this period"} · not in the cards above · click to see</button>`
+        : ""}${summary.long_off ? `<button class="so-earlier ${stockFilters.status === "long" ? "on" : ""}" id="sLong"><b>+${inr.format(summary.long_off)}</b> off for ${summary.long_off_days}+ days · probably taken off the menu · click to see</button>` : ""}</div>
 
     ${outletList.length > 1 ? `<div class="so-section">${stockFilters.city
       ? `<h3><button class="so-back" id="sCities">‹ All cities</button> ${esc(stockFilters.city)} <small>items out of stock now · click an outlet to filter</small></h3>`
@@ -2130,7 +2135,9 @@ async function renderStockOuts(page) {
     <div class="card so-list">
       <div class="toolbar">
         <input id="sq" type="search" placeholder="Search item…" value="${esc(stockFilters.q)}">
-        <div class="segmented" id="sStatus">${[["", "All"], ["active", "Out now"], ["restored", "Back"]]
+        <div class="segmented" id="sStatus">${[["new", isToday ? "New today" : "New in period"],
+          ["earlier", `Still out from before${summary.earlier ? ` (${inr.format(summary.earlier)})` : ""}`],
+          ["restored", "Back"], ["long", `Off ${summary.long_off_days}+ days${summary.long_off ? ` (${inr.format(summary.long_off)})` : ""}`]]
           .map(([v, l]) => `<button data-v="${v}" class="${stockFilters.status === v ? "active" : ""}">${l}</button>`).join("")}</div>
         <button class="btn light" id="sClear" ${stockFilters.meal || stockFilters.outlet || stockFilters.city ? "" : "hidden"}>Clear filters</button>
         <button class="btn blue" id="sExport" style="margin-left:auto">Export to Excel</button>
@@ -2139,7 +2146,9 @@ async function renderStockOuts(page) {
     </div>`;
 
   page.querySelectorAll("[data-meal]").forEach((b) => b.addEventListener("click", () => {
-    stockFilters.meal = stockFilters.meal === b.dataset.meal ? "" : b.dataset.meal; renderStockOuts(page);
+    stockFilters.meal = stockFilters.meal === b.dataset.meal ? "" : b.dataset.meal;
+    if (stockFilters.meal) stockFilters.status = "new";
+    renderStockOuts(page);
   }));
   page.querySelectorAll("[data-outlet]").forEach((b) => b.addEventListener("click", () => {
     stockFilters.outlet = String(stockFilters.outlet) === b.dataset.outlet ? "" : b.dataset.outlet; renderStockOuts(page);
@@ -2150,7 +2159,14 @@ async function renderStockOuts(page) {
   $("#sCities")?.addEventListener("click", () => { stockFilters.city = ""; stockFilters.outlet = ""; renderStockOuts(page); });
   $("#sAllOutlets")?.addEventListener("click", () => { stockAllOutlets = !stockAllOutlets; renderStockOuts(page); });
   $("#sExport").addEventListener("click", () => exportStockOuts($("#sExport")));
-  $("#sClear").addEventListener("click", () => { stockFilters.meal = ""; stockFilters.outlet = ""; stockFilters.city = ""; renderStockOuts(page); });
+  $("#sClear").addEventListener("click", () => {
+    stockFilters.meal = ""; stockFilters.outlet = ""; stockFilters.city = "";
+    renderStockOuts(page);
+  });
+  $("#sLong")?.addEventListener("click", () => { stockFilters.status = "long"; stockFilters.meal = ""; renderStockOuts(page); });
+  $("#sEarlier")?.addEventListener("click", () => {
+    stockFilters.status = "earlier"; stockFilters.meal = ""; renderStockOuts(page);
+  });
   $("#sStatus").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
     stockFilters.status = b.dataset.v;
@@ -2178,12 +2194,23 @@ async function exportStockOuts(btn) {
   btn.disabled = false; btn.textContent = label;
 }
 
+// Status tabs. Items off for days have their own tab so they don't drown out today's stock-outs.
+function statusMatch(r) {
+  switch (stockFilters.status) {
+    case "restored": return !r.is_active;
+    case "long": return r.long_off;
+    case "earlier": return r.is_active && r.earlier && !r.long_off;
+    case "new": return !r.earlier && !r.long_off;
+    default: return true;
+  }
+}
+
 // One line per dish: which outlets it is out at, in which meal, and for how long.
 function drawStockItems() {
   const q = stockFilters.q.toLowerCase();
   const rows = stockRows.filter((r) =>
-    (!stockFilters.status || (stockFilters.status === "active") === r.is_active) &&
-    (!stockFilters.meal || r.mealtime === stockFilters.meal) &&
+    statusMatch(r) &&
+    (!stockFilters.meal || (r.mealtime === stockFilters.meal && !r.earlier)) &&
     (!stockFilters.outlet || String(r.outlet_id) === String(stockFilters.outlet)) &&
     (!stockFilters.city || r.city === stockFilters.city) &&
     (!q || r.item_name.toLowerCase().includes(q)));
@@ -2199,13 +2226,16 @@ function drawStockItems() {
   const items = hidden ? all.filter((it) => !minor(it)) : all;
   const short = (n) => esc(n.split(" · ").pop());
   const clock = (ts) => (ts ? new Date(ts).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : "—");
+  const { start: pStart, end: pEnd } = range();
+  const inPeriod = pStart === pEnd ? (pEnd === isoDate(new Date()) ? "today" : `on ${dayLabel(pEnd)}`) : "in period";
   const comesBack = (t) => (t ? esc(t.replace(/^out of stock till\s*/i, "")) : "");
   // one expandable line per dish; the detail lists every episode with exact out / back times
-  const detail = (it) => `<table class="so-detail"><thead><tr><th>Outlet</th><th>Meal</th><th>Went out</th><th>Back in</th><th class="num">Down for</th>${SHOW_STOCK_LOSS ? '<th class="num">Sales missed</th>' : ""}<th>Platform says back</th></tr></thead><tbody>
+  const detail = (it) => `<table class="so-detail"><thead><tr><th>Outlet</th><th>Meal</th><th>Went out</th><th>Back in</th><th class="num">Out ${inPeriod}</th>${SHOW_STOCK_LOSS ? '<th class="num">Sales missed</th>' : ""}<th>Platform says back</th></tr></thead><tbody>
     ${[...it.list].sort((x, y) => new Date(y.first_detected_at) - new Date(x.first_detected_at)).map((r) => `<tr>
-      <td>${short(r.outlet_name)} <small class="muted">${r.platform === "swiggy" ? "Swiggy" : "Zomato"}</small></td><td>${esc(r.mealtime)}</td><td>${clock(r.first_detected_at)}</td>
+      <td>${short(r.outlet_name)} <small class="muted">${r.platform === "swiggy" ? "Swiggy" : "Zomato"}</small></td><td>${esc(r.mealtime)}</td>
+      <td title="${clock(r.first_detected_at)}">${r.earlier ? `<span class="muted">before ${pStart === pEnd ? dayLabel(pStart) : "period"}</span>` : clock(r.first_detected_at)}</td>
       <td>${r.is_active ? '<span class="status pending">still out</span>' : clock(r.restored_at)}</td>
-      <td class="num">${r.is_active ? `${downtimeText(Math.round((Date.now() - new Date(r.first_detected_at)) / 60000))} so far` : downtimeText(r.downtime_minutes) || "—"}</td>
+      <td class="num">${r.period_minutes == null ? "—" : `${downtimeText(r.period_minutes) || "0m"}${r.is_active ? " so far" : ""}`}</td>
       ${!SHOW_STOCK_LOSS ? "" : `<td class="num">${r.lost == null ? '<span class="muted" title="No sales history for this item">—</span>' : rupees(r.lost)}</td>`}
       <td class="muted">${comesBack(r.back_at) || "—"}</td></tr>`).join("")}</tbody></table>`;
   const more = hidden ? `<button class="btn light so-minor" id="sMinor">Show ${hidden} minor stock-out${hidden === 1 ? "" : "s"} (back within ${MINOR_MINUTES} min, under ₹${MINOR_RUPEES})</button>` : "";
@@ -2218,7 +2248,7 @@ function drawStockItems() {
       <div class="so-item-state">${it.out ? `<span class="status pending">${it.out} out</span>` : `<span class="status replied">back</span>`}
         <small class="muted">${it.out ? `longest out ${timeAgo(it.list.filter((r) => r.is_active).reduce((a, r) => (new Date(r.first_detected_at) < new Date(a.first_detected_at) ? r : a)).first_detected_at).replace(" ago", "")}` : `down ${downtimeText(it.longest)}`}</small></div>
       <div class="so-item-more" hidden>${detail(it)}</div>
-    </div>`).join("") : `<div class="empty-state"><h3>No stock-outs match these filters</h3></div>`) + more;
+    </div>`).join("") : `<div class="empty-state"><h3>${stockFilters.status === "new" && !stockFilters.q ? "No new stock-outs in this period" : "No stock-outs match these filters"}</h3></div>`) + more;
   $("#sMinor")?.addEventListener("click", () => { stockShowMinor = true; drawStockItems(); });
   $("#stockList").querySelectorAll(".so-item").forEach((row) => row.addEventListener("click", (e) => {
     if (e.target.closest(".so-item-more")) return;  // clicks inside the detail table do not collapse it
