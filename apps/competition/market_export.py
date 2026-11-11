@@ -1,6 +1,7 @@
 """Excel workbook comparing an outlet's menu on a delivery app (Zomato or Swiggy) with competitors', in every aspect we read."""
 
 import re
+from functools import lru_cache
 from io import BytesIO
 from zoneinfo import ZoneInfo
 
@@ -25,8 +26,13 @@ GENERIC = PROTEINS | {"and", "with", "in", "of", "the", "a", "sauce", "special",
                       "make", "your", "own", "hamper", "pack", "platter", "bucket", "family", "party"}
 
 
-def _words(name: str) -> set[str]:
-    return set(NOISE.sub(" ", name.lower()).split())
+@lru_cache(maxsize=None)
+def _cached_words(name: str) -> frozenset:
+    return frozenset(NOISE.sub(" ", name.lower()).split())
+
+
+def _words(name: str) -> frozenset:
+    return _cached_words(name)  # matching compares every dish with every other dish, so each name is cleaned once
 
 
 def _size(item: dict) -> tuple:
