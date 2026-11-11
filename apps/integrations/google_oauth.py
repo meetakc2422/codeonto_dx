@@ -34,6 +34,8 @@ REVOKE_URL = "https://oauth2.googleapis.com/revoke"
 USERINFO_URL = "https://openidconnect.googleapis.com/v1/userinfo"
 BUSINESS_SCOPE = "https://www.googleapis.com/auth/business.manage"
 SCOPES = f"{BUSINESS_SCOPE} openid email"
+# no include_granted_scopes: the same Google client may hold older Sheets/Drive grants (restricted scopes), and adding
+# them back would show users Google's "unverified app" warning; we ask for exactly these three
 STATE_SALT, STATE_MAX_AGE = "google-oauth", 600
 
 
@@ -69,7 +71,7 @@ def connect(request):
     state = signing.dumps({"c": client.id, "u": request.user.id, "n": nonce}, salt=STATE_SALT)
     return Response({"url": AUTH_URL + "?" + urlencode({
         "client_id": settings.GOOGLE_CLIENT_ID, "redirect_uri": _redirect_uri(request), "response_type": "code",
-        "scope": SCOPES, "access_type": "offline", "prompt": "consent", "include_granted_scopes": "true", "state": state})})
+        "scope": SCOPES, "access_type": "offline", "prompt": "consent", "state": state})})
 
 
 def _back(result: str, reason: str = "") -> HttpResponseRedirect:
