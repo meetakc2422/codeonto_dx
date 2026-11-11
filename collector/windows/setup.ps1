@@ -6,7 +6,8 @@ Set-Location (Split-Path $PSScriptRoot -Parent)
 
 if (-not (Test-Path ".venv\Scripts\python.exe")) {
     # the newest Python can be ahead of the packages (Playwright, psycopg wheels): prefer 3.13 / 3.12 when installed
-    $ver = @("3.13", "3.12") | Where-Object { py "-$_" -c "pass" 2>$null; $LASTEXITCODE -eq 0 } | Select-Object -First 1
+    # asked through cmd: in Windows PowerShell a missing version's stderr would stop the script under "Stop"
+    $ver = @("3.13", "3.12") | Where-Object { cmd /c "py -$_ -c pass >nul 2>&1"; $LASTEXITCODE -eq 0 } | Select-Object -First 1
     if (-not $ver) { $ver = "3" }
     Write-Host "Creating .venv with Python $ver ..."
     py "-$ver" -m venv .venv
