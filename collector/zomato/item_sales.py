@@ -137,6 +137,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         return False
     end = date.today() - timedelta(days=1)
     start = end - timedelta(days=cfg.integer("ZOMATO_ITEM_SALES_DAYS", 35) - 1)
+    start, end = cfg.date_range(start, end)  # BACKFILL_FROM/TO
     windows, s = [], start
     while s <= end:
         windows.append((s, min(end, s + timedelta(days=30))))
@@ -148,6 +149,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                        FROM brand_outlets bo JOIN zomato_outlets z ON z.res_id = bo.zomato_res_id
                        WHERE bo.is_active AND z.is_active""")
         stores = cur.fetchall()
+        stores = cfg.keep_stores(stores)  # ONLY_RES_IDS (backfill)
     if not stores:
         log.info("zomato item sales: no Zomato ids are mapped to stores yet")
         return True

@@ -93,6 +93,8 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     days = cfg.integer("SWIGGY_REVIEW_DAYS", 60)
     end_ms = int(time.time() * 1000)
     start_ms = end_ms - days * 86400 * 1000
+    start_ms, end_ms = cfg.date_range_ms(start_ms, end_ms)  # BACKFILL_FROM/TO
+    days = round((end_ms - start_ms) / 86400000)
 
     with db.transaction() as cur:
         accs = {a: db.get_account(cur, "swiggy", a) for a in accounts}
@@ -101,6 +103,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                        JOIN brands b ON b.id = bo.brand_id
                        WHERE bo.is_active AND s.is_active""")
         stores = cur.fetchall()
+        stores = cfg.keep_stores(stores)  # ONLY_RES_IDS (backfill)
     if not stores:
         log.info("swiggy reviews: no Swiggy ids are mapped to stores yet")
         return True

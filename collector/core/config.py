@@ -78,3 +78,42 @@ def business_date(local):
     from datetime import timedelta
 
     return (local - timedelta(hours=mapping("meal_windows")["windows"][0]["from"])).date()
+
+
+# ---- backfill: limit a run to some outlets and a date range (set by run_backfill.py, or by hand) ----
+def only_res_ids() -> set[str]:
+    """ONLY_RES_IDS=123,456 -> {'123', '456'}; empty means every mapped outlet."""
+    return {x.strip() for x in os.getenv("ONLY_RES_IDS", "").split(",") if x.strip()}
+
+
+def keep_stores(stores: list) -> list:
+    """Drop stores whose res_id isn't in ONLY_RES_IDS (no-op when it's unset)."""
+    only = only_res_ids()
+    return [s for s in stores if str(s["res_id"]) in only] if only else stores
+
+
+def date_range(default_start, default_end):
+    """(start, end) dates: BACKFILL_FROM / BACKFILL_TO (YYYY-MM-DD) when set, else the job's own window."""
+    from datetime import date
+
+    def parse(name, fallback):
+        raw = text(name)
+        try:
+            return date.fromisoformat(raw) if raw else fallback
+        except ValueError:
+            raise ConfigError(f"{name} must be YYYY-MM-DD, got '{raw}'")
+
+    return parse("BACKFILL_FROM", default_start), parse("BACKFILL_TO", default_end)
+
+
+def date_range_ms(default_start_ms: int, default_end_ms: int) -> tuple[int, int]:
+    """Same as date_range for jobs that ask in epoch milliseconds (IST days, end day inclusive)."""
+    from datetime import datetime, time as clock, timedelta, timezone
+
+    if not (text("BACKFILL_FROM") or text("BACKFILL_TO")):
+        return default_start_ms, default_end_ms
+    ist = timezone(timedelta(minutes=timezone_offset_minutes()))
+    to_day = lambda ms: datetime.fromtimestamp(ms / 1000, ist).date()  # noqa: E731
+    start, end = date_range(to_day(default_start_ms), to_day(default_end_ms))
+    at = lambda d: int(datetime.combine(d, clock(), ist).timestamp() * 1000)  # noqa: E731
+    return at(start), min(at(end + timedelta(days=1)) - 1, default_end_ms)

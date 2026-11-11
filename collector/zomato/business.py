@@ -108,6 +108,8 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         return False
     days = cfg.integer("ZOMATO_REPORT_DAYS", CHUNK_DAYS)
     end = date.today() - timedelta(days=1)
+    start, end = cfg.date_range(end - timedelta(days=days - 1), end)  # BACKFILL_FROM/TO
+    days = (end - start).days + 1
     windows, cursor = [], end
     while cursor > end - timedelta(days=days):  # newest window first
         start = max(cursor - timedelta(days=CHUNK_DAYS - 1), end - timedelta(days=days - 1))
@@ -120,11 +122,9 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                        FROM brand_outlets bo JOIN zomato_outlets z ON z.res_id = bo.zomato_res_id
                        JOIN brands b ON b.id = bo.brand_id WHERE bo.is_active AND z.is_active""")
         stores = cur.fetchall()
+        stores = cfg.keep_stores(stores)  # ONLY_RES_IDS (backfill)
         cur.execute("SELECT code, id FROM kpis WHERE code = ANY(%s)", (list(KPI_CODES),))
         kpi_id = {r["code"]: r["id"] for r in cur.fetchall()}
-    only = {x.strip() for x in os.getenv("ONLY_RES_IDS", "").split(",") if x.strip()}  # e.g. ONLY_RES_IDS=22222916 to test one store
-    if only:
-        stores = [s for s in stores if s["res_id"] in only]
     if not stores:
         log.info("zomato business: no Zomato ids are mapped to stores yet")
         return True

@@ -99,6 +99,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         return False
     end = date.today()
     start = end - timedelta(days=cfg.integer("ZOMATO_COMPLAINT_DAYS", 30))
+    start, end = cfg.date_range(start, end)  # BACKFILL_FROM/TO
 
     with db.transaction() as cur:
         accs = {a: db.get_account(cur, "zomato", a) for a in accounts}
@@ -106,6 +107,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                        FROM brand_outlets bo JOIN zomato_outlets z ON z.res_id = bo.zomato_res_id
                        WHERE bo.is_active AND z.is_active""")
         stores = cur.fetchall()
+        stores = cfg.keep_stores(stores)  # ONLY_RES_IDS (backfill)
         # orders whose complaints are all past their window by a day: nothing left to change
         cur.execute("""SELECT order_id FROM complaints WHERE platform = 'zomato' GROUP BY order_id
                        HAVING max(coalesce(expires_at, raised_at)) < now() - interval '1 day'""")

@@ -117,6 +117,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         return False
     end = date.today()
     start = end - timedelta(days=cfg.integer("SWIGGY_COMPLAINT_DAYS", 30))
+    start, end = cfg.date_range(start, end)  # BACKFILL_FROM/TO
     size = cfg.integer("SWIGGY_COMPLAINT_BATCH", 20)
 
     with db.transaction() as cur:
@@ -125,6 +126,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                        FROM brand_outlets bo JOIN swiggy_outlets s ON s.swiggy_id = bo.swiggy_id
                        WHERE bo.is_active AND s.is_active""")
         stores = cur.fetchall()
+        stores = cfg.keep_stores(stores)  # ONLY_RES_IDS (backfill)
     if not stores:
         log.info("swiggy complaints: no Swiggy ids are mapped to stores yet")
         return True

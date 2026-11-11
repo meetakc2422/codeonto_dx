@@ -116,6 +116,8 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         return False
     days = cfg.integer("SWIGGY_REPORT_DAYS", WINDOW_DAYS)
     end = date.today() - timedelta(days=cfg.integer("SWIGGY_REPORT_LAG_DAYS", 2))  # the newest days are not ready yet
+    start, end = cfg.date_range(end - timedelta(days=days - 1), end)  # BACKFILL_FROM/TO
+    days = (end - start).days + 1
     windows, cursor = [], end
     while cursor > end - timedelta(days=days):
         start = max(cursor - timedelta(days=WINDOW_DAYS - 1), end - timedelta(days=days - 1))
@@ -128,15 +130,13 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                        FROM brand_outlets bo JOIN swiggy_outlets s ON s.swiggy_id = bo.swiggy_id
                        JOIN brands b ON b.id = bo.brand_id WHERE bo.is_active AND s.is_active""")
         stores = cur.fetchall()
+        stores = cfg.keep_stores(stores)  # ONLY_RES_IDS (backfill)
         cur.execute("SELECT code, id FROM kpis WHERE code = ANY(%s)", (list(KPI_CODES),))
         kpi_id = {r["code"]: r["id"] for r in cur.fetchall()}
     missing = KPI_CODES - set(kpi_id)
     if missing:
         log.error("swiggy business: KPIs missing in the database (%s); run `manage.py migrate`", ", ".join(sorted(missing)))
         return False
-    only = {x.strip() for x in os.getenv("ONLY_RES_IDS", "").split(",") if x.strip()}
-    if only:
-        stores = [s for s in stores if s["res_id"] in only]
 
     ok, done = True, 0
     for label, account in accs.items():

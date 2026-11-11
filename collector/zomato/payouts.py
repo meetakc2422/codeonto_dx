@@ -410,6 +410,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                        FROM brand_outlets bo JOIN zomato_outlets z ON z.res_id = bo.zomato_res_id JOIN brands b ON b.id = bo.brand_id
                        WHERE bo.is_active AND z.is_active ORDER BY bo.id""")
         stores = cur.fetchall()
+        stores = cfg.keep_stores(stores)  # ONLY_RES_IDS (backfill)
         cur.execute("""SELECT outlet_id, start_date, end_date FROM payout_cycles
                        WHERE platform = 'zomato' AND reconciled_at IS NOT NULL AND upper(status) = 'PAID'""")
         finished = {(r["outlet_id"], r["start_date"], r["end_date"]) for r in cur.fetchall()}
@@ -422,6 +423,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     default = next(iter(by_id))
     end = datetime.now(IST).date()
     start = end - timedelta(days=LOOKBACK_DAYS)
+    start, end = cfg.date_range(start, end)  # BACKFILL_FROM/TO
 
     stop = threading.Event()
     lock = threading.Lock()

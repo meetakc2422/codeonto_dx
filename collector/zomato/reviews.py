@@ -164,6 +164,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                        JOIN brands b ON b.id = bo.brand_id
                        WHERE bo.is_active AND z.is_active""")
         stores = cur.fetchall()
+        stores = cfg.keep_stores(stores)  # ONLY_RES_IDS (backfill)
     if not stores:
         log.info("zomato reviews: no Zomato ids are mapped to stores yet")
         return True
