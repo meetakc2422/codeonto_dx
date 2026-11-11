@@ -29,6 +29,13 @@ def _words(name: str) -> set[str]:
     return set(NOISE.sub(" ", name.lower()).split())
 
 
+def _size(item: dict) -> tuple:
+    """Portion plus piece count / bucket, so '3 pcs' wings never line up with a 12-piece bucket."""
+    name = item["name"].lower()
+    pcs = re.search(r"(\d+)\s*(?:pcs|pc|pieces)\b", name)
+    return dishes.classify(item)["portion"], pcs.group(1) if pcs else "", "bucket" in name
+
+
 def _match(item: dict, menu: list[dict]) -> tuple[dict | None, float]:
     """The competitor dish most like ours: same veg / non-veg, same main protein, and most of their distinctive words
     shared (Kung Pao Chicken matches Kung Pao Chicken, not Bang Bang Chicken). None when nothing is close enough."""
@@ -132,6 +139,36 @@ def export(request, brand_id, outlet_id, platform):
     ]
     sheet("Summary", ["Measure", *[label for label, _, _ in rows]],
           [[name, *[f(r, ins[r.res_id]) for _, r, _ in rows]] for name, f in measures], {1: 30})
+
+    # side by side: the same dish on every selected menu on one row, prices in neighbouring columns
+    groups = []  # {"rep": first item seen, "by": {res_id: item}}
+    for _, r, _ in rows:
+        for item in r.items:
+            free = [g for g in groups if r.res_id not in g["by"]]
+            # the same name first; else the closest name of the same size (a 12-piece bucket is not 3 wings)
+            size = _size(item)
+            same_size = [g for g in free if _size(g["rep"]) == size]
+            g = next((g for g in same_size if _words(g["rep"]["name"]) == _words(item["name"])), None)
+            if not g:
+                m, _score = _match(item, [g["rep"] for g in same_size])
+                g = next((g for g in free if g["rep"] is m), None) if m else None
+            if g:
+                g["by"][r.res_id] = item
+            else:
+                groups.append({"rep": item, "by": {r.res_id: item}})
+    groups.sort(key=lambda g: (-len(g["by"]), dishes.classify(g["rep"])["label"] or "~", g["rep"]["name"]))
+    head = ["Dish", "Dish type", "Size", f"On menus (of {len(rows)})"]
+    head += [f"{label}: price (₹)" for label, _, _ in rows] + ["Lowest (₹)", "Highest (₹)", "Gap (₹)"]
+    head += [f"{label}: dish" for label, _, _ in rows]
+    data = []
+    for g in groups:
+        c = dishes.classify(g["rep"])
+        prices = [(g["by"].get(r.res_id) or {}).get("price") for _, r, _ in rows]
+        have = [p for p in prices if p]
+        data.append([g["rep"]["name"], c["label"], c["portion"], len(g["by"]), *prices,
+                     min(have) if have else None, max(have) if have else None, (max(have) - min(have)) if len(have) > 1 else None,
+                     *[(g["by"].get(r.res_id) or {}).get("name", "") for _, r, _ in rows]])
+    sheet("Side by side", head, data, {1: 40})
 
     # 2. our dishes against the most alike dish on each competitor's menu
     comps = [(label, r) for label, r, is_us in rows if not is_us]
