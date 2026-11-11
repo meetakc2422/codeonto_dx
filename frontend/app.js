@@ -2073,14 +2073,14 @@ async function renderStockOuts(page) {
   stockRows = rows;
   stockShowMinor = false;
   const now = currentMeal();
-  // cards: with today in the period, what is out right now by the meal it went out in (+ how many went out today);
-  // for a past period, what went out in it
-  const mealNum = (m) => (end === isoDate(new Date()) ? m.out : m.count);
-  const maxMeal = Math.max(1, ...summary.by_meal.map(mealNum));
   const restored = summary.restored;
   const { start, end } = range();
   const isToday = start === end;
   const hasToday = end === isoDate(new Date());  // "now" only means something when the period runs to today
+  // cards: with today in the period, what is out right now by the meal it went out in (+ how many went out today);
+  // for a past period, what went out in it
+  const mealNum = (m) => (hasToday ? m.out : m.count);
+  const maxMeal = Math.max(1, ...summary.by_meal.map(mealNum));
   const periodWord = !isToday ? "in this period" : hasToday ? "today" : `on ${dayLabel(end)}`;
   const outlets = new Map();
   rows.forEach((r) => {
