@@ -2015,12 +2015,26 @@ async function renderUptime(page) {
 }
 
 // ---------- stock-outs ----------
-const stockFilters = { status: "", q: "", meal: "", outlet: "" };
+const MEALS = [
+  { name: "Breakfast", hours: "5 am – 12 pm", from: 5, to: 12, tone: "#f5a524" },
+  { name: "Lunch", hours: "12 – 4 pm", from: 12, to: 16, tone: "#e5484d" },
+  { name: "Evening Snacks", hours: "4 – 7 pm", from: 16, to: 19, tone: "#a855f7" },
+  { name: "Dinner", hours: "7 – 11 pm", from: 19, to: 23, tone: "#408fca" },
+  { name: "Late Night Dinner", hours: "11 pm – 5 am", from: 23, to: 29, tone: "#0b1229" },
+];
+const stockFilters = { status: "", q: "", meal: "", outlet: "", city: "" };
 let stockRows = [];
 let stockShowMinor = false;
+let stockAllOutlets = false;
+const TOP_OUTLETS = 10;
 // a dish that is back, was never out long and cost next to nothing is noise in the list: folded away until asked for
 const MINOR_MINUTES = 15, MINOR_RUPEES = 100;
 
+function currentMeal() {
+  let h = Number(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata", hour: "numeric", hour12: false })) % 24;
+  if (h < 5) h += 24;
+  return (MEALS.find((m) => h >= m.from && h < m.to) || MEALS[4]).name;
+}
 const downtimeText = (m) => (m == null ? "" : m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`);
 
 async function renderStockOuts(page) {
@@ -2034,55 +2048,85 @@ async function renderStockOuts(page) {
   ]);
   stockRows = rows;
   stockShowMinor = false;
+  const now = currentMeal();
+  const maxMeal = Math.max(1, ...summary.by_meal.map((m) => m.count));
+  const restored = summary.restored;
   const outlets = new Map();
   rows.forEach((r) => {
-    const o = outlets.get(r.outlet_id) || { id: r.outlet_id, name: r.outlet_name, out: 0 };
-    if (r.is_active) o.out++;
+    const o = outlets.get(r.outlet_id) || { id: r.outlet_id, name: r.outlet_name, city: r.city || "Other", out: 0, total: 0 };
+    o.total++; if (r.is_active) o.out++;
     outlets.set(r.outlet_id, o);
   });
-  const outletList = [...outlets.values()].sort((a, b) => b.out - a.out || a.name.localeCompare(b.name));
-  const short = (n) => n.split(" · ").slice(1).join(" · ") || n;
-  const top = summary.top_losses || [];
+  const outletList = [...outlets.values()].sort((a, b) => b.out - a.out || b.total - a.total);
+  // cities first; a city's outlets on click (the worst few, the rest on request)
+  const cities = new Map();
+  outletList.forEach((o) => {
+    const c = cities.get(o.city) || { name: o.city, out: 0, outlets: 0 };
+    c.out += o.out; c.outlets++; cities.set(o.city, c);
+  });
+  const cityList = [...cities.values()].sort((a, b) => b.out - a.out || a.name.localeCompare(b.name));
+  const maxCity = Math.max(1, ...cityList.map((c) => c.out));
+  const cityOutlets = outletList.filter((o) => o.city === stockFilters.city);
+  const maxOut = Math.max(1, ...cityOutlets.map((o) => o.out));
+  const shownOutlets = stockAllOutlets ? cityOutlets
+    : cityOutlets.filter((o, i) => (i < TOP_OUTLETS && o.out) || String(o.id) === String(stockFilters.outlet));
 
   page.innerHTML = `
     <div class="so-hero">
-      <div class="so-stat"><span class="so-live"><i></i> Out now</span>
-        <b>${inr.format(summary.active)}</b><small>${summary.active ? `items at ${plural(summary.outlets_affected, "outlet")}` : "full menu live"}</small></div>
-      <div class="so-stat" title="Estimate: each item's usual sales for the hours it was out, using the outlet's own hour-by-hour order pattern">
-        <span>Sales missed</span><b>${rupees(summary.lost_sales)}</b>
-        <small>in this period · estimate${summary.lost_unpriced ? ` · ${summary.lost_unpriced} without sales history` : ""}</small></div>
-      <div class="so-stat"><span>Back in stock</span><b>${inr.format(summary.restored)}</b>
-        <small>avg down ${downtimeText(summary.avg_downtime) || "—"}</small></div>
+      <div><span class="so-live"><i></i> Live</span>
+        <div class="so-big">${inr.format(summary.active)}<small> items out of stock right now</small></div>
+        <p>across ${summary.outlets_affected} outlet${summary.outlets_affected === 1 ? "" : "s"} · ${inr.format(restored)} back in stock · avg downtime ${downtimeText(summary.avg_downtime) || "—"}</p>
+        <p class="so-lost" title="Estimate: each item's usual sales for the hours it was out, using the outlet's own hour-by-hour order pattern${summary.lost_unpriced ? `. ${summary.lost_unpriced} stock-outs have no sales history, so no ₹` : ""}">
+          <b>${rupees(summary.lost_sales)}</b> of sales missed in this period <small>(estimate)</small></p></div>
+      <div class="so-now">Now serving<b>${now}</b></div>
     </div>
 
-    ${top.length ? `<div class="card so-top"><h3>Costliest stock-outs <small>click a dish to see where and when</small></h3>
-      <table><thead><tr><th>Dish</th><th class="num">Outlets</th><th class="num">Hours out</th><th class="num">Sales missed</th><th></th></tr></thead><tbody>
-      ${top.map((t) => `<tr data-dish="${esc(t.item_name)}"><td><b>${esc(t.item_name)}</b></td><td class="num">${t.outlets}</td>
-        <td class="num">${inr.format(Math.round(t.hours))}</td><td class="num"><b>${rupees(t.lost)}</b></td>
-        <td>${t.out_now ? `<span class="status pending">${t.out_now} out now</span>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
+    <div class="so-section"><h3>By mealtime <small>when each stock-out was first spotted · click to filter</small></h3>
+      <div class="so-meals">${summary.by_meal.map((m) => {
+        const meta = MEALS.find((x) => x.name === m.meal);
+        return `<button class="so-meal ${stockFilters.meal === m.meal ? "on" : ""} ${m.meal === now ? "now" : ""}" data-meal="${m.meal}" style="--tone:${meta.tone}">
+          ${m.meal === now ? '<em>NOW</em>' : ""}<span class="so-meal-name">${m.meal}</span><span class="so-meal-hours">${meta.hours}</span>
+          <b>${inr.format(m.count)}</b><span class="so-bar"><i style="width:${(m.count / maxMeal) * 100}%"></i></span></button>`;
+      }).join("")}</div></div>
+
+    ${outletList.length > 1 ? `<div class="so-section">${stockFilters.city
+      ? `<h3><button class="so-back" id="sCities">‹ All cities</button> ${esc(stockFilters.city)} <small>items out of stock now · click an outlet to filter</small></h3>`
+      : `<h3>Cities <small>items out of stock now · click a city for its outlets</small></h3>`}
+      <div class="so-rank">${stockFilters.city ? shownOutlets.map((o) => `
+        <button class="so-rank-row ${String(stockFilters.outlet) === String(o.id) ? "on" : ""}" data-outlet="${o.id}" title="${esc(o.name)}">
+          <span>${esc(o.name.split(" · ").pop())}</span><span class="so-bar"><i style="width:${(o.out / maxOut) * 100}%"></i></span>
+          <b class="${o.out ? "bad" : "ok"}">${o.out}</b></button>`).join("")
+        : cityList.map((c) => `
+        <button class="so-rank-row" data-city="${esc(c.name)}">
+          <span>${esc(c.name)} <small class="muted">${plural(c.outlets, "outlet")}</small></span><span class="so-bar"><i style="width:${(c.out / maxCity) * 100}%"></i></span>
+          <b class="${c.out ? "bad" : "ok"}">${inr.format(c.out)}</b></button>`).join("")}</div>
+      ${!stockFilters.city ? "" : shownOutlets.length < cityOutlets.length ? `<button class="btn light so-more" id="sAllOutlets">Show all ${cityOutlets.length} outlets</button>`
+        : stockAllOutlets && cityOutlets.length > TOP_OUTLETS ? `<button class="btn light so-more" id="sAllOutlets">Show top ${TOP_OUTLETS}</button>` : ""}</div>` : ""}
 
     <div class="card so-list">
       <div class="toolbar">
         <input id="sq" type="search" placeholder="Search item…" value="${esc(stockFilters.q)}">
         <div class="segmented" id="sStatus">${[["", "All"], ["active", "Out now"], ["restored", "Back"]]
           .map(([v, l]) => `<button data-v="${v}" class="${stockFilters.status === v ? "active" : ""}">${l}</button>`).join("")}</div>
-        <select id="sMeal"><option value="">Any mealtime</option>${summary.by_meal.filter((m) => m.count).map((m) =>
-          `<option value="${esc(m.meal)}" ${stockFilters.meal === m.meal ? "selected" : ""}>${esc(m.meal)} (${m.count})</option>`).join("")}</select>
-        ${outletList.length > 1 ? `<select id="sOutlet"><option value="">All outlets</option>${outletList.map((o) =>
-          `<option value="${o.id}" ${String(stockFilters.outlet) === String(o.id) ? "selected" : ""}>${esc(short(o.name))}${o.out ? ` (${o.out} out)` : ""}</option>`).join("")}</select>` : ""}
+        <button class="btn light" id="sClear" ${stockFilters.meal || stockFilters.outlet || stockFilters.city ? "" : "hidden"}>Clear filters</button>
         <button class="btn blue" id="sExport" style="margin-left:auto">Export to Excel</button>
       </div>
       <div id="stockList"></div>
     </div>`;
 
-  page.querySelectorAll("[data-dish]").forEach((tr) => tr.addEventListener("click", () => {
-    stockFilters.q = tr.dataset.dish; stockFilters.status = ""; $("#sq").value = tr.dataset.dish;
-    $("#sStatus .active")?.classList.remove("active"); $('#sStatus [data-v=""]').classList.add("active");
-    drawStockItems(); $("#stockList .so-item")?.click(); $("#stockList").scrollIntoView({ behavior: "smooth", block: "start" });
+  page.querySelectorAll("[data-meal]").forEach((b) => b.addEventListener("click", () => {
+    stockFilters.meal = stockFilters.meal === b.dataset.meal ? "" : b.dataset.meal; renderStockOuts(page);
   }));
-  $("#sMeal").addEventListener("change", (e) => { stockFilters.meal = e.target.value; drawStockItems(); });
-  $("#sOutlet")?.addEventListener("change", (e) => { stockFilters.outlet = e.target.value; drawStockItems(); });
+  page.querySelectorAll("[data-outlet]").forEach((b) => b.addEventListener("click", () => {
+    stockFilters.outlet = String(stockFilters.outlet) === b.dataset.outlet ? "" : b.dataset.outlet; renderStockOuts(page);
+  }));
+  page.querySelectorAll("[data-city]").forEach((b) => b.addEventListener("click", () => {
+    stockFilters.city = b.dataset.city; stockFilters.outlet = ""; stockAllOutlets = false; renderStockOuts(page);
+  }));
+  $("#sCities")?.addEventListener("click", () => { stockFilters.city = ""; stockFilters.outlet = ""; renderStockOuts(page); });
+  $("#sAllOutlets")?.addEventListener("click", () => { stockAllOutlets = !stockAllOutlets; renderStockOuts(page); });
   $("#sExport").addEventListener("click", () => exportStockOuts($("#sExport")));
+  $("#sClear").addEventListener("click", () => { stockFilters.meal = ""; stockFilters.outlet = ""; stockFilters.city = ""; renderStockOuts(page); });
   $("#sStatus").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
     stockFilters.status = b.dataset.v;
@@ -2117,6 +2161,7 @@ function drawStockItems() {
     (!stockFilters.status || (stockFilters.status === "active") === r.is_active) &&
     (!stockFilters.meal || r.mealtime === stockFilters.meal) &&
     (!stockFilters.outlet || String(r.outlet_id) === String(stockFilters.outlet)) &&
+    (!stockFilters.city || r.city === stockFilters.city) &&
     (!q || r.item_name.toLowerCase().includes(q)));
   const byItem = new Map();
   rows.forEach((r) => { byItem.set(r.item_name, [...(byItem.get(r.item_name) || []), r]); });
@@ -2128,7 +2173,7 @@ function drawStockItems() {
   const minor = (it) => !it.out && it.longest < MINOR_MINUTES && it.lost < MINOR_RUPEES;
   const hidden = stockFilters.q || stockShowMinor ? 0 : all.filter(minor).length;
   const items = hidden ? all.filter((it) => !minor(it)) : all;
-  const short = (n) => esc(n.split(" · ").slice(1).join(" · ") || n);
+  const short = (n) => esc(n.split(" · ").pop());
   const clock = (ts) => (ts ? new Date(ts).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : "—");
   const comesBack = (t) => (t ? esc(t.replace(/^out of stock till\s*/i, "")) : "");
   // one expandable line per dish; the detail lists every episode with exact out / back times
@@ -2143,8 +2188,8 @@ function drawStockItems() {
   $("#stockList").innerHTML = (items.length ? `<div class="so-count muted">${items.length} dish${items.length === 1 ? "" : "es"} · click a dish for exact times</div>` + items.map((it, i) => `
     <div class="so-item" data-i="${i}">
       <div class="so-item-main"><b>${esc(it.name)}</b>${it.category ? `<span class="so-cat">${esc(it.category)}</span>` : ""}</div>
-      <div class="so-item-outlets">${it.list.slice(0, 3).map((r) => `<span class="so-chip ${r.is_active ? "out" : "back"}" title="${esc(r.mealtime)} · went out ${clock(r.first_detected_at)}${r.is_active ? "" : ` · back ${clock(r.restored_at)}`}${r.back_at ? ` · Zomato says back ${comesBack(r.back_at)}` : ""}">${short(r.outlet_name)}<small>${esc(r.mealtime)}</small></span>`).join("")}
-        ${it.list.length > 3 ? `<span class="so-chip more">+${it.list.length - 3} more</span>` : ""}</div>
+      <div class="so-item-outlets">${it.list.slice(0, 4).map((r) => `<span class="so-chip ${r.is_active ? "out" : "back"}" title="${esc(r.mealtime)} · went out ${clock(r.first_detected_at)}${r.is_active ? "" : ` · back ${clock(r.restored_at)}`}${r.back_at ? ` · Zomato says back ${comesBack(r.back_at)}` : ""}">${short(r.outlet_name)}<small>${esc(r.mealtime)}</small></span>`).join("")}
+        ${it.list.length > 4 ? `<span class="so-chip more">+${it.list.length - 4} more</span>` : ""}</div>
       <div class="so-item-lost num">${it.priced ? `<b>${rupees(it.lost)}</b><small class="muted">missed</small>` : '<span class="muted" title="No sales history for this item">—</span>'}</div>
       <div class="so-item-state">${it.out ? `<span class="status pending">${it.out} out</span>` : `<span class="status replied">back</span>`}
         <small class="muted">${it.out ? `since ${timeAgo(it.list.find((r) => r.is_active).first_detected_at)}` : `down ${downtimeText(it.longest)}`}</small></div>

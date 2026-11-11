@@ -23,8 +23,23 @@ def _meal(s: StockOut) -> str:
     return MEAL_LABELS.get(s.mealtime, s.mealtime)
 
 
+# the outlets' own city text is messy (Bengaluru Urban, Delhi_NCR, Chennai Corporation...): group it into metros
+METROS = {"bangalore": "Bengaluru", "bengaluru": "Bengaluru", "chennai": "Chennai", "delhi": "Delhi NCR", "gurugram": "Delhi NCR",
+          "gurgaon": "Delhi NCR", "noida": "Delhi NCR", "ghaziabad": "Delhi NCR", "faridabad": "Delhi NCR", "mumbai": "Mumbai",
+          "thane": "Mumbai", "navi mumbai": "Mumbai", "hyderabad": "Hyderabad", "secunderabad": "Hyderabad", "pune": "Pune",
+          "kolkata": "Kolkata"}
+
+
+def metro(city: str) -> str:
+    c = (city or "").strip().lower().replace("_", " ")
+    for key, name in METROS.items():
+        if key in c:
+            return name
+    return (city or "").strip().replace("_", " ").title() or "Other"
+
+
 def _json(s: StockOut, loss=None) -> dict:
-    return {"lost": None if loss is None else round(loss), "id": s.id, "item_name": s.item_name, "category": s.category, "platform": s.platform_id,
+    return {"lost": None if loss is None else round(loss), "city": metro(s.outlet.city), "id": s.id, "item_name": s.item_name, "category": s.category, "platform": s.platform_id,
             "outlet_id": s.outlet_id, "outlet_name": s.outlet.display_name,
             "mealtime": _meal(s), "is_active": s.is_active, "back_at": s.back_at, "first_detected_at": s.first_detected_at,
             "restored_at": s.restored_at, "downtime_minutes": s.downtime_minutes}

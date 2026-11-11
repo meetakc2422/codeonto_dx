@@ -458,19 +458,17 @@ a.btn { text-decoration: none; }
 .so-chip.back { background: var(--green-soft); color: var(--green); }
 .so-chip.more { background: #eef1f6; color: var(--muted); justify-content: center; }
 .so-item-state { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
-.so-hero { justify-content: flex-start; gap: 12px 40px; }
-.so-stat { display: flex; flex-direction: column; gap: 2px; min-width: 150px; }
-.so-stat > span { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #b4c0d8; }
-.so-stat > span.so-live { color: #ff8a8e; }
-.so-stat b { font-size: 34px; line-height: 1.15; }
-.so-stat small { font-size: 12px; color: #b4c0d8; }
-.so-top { margin-bottom: 20px; }
-.so-top h3 { margin: 0 0 10px; font-size: 14px; } .so-top h3 small { font-weight: 400; color: var(--muted); margin-left: 8px; }
-.so-top table { width: 100%; border-collapse: collapse; }
-.so-top th { text-align: left; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; padding: 6px 8px; }
-.so-top td { padding: 9px 8px; border-top: 1px solid var(--border); }
-.so-top th.num, .so-top td.num { text-align: right; }
-.so-top tbody tr { cursor: pointer; } .so-top tbody tr:hover { background: #fafbfd; }
+.so-rank { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 2px 28px; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 16px; }
+.so-rank-row { display: grid; grid-template-columns: minmax(0, 1fr) 30% 36px; align-items: center; gap: 12px; padding: 7px 6px; background: none; border: 0; border-radius: 6px; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.so-rank-row > span:first-child { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.so-rank-row .so-bar { margin: 0; }
+.so-rank-row b { text-align: right; } .so-rank-row b.bad { color: var(--red); } .so-rank-row b.ok { color: var(--green); }
+.so-rank-row:hover { background: #fafbfd; } .so-rank-row.on { background: var(--blue-soft); outline: 1px solid var(--blue); }
+.so-more { margin-top: 8px; }
+.so-back { background: none; border: 0; padding: 0 8px 0 0; font: inherit; color: var(--blue); cursor: pointer; }
+.so-rank-row small { font-size: 11px; margin-left: 6px; }
+@media (max-width: 700px) { .so-rank { grid-template-columns: 1fr; } }
+.so-lost { margin-top: 8px !important; color: #fff !important; font-size: 15px; } .so-lost small { color: #b4c0d8; }
 .so-item-lost { display: flex; flex-direction: column; align-items: flex-end; gap: 2px; }
 .so-item-lost small { font-size: 11px; }
 .so-minor { margin-top: 10px; }
