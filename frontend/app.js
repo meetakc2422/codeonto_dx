@@ -151,6 +151,9 @@ function timeAgo(ts) {
   if (diff < 86400 * 30) return `${Math.round(diff / 86400)}d ago`;
   return new Date(ts).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 }
+// the ₹ "sales missed on stock-outs" estimate stays hidden (stock-outs page, item scorecard) until it only counts
+// checked hours and leaves out items switched off on purpose; apps/insights STOCKOUT_LOSS_SHOWN is the server side
+const SHOW_STOCK_LOSS = false;
 const PLATFORM_ICONS = ["google", "zomato", "swiggy"];
 
 function platformPill(code) {
@@ -1052,7 +1055,7 @@ let itemData = null;
 const ITEM_COLS = [
   ["name", "Item", ""], ["revenue", "Sales", "num"], ["orders", "Orders", "num"], ["complaints", "Complaints", "num"],
   ["complaint_rate", "Per 100 orders", "num"], ["refunds", "Refunds", "num"], ["stockout_hours", "Out (h)", "num"],
-  ["stockout_loss", "Stock-out ₹", "num"], ["avg_item_rating", "Item ★", "num"], ["money_lost", "₹ lost", "num"],
+  ...(SHOW_STOCK_LOSS ? [["stockout_loss", "Stock-out ₹", "num"]] : []), ["avg_item_rating", "Item ★", "num"], ["money_lost", "₹ lost", "num"],
 ];
 
 async function renderItems(page) {
@@ -1070,7 +1073,7 @@ async function renderItems(page) {
         <input id="iq" type="search" placeholder="Search item or category…" value="${esc(itemView.q)}">
         <div class="segmented" id="iFlag">${[[true, `Needs action (${t.flagged})`], [false, `All items (${itemData.items.length})`]]
           .map(([v, l]) => `<button data-v="${v}" class="${itemView.flagged === v ? "active" : ""}">${l}</button>`).join("")}</div>
-        <span class="muted" style="margin-left:auto">₹ lost = refunds + sales missed on stock-outs · click a row for details</span>
+        <span class="muted" style="margin-left:auto">₹ lost = ${SHOW_STOCK_LOSS ? "refunds + sales missed on stock-outs" : "refunds"} · click a row for details</span>
       </div>
       <div class="table-wrap"><table class="cp-table cp-list"><thead><tr>
         ${ITEM_COLS.map(([k, l, cls]) => `<th class="${cls} it-sort" data-sort="${k}">${l}${itemView.sort === k ? (itemView.dir < 0 ? " ▾" : " ▴") : ""}</th>`).join("")}
@@ -1109,7 +1112,7 @@ function drawItems() {
       <td class="num ${r.complaints >= 5 && r.complaint_rate >= 2 * avg ? "cp-bad" : ""}">${r.orders && r.complaints ? r.complaint_rate.toFixed(1) : dash}</td>
       <td class="num">${r.refunds ? rupees(r.refunds) : dash}</td>
       <td class="num">${r.stockout_hours ? inr.format(Math.round(r.stockout_hours)) : dash}</td>
-      <td class="num">${r.stockout_loss ? rupees(r.stockout_loss) : dash}</td>
+      ${SHOW_STOCK_LOSS ? `<td class="num">${r.stockout_loss ? rupees(r.stockout_loss) : dash}</td>` : ""}
       <td class="num ${r.avg_item_rating != null && r.avg_item_rating < 3.5 ? "cp-bad" : ""}">${r.avg_item_rating != null ? `${r.avg_item_rating.toFixed(1)} <small class="muted">(${r.rated})</small>` : dash}</td>
       <td class="num"><b>${r.money_lost ? rupees(r.money_lost) : dash}</b></td></tr>`).join("")
     || `<tr><td colspan="${ITEM_COLS.length}" class="muted" style="text-align:center;padding:24px">${itemView.flagged ? "No item needs action in this period 🎉" : "No item data for this filter"}</td></tr>`;
@@ -1123,7 +1126,7 @@ function itemDetail(r) {
     <div class="cp-kv">
       <div><span>Units sold</span>${inr.format(Math.round(r.units))}${r.units ? ` · avg ${rupees(r.revenue / r.units)} each` : ""}</div>
       ${issues ? `<div><span>Complaints by issue</span>${issues}</div>` : ""}
-      <div><span>Stock-outs</span>${r.stockouts ? `${r.stockouts} times · ${inr.format(Math.round(r.stockout_hours))} h · ${rupees(r.stockout_loss)} missed` : "none"}</div>
+      <div><span>Stock-outs</span>${r.stockouts ? `${r.stockouts} times · ${inr.format(Math.round(r.stockout_hours))} h${SHOW_STOCK_LOSS ? ` · ${rupees(r.stockout_loss)} missed` : ""}` : "none"}</div>
       <div><span>Item ratings</span>${r.rated ? `${r.rated} ratings · ${r.bad_review_pct}% are 1–2★` : "none in this period"}</div>
     </div></td></tr>`;
 }
@@ -2025,8 +2028,6 @@ const MEALS = [
 const stockFilters = { status: "", q: "", meal: "", outlet: "", city: "" };
 let stockRows = [];
 let stockShowMinor = false;
-// the ₹ "sales missed" estimate stays hidden until it only counts checked hours and leaves out items switched off on purpose
-const SHOW_STOCK_LOSS = false;
 let stockAllOutlets = false;
 const TOP_OUTLETS = 10;
 // a dish that is back, was never out long and cost next to nothing is noise in the list: folded away until asked for

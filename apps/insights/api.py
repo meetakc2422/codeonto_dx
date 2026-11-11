@@ -29,6 +29,9 @@ HISTORY_DAYS = 28
 MIN_PATTERN_DAYS = 14
 DEFAULT_HOURS = range(11, 23)
 LOST_ORDER_STATUSES = ["CANCELLED", "REJECTED"]
+# ₹ "sales missed on stock-outs" stays off until it counts only checked hours and leaves out items switched off on
+# purpose; stock-out hours and counts are still shown (the stock-outs page hides it too: SHOW_STOCK_LOSS in app.js)
+STOCKOUT_LOSS_SHOWN = False
 
 
 def _norm(name: str) -> str:
@@ -167,6 +170,7 @@ def money_leaked(request, brand_id):
             o["offline_unpriced_minutes"] += e.downtime_minutes
 
     for s, hours, loss in stockout_losses(stockouts, end)[0]:
+        loss = loss if STOCKOUT_LOSS_SHOWN else None
         o = by_outlet[s.outlet_id]
         o["stockout_hours"] += hours
         o["stockouts_n"] += 1
@@ -204,6 +208,8 @@ def money_leaked(request, brand_id):
         {"key": "payout_short", "label": "Payouts below expected", "amount": round(sums["payout_short"]), "count": int(sums["payout_short_n"]),
          "unit": "cycles", "note": "from reconciliation", "estimate": False},
     ]
+    if not STOCKOUT_LOSS_SHOWN:
+        causes = [c for c in causes if c["key"] != "stockouts"]
     return Response({
         "start": start, "end": end, "total": round(sum(c["amount"] for c in causes)),
         "causes": sorted(causes, key=lambda c: -c["amount"]),
@@ -225,8 +231,10 @@ def _flags(r: dict, avg_complaint_rate: float) -> list[str]:
                      + (f" (mostly {top.replace('_', ' ')})" if r["issues"].get(top) else "") if avg_complaint_rate else "High complaint rate")
     # out of stock long enough to matter for this item: over a day per outlet that sells it, or 3%+ of its sales
     per_outlet = r["stockout_hours"] / max(1, r["outlets"])
-    if r["stockout_loss"] >= 1000 and (per_outlet >= 24 or r["stockout_loss"] >= 0.03 * r["revenue"]):
+    if STOCKOUT_LOSS_SHOWN and r["stockout_loss"] >= 1000 and (per_outlet >= 24 or r["stockout_loss"] >= 0.03 * r["revenue"]):
         flags.append(f"Out of stock {r['stockout_hours']:.0f} h ({r['stockouts']} times), ₹{r['stockout_loss']:,.0f} of sales missed")
+    elif not STOCKOUT_LOSS_SHOWN and per_outlet >= 24 and r["revenue"] > 0:
+        flags.append(f"Out of stock {r['stockout_hours']:.0f} h ({r['stockouts']} times), over a day per outlet")
     if r["rated"] >= 5 and r["bad_review_pct"] >= 30:
         flags.append(f"{r['bad_review_pct']:.0f}% of {r['rated']} item ratings are 1–2★")
     return flags
@@ -272,7 +280,7 @@ def item_scorecard(request, brand_id):
         x = row(s.item_name, s.category)
         x["stockouts"] += 1
         x["stockout_hours"] += hours
-        x["stockout_loss"] += loss or 0
+        x["stockout_loss"] += (loss or 0) if STOCKOUT_LOSS_SHOWN else 0
 
     # complaints name items as "1 x Name, 2 x Other": match them against the known item names, longest first, so a
     # comma inside a name ("Dumpling, Tom Yum Sauce") doesn't split it
