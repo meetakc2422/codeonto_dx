@@ -2207,7 +2207,7 @@ function drawStockItems() {
   const q = stockFilters.q.toLowerCase();
   const rows = stockRows.filter((r) =>
     statusMatch(r) &&
-    (!stockFilters.meal || (r.mealtime === stockFilters.meal && (stockFilters.status === "active" || !r.earlier))) &&
+    (!stockFilters.meal || (r.range_meals || []).includes(stockFilters.meal)) &&
     (!stockFilters.outlet || String(r.outlet_id) === String(stockFilters.outlet)) &&
     (!stockFilters.city || r.city === stockFilters.city) &&
     (!q || r.item_name.toLowerCase().includes(q)));

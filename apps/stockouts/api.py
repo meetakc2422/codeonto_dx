@@ -158,7 +158,9 @@ def brand_stock_outs(request, brand_id):
     rows = list(qs[offset:offset + limit])
     losses = _losses(rows, qp)
     start = _period_start(qp)
-    return Response([_json(s, losses[s.id][1], start, losses[s.id][0]) for s in rows])
+    end = date.fromisoformat(qp["end"]) if qp.get("end") else date.today()
+    lo, hi, now = _range_bounds(start, end)
+    return Response([{**_json(s, losses[s.id][1], start, losses[s.id][0]), "range_meals": sorted(_meal_hits(s, lo, hi, now))} for s in rows])
 
 
 @api_view(["GET"])
