@@ -1075,7 +1075,7 @@ const itemView = { flagged: true, q: "", sort: "", dir: -1 };
 let itemData = null;
 const ITEM_COLS = [
   ["name", "Item", ""], ["revenue", "Sales", "num"], ["orders", "Orders", "num"], ["complaints", "Complaints", "num"],
-  ["complaint_rate", "Per 100 orders", "num"], ["refunds", "Refunds", "num"], ["stockout_hours", "Out (h)", "num"],
+  ["complaint_rate", "Per 100 orders", "num"], ["refunds", "Refunds", "num"], ["stockout_hours", "Hours out", "num"],
   ...(SHOW_STOCK_LOSS ? [["stockout_loss", "Stock-out ₹", "num"]] : []), ["avg_item_rating", "Item ★", "num"], ["money_lost", "₹ lost", "num"],
 ];
 
@@ -1147,7 +1147,7 @@ function itemDetail(r) {
     <div class="cp-kv">
       <div><span>Units sold</span>${inr.format(Math.round(r.units))}${r.units ? ` · avg ${rupees(r.revenue / r.units)} each` : ""}</div>
       ${issues ? `<div><span>Complaints by issue</span>${issues}</div>` : ""}
-      <div><span>Stock-outs</span>${r.stockouts ? `${r.stockouts} times · ${inr.format(Math.round(r.stockout_hours))} h${SHOW_STOCK_LOSS ? ` · ${rupees(r.stockout_loss)} missed` : ""}` : "none"}</div>
+      <div><span>Stock-outs</span>${r.stockouts ? `${r.stockouts === 1 ? "once" : `${r.stockouts} times`} · ${inr.format(Math.round(r.stockout_hours))} h out in total${SHOW_STOCK_LOSS ? ` · ${rupees(r.stockout_loss)} missed` : ""}` : "none"}</div>
       <div><span>Item ratings</span>${r.rated ? `${r.rated} ratings · ${r.bad_review_pct}% are 1–2★` : "none in this period"}</div>
     </div></td></tr>`;
 }

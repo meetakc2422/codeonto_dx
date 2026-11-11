@@ -234,7 +234,8 @@ def _flags(r: dict, avg_complaint_rate: float) -> list[str]:
     if STOCKOUT_LOSS_SHOWN and r["stockout_loss"] >= 1000 and (per_outlet >= 24 or r["stockout_loss"] >= 0.03 * r["revenue"]):
         flags.append(f"Out of stock {r['stockout_hours']:.0f} h ({r['stockouts']} times), ₹{r['stockout_loss']:,.0f} of sales missed")
     elif not STOCKOUT_LOSS_SHOWN and per_outlet >= 24 and r["revenue"] > 0:
-        flags.append(f"Out of stock {r['stockout_hours']:.0f} h ({r['stockouts']} times), over a day per outlet")
+        times = "once" if r["stockouts"] == 1 else f"{r['stockouts']} times"
+        flags.append(f"Out of stock for {r['stockout_hours']:.0f} h in total this period ({times}), over a day per outlet")
     if r["rated"] >= 5 and r["bad_review_pct"] >= 30:
         flags.append(f"{r['bad_review_pct']:.0f}% of {r['rated']} item ratings are 1–2★")
     return flags
