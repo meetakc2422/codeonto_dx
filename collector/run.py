@@ -9,6 +9,8 @@
     python run.py all session --check              # validate .env only, no external calls
     python run.py worker                           # keep running: do login refreshes staff ask for on the Sessions page
     python run.py alerts send --every 15           # WhatsApp/email: low reviews, payout problems, ad spikes
+    python run.py swiggy payouts --start 2026-10-01 --end 2026-11-09   # one-off: these dates instead of the usual window
+    python run.py zomato business --res-id 22222916 --start 2026-06-01 # one-off: only these outlets
                                                    # (offline and stock-out alerts go out from those jobs)
 """
 
@@ -133,8 +135,25 @@ def main() -> int:
     parser.add_argument("--check", action="store_true", help="Validate configuration only; no external calls")
     parser.add_argument("--force", action="store_true",
                         help="outlets: allow deactivating more than 20%% of a catalog in one run")
+    parser.add_argument("--start", "--from", dest="start", metavar="YYYY-MM-DD",
+                        help="business, item_sales, complaints, payouts, swiggy reviews: start of the dates to fetch")
+    parser.add_argument("--end", "--to", dest="end", metavar="YYYY-MM-DD", help="end of the dates to fetch (default: the job's usual end)")
+    parser.add_argument("--res-id", action="append", help="only these outlets (repeatable or comma separated)")
     args = parser.parse_args()
     setup_logging()
+    from datetime import date as _date
+
+    for flag, value, env in (("--start", args.start, "BACKFILL_FROM"), ("--end", args.end, "BACKFILL_TO")):
+        if value:
+            try:
+                _date.fromisoformat(value)
+            except ValueError:
+                parser.error(f"{flag} must be YYYY-MM-DD, got '{value}'")
+            os.environ[env] = value
+    if args.start and args.end and args.start > args.end:
+        parser.error("--start is after --end")
+    if args.res_id:
+        os.environ["ONLY_RES_IDS"] = ",".join(x.strip() for v in args.res_id for x in v.split(",") if x.strip())
 
     if args.platform == "worker":  # long-running: picks up refresh requests from the site
         from core import worker
