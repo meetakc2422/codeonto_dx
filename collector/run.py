@@ -81,29 +81,68 @@ def _crash_alert(what: str, e: Exception) -> None:
         log.exception("could not send the crash alert for %s", what)
 
 
+class _ErrorWatch:
+    """Collects the ERROR lines a job logs while it runs. Jobs catch most problems themselves (one store, one
+    account) and carry on, so without this a job could fail every run and nobody would hear about it. On exit,
+    if the job logged errors and did not already send its own alert, ops get one mail (once an hour per job)."""
+
+    def __init__(self, what: str):
+        import logging
+
+        self.what, self.lines = what, []
+        handler = logging.Handler(logging.ERROR)
+        handler.emit = lambda record: self.lines.append(record.getMessage().splitlines()[0][:300])
+        self.handler = handler
+
+    def __enter__(self):
+        from core import alerts
+
+        self.before = alerts.incident_calls
+        log.addHandler(self.handler)
+        return self
+
+    def __exit__(self, *exc):
+        log.removeHandler(self.handler)
+        try:
+            from core import alerts
+
+            if self.lines and alerts.incident_calls == self.before:
+                shown = list(dict.fromkeys(self.lines))[:5]
+                alerts.incident(f"{self.what} had errors", f"{len(self.lines)} error(s) this run: " + " | ".join(shown),
+                                "Check this job's window or log on the collector server; it runs again on its next cycle.")
+        except Exception:
+            log.exception("could not send the error alert for %s", self.what)
+        return False
+
+
 def run_jobs(jobs: list[tuple[str, str]], task: str, headless: bool, force: bool = False) -> bool:
     ok = True
     for platform in dict.fromkeys(p for p, _ in jobs):
-        module = _module(platform, task)
-        accounts = [a for p, a in jobs if p == platform]
-        if hasattr(module, "run_all"):
-            try:
-                ok = module.run_all(accounts, headless=headless, force=force) and ok
-            except Exception as e:
-                log.exception("%s %s crashed: %s", task, platform, e)
-                _crash_alert(f"{platform} {task}", e)
-                ok = False
-            continue
-        for account in accounts:
-            try:
-                ok = module.run(account, headless=headless) and ok
-            except Exception as e:  # one account failing must not stop the rest
-                log.exception("%s %s/%s crashed: %s", task, platform, account, e)
-                _crash_alert(f"{platform} {task} ({account})", e)
-                if isinstance(e, PermissionError) and "expired" in str(e).lower():
-                    from core.db import mark_session_expired_by_label
-                    mark_session_expired_by_label(platform, account, f"{platform} {task}: {e}")
-                ok = False
+        with _ErrorWatch(f"{platform} {task}"):
+            ok = _run_platform(platform, task, [a for p, a in jobs if p == platform], headless, force) and ok
+    return ok
+
+
+def _run_platform(platform: str, task: str, accounts: list[str], headless: bool, force: bool) -> bool:
+    module = _module(platform, task)
+    if hasattr(module, "run_all"):
+        try:
+            return module.run_all(accounts, headless=headless, force=force)
+        except Exception as e:
+            log.exception("%s %s crashed: %s", task, platform, e)
+            _crash_alert(f"{platform} {task}", e)
+            return False
+    ok = True
+    for account in accounts:
+        try:
+            ok = module.run(account, headless=headless) and ok
+        except Exception as e:  # one account failing must not stop the rest
+            log.exception("%s %s/%s crashed: %s", task, platform, account, e)
+            _crash_alert(f"{platform} {task} ({account})", e)
+            if isinstance(e, PermissionError) and "expired" in str(e).lower():
+                from core.db import mark_session_expired_by_label
+                mark_session_expired_by_label(platform, account, f"{platform} {task}: {e}")
+            ok = False
     return ok
 
 

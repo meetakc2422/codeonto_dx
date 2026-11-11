@@ -201,7 +201,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             alerts.incident("Zomato rate limit (429)", str(err), "The stock-out job backs off until its next cycle. If it keeps happening, raise the interval (--every 10).")
             return False
         if err:
-            log.error("zomato stockouts %s (%s) failed: %s", s["outlet_name"], s["res_id"], err)
+            log.warning("zomato stockouts %s (%s) failed: %s", s["outlet_name"], s["res_id"], err)
             failures.append(f"{type(err).__name__}: {str(err)[:160]}")
             ok = False
             continue

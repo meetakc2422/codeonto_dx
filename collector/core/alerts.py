@@ -17,6 +17,7 @@ from . import config as cfg, db
 from .common import log
 
 _incident_sent: dict[str, float] = {}
+incident_calls = 0  # run.py checks this to avoid a second, generic mail when a job already raised its own
 INCIDENT_COOLDOWN_SEC = cfg.integer("INCIDENT_COOLDOWN_SEC", 3600)
 
 
@@ -112,6 +113,8 @@ def stock_out_alert(client_id: int, client_name: str, new_items: list[dict], res
 
 def incident(kind: str, message: str, action: str = "") -> None:
     """Tell the ops team a collector is stuck. Same kind is sent at most once an hour."""
+    global incident_calls
+    incident_calls += 1  # counted even when the cooldown skips the mail: ops already heard about it this hour
     now = time.time()
     if now - _incident_sent.get(kind, 0) < INCIDENT_COOLDOWN_SEC:
         return
