@@ -323,6 +323,21 @@ async function loadBrand(id) {
 function currentRoute() { return (location.hash.replace(/^#\//, "") || "overview").split("?")[0].split("/")[0]; }
 function routeParam() { return (location.hash.replace(/^#\//, "").split("?")[0].split("/")[1]) || ""; }
 
+// While a page loads: blank for the first 300 ms (most pages are ready by then, so nothing flashes), then a grey
+// shimmer in the rough shape of a page. Whatever the page renders replaces it.
+let renderSeq = 0;
+function showPageSkeleton(page) {
+  const seq = ++renderSeq;
+  page.innerHTML = `<div class="sk-wait"></div>`;
+  setTimeout(() => {
+    const wait = seq === renderSeq && page.querySelector(":scope > .sk-wait");
+    if (!wait) return;
+    wait.outerHTML = `<div class="sk" aria-busy="true" aria-label="Loading">
+      <div class="sk-tiles">${'<div class="sk-box sk-tile"></div>'.repeat(4)}</div>
+      <div class="sk-box sk-card">${'<div class="sk-line"></div>'.repeat(6)}</div></div>`;
+  }, 300);
+}
+
 async function render() {
   if (!state.me) return;
   ensureAssistant();
@@ -331,7 +346,7 @@ async function render() {
   closePicker();
   const route = currentRoute();
   const page = $("#page");
-  page.innerHTML = `<div class="loading">Loading…</div>`;
+  showPageSkeleton(page);
   document.body.classList.remove("nav-open");
 
   // staff-only client management, independent of the selected brand
