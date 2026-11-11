@@ -33,7 +33,10 @@ def _filtered(request, brand_id):
     qp = request.query_params
     end = date.fromisoformat(qp["end"]) if qp.get("end") else date.today()
     start = date.fromisoformat(qp["start"]) if qp.get("start") else end - timedelta(days=29)
-    qs = in_scope(StockOut.objects.filter(outlet__brand_id=brand_id, log_date__range=(start, end)), request.user).select_related("outlet__brand")
+    # A stock-out is dated by the day it started; show every one that overlaps the range:
+    # started by the end date, and still out or came back on/after the start date
+    in_range = Q(log_date__lte=end) & (Q(is_active=True) | Q(restored_at__date__gte=start))
+    qs = in_scope(StockOut.objects.filter(in_range, outlet__brand_id=brand_id), request.user).select_related("outlet__brand")
     if outlet_ids(qp.get("outlet_id")):
         qs = qs.filter(outlet_id__in=outlet_ids(qp.get("outlet_id")))
     if qp.get("platform"):
