@@ -9,12 +9,11 @@ Meant to run every few minutes: `run.py swiggy stockouts --every 5`.
 import random
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
 
-from core import alerts, config as cfg, db, hours, notify
+from core import alerts, config as cfg, db, hours, notify, retry
 from core.common import ConfigError, log, require_env
-from zomato.stockouts import IST, _sync
+from zomato.stockouts import IST, _save
 
 MENU_URL = cfg.text("SWIGGY_MENU_URL", "https://vhc-composer.swiggy.com/api/cms/menu-revision/v1/restaurant-menu-wrapper/{id}")
 ORIGIN = cfg.text("SWIGGY_FINANCE_ORIGIN", "https://partner.swiggy.com")
@@ -24,6 +23,11 @@ PACE_SEC = cfg.numbers("SWIGGY_STOCKOUT_PACE_SEC", "0.8,1.8")
 
 class RateLimited(Exception):
     pass
+
+
+class MenuError(RuntimeError):
+    """Swiggy answered without a menu ("failed to fetch menu"): usually a hiccup on their side, so it is retried."""
+    transient = True
 
 
 def config(account: str) -> dict:
@@ -52,7 +56,7 @@ def _fetch(token: str, swiggy_id: str) -> list[dict]:
         msg = body.get("statusMessage") or "no menu in the answer"
         if any(w in msg.lower() for w in ("token", "unauthor", "login", "expired")):
             raise PermissionError(f"Swiggy session expired ({msg}); run `run.py swiggy session` for this account")
-        raise RuntimeError(f"Swiggy menu {swiggy_id}: {msg}")
+        raise MenuError(f"Swiggy menu {swiggy_id}: {msg}")
 
     items: dict[str, dict] = {}
     for w in menu.get("items_vo") or []:
@@ -104,22 +108,17 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     def login_of(s):
         return s["account_id"] if s["account_id"] in by_id else default
 
-    def work(s):
-        try:
-            return s, _fetch(tokens[login_of(s)], s["res_id"]), None
-        except Exception as e:
-            return s, None, e
-
     t0 = time.time()
     log.info("swiggy stockouts: fetching %s menus (%s at a time)", len(stores), WORKERS)
-    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        results = list(pool.map(work, stores))
+    results = retry.fetch_all(stores, lambda s: _fetch(tokens[login_of(s)], s["res_id"]), WORKERS, "swiggy stockouts",
+                              slow=(RateLimited,))
     log.info("swiggy stockouts: fetched %s menus in %.0fs; saving", len(stores), time.time() - t0)
 
     now, ok, out_total, new_total, back_total = datetime.now(timezone.utc), True, 0, 0, 0
     pending: dict[int, dict] = {}
     expired: set = set()
     failures: list[str] = []
+    limited = 0
     for s, items, err in results:
         if isinstance(err, PermissionError):
             acc_id = login_of(s)
@@ -133,17 +132,19 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             ok = False
             continue
         if isinstance(err, RateLimited):
-            log.error("swiggy stockouts: %s; stopping this pass, next cycle retries", err)
-            alerts.incident("Swiggy rate limit (429)", str(err), "The stock-out job backs off until its next cycle. If it keeps happening, raise the interval (--every 10).")
-            return False
+            limited += 1; ok = False
+            if limited == 1:
+                log.error("swiggy stockouts: %s, even after retries; those stores wait for the next cycle", err)
+                alerts.incident("Swiggy rate limit (429)", str(err), "The job retried and backed off, but Swiggy kept refusing. If it keeps happening, raise the interval (--every 10) or lower SWIGGY_STOCKOUT_WORKERS.")
+            continue
         if err:
             log.warning("swiggy stockouts %s (%s) failed: %s", s["outlet_name"], s["res_id"], err)
             failures.append(f"{type(err).__name__}: {str(err)[:160]}")
             ok = False
             continue
         try:
-            with db.transaction() as cur:
-                new, back = _sync(cur, s["outlet_id"], items, now, slots_of(s["outlet_id"]), platform="swiggy")
+            new, back = retry.call(lambda: _save(s["outlet_id"], items, now, slots_of(s["outlet_id"]), "swiggy"),
+                                   f"swiggy stockouts save {s['res_id']}")
         except Exception as e:
             log.exception("swiggy stockouts %s save failed: %s", s["res_id"], e)
             ok = False

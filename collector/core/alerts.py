@@ -14,7 +14,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 
 from . import config as cfg, db
-from .common import log
+from .common import log, recent_log
 
 _incident_sent: dict[str, float] = {}
 incident_calls = 0  # run.py checks this to avoid a second, generic mail when a job already raised its own
@@ -120,6 +120,12 @@ def incident(kind: str, message: str, action: str = "") -> None:
         return
     _incident_sent[kind] = now
     to = [e.strip() for e in os.getenv("ALERT_OPS_EMAILS", "").split(",") if e.strip()]
+    import socket
+
+    lines = recent_log()
+    log_html = (f'<h3 style="margin-top:20px">Log (last lines of this job)</h3>'
+                f'<pre style="background:#f5f6f8;padding:10px;font-size:12px;white-space:pre-wrap">{html.escape(lines)}</pre>') if lines else ""
     send_email(to, f"[Codeonto collector] {kind}",
                f'<div style="font-family:Arial,sans-serif"><h2 style="color:#c9302c">{html.escape(kind)}</h2>'
-               f"<p>{html.escape(message)}</p><p><b>What to do:</b> {html.escape(action)}</p></div>")
+               f"<p>{html.escape(message)}</p><p><b>What to do:</b> {html.escape(action)}</p>"
+               f'<p style="color:#667085">Server: {html.escape(socket.gethostname())} · {time.strftime("%d %b %Y %H:%M")}</p>{log_html}</div>')

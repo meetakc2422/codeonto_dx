@@ -19,7 +19,7 @@ from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
-from core import alerts, config as cfg, db
+from core import alerts, config as cfg, db, retry
 from core.common import ConfigError, log, require_env
 
 from .outlets import _cookies
@@ -338,6 +338,11 @@ def _session_headers(cookies: dict) -> dict:
 
 
 def _post(path: str, cookies: dict, payload: dict) -> dict:
+    """One finance call, retried on network errors, 5xx and rate limits."""
+    return retry.call(lambda: _post_once(path, cookies, payload), f"zomato payouts {path}", slow=(RateLimited,))
+
+
+def _post_once(path: str, cookies: dict, payload: dict) -> dict:
     import random
 
     import requests
@@ -375,6 +380,14 @@ def fetch_statement(cookies: dict, res_id: str, cycle: dict) -> dict:
     return parse_details(_post("payouts/get-payout-details", cookies, {"postbackParams": _request_id(res_id, cycle), "itemId": ""}))
 
 
+def _download(url: str):
+    import requests
+
+    resp = requests.get(url, timeout=cfg.integer("PAYOUT_DOWNLOAD_TIMEOUT_SEC", 120))
+    resp.raise_for_status()
+    return resp
+
+
 def fetch_report(cookies: dict, res_id: str, cycle: dict) -> bytes | None:
     """Ask Zomato to prepare the report, wait for it, download it. None if it isn't ready in time."""
     import requests
@@ -385,8 +398,7 @@ def fetch_report(cookies: dict, res_id: str, cycle: dict) -> bytes | None:
         state, urls = data.get("downloadStatus"), data.get("downloadURLs") or []
         if state in ("COMPLETED", "READY") and urls:
             try:
-                resp = requests.get(urls[0], timeout=cfg.integer("PAYOUT_DOWNLOAD_TIMEOUT_SEC", 120))
-                resp.raise_for_status()
+                resp = retry.call(lambda: _download(urls[0]), f"zomato payouts {res_id} report download", quiet=True)
             except requests.RequestException as e:  # the message would carry the signed link: keep it out of the logs
                 log.warning("zomato payouts %s %s: report download failed (%s)", res_id, cycle["end_date"], type(e).__name__)
                 return None
@@ -429,7 +441,9 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     lock = threading.Lock()
     tally = Counter()
 
-    def work(s):
+    again = []  # stores that failed on something unexpected: one more go at the end
+
+    def work(s, last=False):
         if stop.is_set():
             return
         res_id, cookies = str(s["res_id"]), creds[s["account_id"] if s["account_id"] in by_id else default]
@@ -481,12 +495,22 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             alerts.incident("Zomato payout report changed", str(e), "Update collector/zomato/payouts.py to the new report format.")
             tally["failed"] += 1
         except Exception as e:  # one store failing must not stop the rest
+            if not last:
+                log.warning("zomato payouts %s failed (%s: %s); trying it again at the end", res_id, type(e).__name__, str(e)[:160])
+                with lock:
+                    again.append(s)
+                return
             log.exception("zomato payouts %s failed: %s", res_id, e)
             tally["failed"] += 1
 
     log.info("zomato payouts: checking %s stores, %s to %s", len(stores), start, end)
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         list(pool.map(work, stores))
+    if again and not stop.is_set():  # finished cycles are skipped, so this only redoes what was missed
+        log.info("zomato payouts: %s stores failed; trying them again one at a time in %ss", len(again), retry.ROUND_WAIT)
+        time.sleep(retry.ROUND_WAIT)
+        for s in again:
+            work(s, last=True)
     log.info("zomato payouts: %s cycles saved, %s reconciled (%s orders), %s waiting for the next run, %s not ready, %s stores without access, %s failed",
              tally["cycles"], tally["reconciled"], tally["orders"], tally["deferred"], tally["not_ready"], tally["no_access"], tally["failed"])
     return not tally["failed"]

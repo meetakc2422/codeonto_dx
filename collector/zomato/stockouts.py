@@ -8,10 +8,9 @@ minutes (`run.py zomato stockouts --every 5`).
 import random
 import time
 from collections import Counter
-from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
-from core import alerts, config as cfg, db, hours, notify
+from core import alerts, config as cfg, db, hours, notify, retry
 from core.common import ConfigError, log, require_env
 
 from .outlets import _cookies
@@ -125,6 +124,12 @@ def _sync(cur, outlet_id: int, items: list[dict], now: datetime, slots=None, pla
     return new, restored
 
 
+def _save(outlet_id, items, now, slots, platform):
+    """One store's result in its own transaction, so a dropped DB connection can be retried without half a save."""
+    with db.transaction() as cur:
+        return _sync(cur, outlet_id, items, now, slots, platform=platform)
+
+
 def run_all(accounts: list[str], headless: bool = False, force: bool = False) -> bool:
     try:
         config("")
@@ -161,22 +166,17 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     def login_of(s):
         return s["account_id"] if s["account_id"] in by_id else default
 
-    def work(s):
-        try:
-            return s, _fetch(creds[login_of(s)], s["res_id"]), None
-        except Exception as e:
-            return s, None, e
-
     t0 = time.time()
     log.info("zomato stockouts: fetching %s menus (%s at a time)", len(stores), WORKERS)
-    with ThreadPoolExecutor(max_workers=WORKERS) as pool:
-        results = list(pool.map(work, stores))
+    results = retry.fetch_all(stores, lambda s: _fetch(creds[login_of(s)], s["res_id"]), WORKERS, "zomato stockouts",
+                              slow=(RateLimited, Blocked))
     log.info("zomato stockouts: fetched %s menus in %.0fs; saving", len(stores), time.time() - t0)
 
     now, ok, out_total, new_total, back_total = datetime.now(timezone.utc), True, 0, 0, 0
     pending: dict[int, dict] = {}  # client_id -> what changed this run, sent as one alert per client
     expired: set = set()  # logins refused this pass: their stores are skipped, the other logins carry on
     failures: list[str] = []  # other errors (timeouts, 5xx, bad answers): a few are normal, many mean something broke
+    blocked = limited = 0  # still refused after the retries: those stores are skipped, the rest are saved
     for s, items, err in results:
         if isinstance(err, PermissionError):
             acc_id = login_of(s)
@@ -190,24 +190,28 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             ok = False
             continue
         if isinstance(err, Blocked):
-            log.error("zomato stockouts: %s; stopping this pass, next cycle retries", err)
-            alerts.incident("Zomato blocked the stock-out checks (403)", str(err),
+            blocked += 1; ok = False
+            if blocked == 1:
+                log.error("zomato stockouts: %s, even after retries; those stores wait for the next cycle", err)
+                alerts.incident("Zomato blocked the stock-out checks (403)", str(err),
                             "This is usually Zomato's firewall refusing the server, not the login: check the menu proxy "
                             "(ZOMATO_MENU_PROXY_URL) is up, or slow the job down (--every 10). If it keeps happening "
                             "while the proxy is fine, log in again on the Sessions page.")
-            return False
+            continue
         if isinstance(err, RateLimited):
-            log.error("zomato stockouts: %s; stopping this pass, next cycle retries", err)
-            alerts.incident("Zomato rate limit (429)", str(err), "The stock-out job backs off until its next cycle. If it keeps happening, raise the interval (--every 10).")
-            return False
+            limited += 1; ok = False
+            if limited == 1:
+                log.error("zomato stockouts: %s, even after retries; those stores wait for the next cycle", err)
+                alerts.incident("Zomato rate limit (429)", str(err), "The job retried and backed off, but Zomato kept refusing. If it keeps happening, raise the interval (--every 10) or lower STOCKOUT_WORKERS.")
+            continue
         if err:
             log.warning("zomato stockouts %s (%s) failed: %s", s["outlet_name"], s["res_id"], err)
             failures.append(f"{type(err).__name__}: {str(err)[:160]}")
             ok = False
             continue
         try:
-            with db.transaction() as cur:
-                new, back = _sync(cur, s["outlet_id"], items, now, store_hours.get(s["outlet_id"]))
+            new, back = retry.call(lambda: _save(s["outlet_id"], items, now, store_hours.get(s["outlet_id"]), "zomato"),
+                                   f"zomato stockouts save {s['res_id']}")
         except Exception as e:
             log.exception("zomato stockouts %s save failed: %s", s["res_id"], e)
             ok = False

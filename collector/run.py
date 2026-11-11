@@ -233,7 +233,14 @@ def main() -> int:
     if args.task in ("stockouts", "uptime") and not args.every and not args.once:
         args.every = 5  # live monitors: repeat unless told otherwise
     started = time.time()
-    ok = run_jobs(jobs, args.task, args.headless, args.force)
+    try:
+        ok = run_jobs(jobs, args.task, args.headless, args.force)
+    except Exception as e:  # a repeating job must reach its loop even if the first pass crashes
+        if not args.every:
+            raise
+        ok = False
+        log.exception("%s run crashed, will retry next cycle: %s", args.task, e)
+        _crash_alert(args.task, e)
     while args.every:
         # fixed cadence: wait out the rest of the interval, so a slow pass does not push the next one later
         wait = max(5.0, args.every * 60 - (time.time() - started))

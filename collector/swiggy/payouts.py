@@ -19,7 +19,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from urllib.parse import urlparse
 
-from core import alerts, config as cfg, db
+from core import alerts, config as cfg, db, retry
 from core.common import ConfigError, log, require_env
 
 from zomato.payouts import ReportFormatChanged, RateLimited, _header, money, save
@@ -199,6 +199,11 @@ def reconcile(statement: dict, orders: list[dict]) -> dict:
 
 
 def _post(name: str, token: str, body: dict) -> dict:
+    """One finance call, retried on network errors, 5xx and rate limits."""
+    return retry.call(lambda: _post_once(name, token, body), f"swiggy payouts {name}", slow=(RateLimited,))
+
+
+def _post_once(name: str, token: str, body: dict) -> dict:
     import requests
 
     time.sleep(random.uniform(*PACE_SEC))
@@ -234,14 +239,21 @@ def fetch_statement(token: str, res_id: int, cycle: dict) -> dict | None:
     return parse_details(items[0]) if items else None
 
 
+def _download(url: str, headers: dict):
+    import requests
+
+    resp = requests.get(url, headers=headers, timeout=cfg.integer("PAYOUT_DOWNLOAD_TIMEOUT_SEC", 120))
+    resp.raise_for_status()
+    return resp
+
+
 def fetch_annexure(url: str, token: str) -> bytes | None:
     import requests
 
     host = urlparse(url).hostname or ""
     headers = {"access_token": token} if host == "swiggy.com" or host.endswith(".swiggy.com") else {}  # the login never goes to another host
     try:
-        resp = requests.get(url, headers=headers, timeout=cfg.integer("PAYOUT_DOWNLOAD_TIMEOUT_SEC", 120))
-        resp.raise_for_status()
+        resp = retry.call(lambda: _download(url, headers), "swiggy payouts annexure download", quiet=True)
     except requests.RequestException as e:  # the message would carry the signed link: keep it out of the logs
         log.warning("swiggy payouts: annexure download failed (%s)", type(e).__name__)
         return None
@@ -276,7 +288,9 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     start, end = cfg.date_range(start, end)  # BACKFILL_FROM/TO
     stop, lock, tally = threading.Event(), threading.Lock(), Counter()
 
-    def work(s):
+    again = []  # stores that failed on something unexpected: one more go at the end
+
+    def work(s, last=False):
         if stop.is_set():
             return
         res_id, token = int(s["res_id"]), tokens[s["account_id"]]
@@ -326,12 +340,22 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             alerts.incident("Swiggy payout annexure changed", str(e), "Update collector/swiggy/payouts.py to the new format.")
             tally["failed"] += 1
         except Exception as e:  # one store failing must not stop the rest
+            if not last:
+                log.warning("swiggy payouts %s failed (%s: %s); trying it again at the end", res_id, type(e).__name__, str(e)[:160])
+                with lock:
+                    again.append(s)
+                return
             log.exception("swiggy payouts %s failed: %s", res_id, e)
             tally["failed"] += 1
 
     log.info("swiggy payouts: checking %s stores, %s to %s", len(stores), start, end)
     with ThreadPoolExecutor(max_workers=WORKERS) as pool:
         list(pool.map(work, stores))
+    if again and not stop.is_set():  # finished cycles are skipped, so this only redoes what was missed
+        log.info("swiggy payouts: %s stores failed; trying them again one at a time in %ss", len(again), retry.ROUND_WAIT)
+        time.sleep(retry.ROUND_WAIT)
+        for s in again:
+            work(s, last=True)
     log.info("swiggy payouts: %s cycles saved, %s reconciled (%s orders), %s waiting for the next run, %s not ready, %s failed",
              tally["cycles"], tally["reconciled"], tally["orders"], tally["deferred"], tally["not_ready"], tally["failed"])
     return not tally["failed"]

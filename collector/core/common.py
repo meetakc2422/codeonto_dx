@@ -20,12 +20,36 @@ class ConfigError(Exception):
     pass
 
 
+class _RecentLines(logging.Handler):
+    """Keeps this process's last log lines (with tracebacks) in memory, so an alert mail can carry the log."""
+
+    def __init__(self, size: int):
+        from collections import deque
+
+        super().__init__(logging.INFO)
+        self.lines = deque(maxlen=size)
+
+    def emit(self, record):
+        try:
+            self.lines.append(self.format(record))
+        except Exception:
+            pass
+
+
+_recent = _RecentLines(int(os.getenv("ALERT_LOG_LINES") or 80))
+
+
+def recent_log() -> str:
+    """The last ALERT_LOG_LINES lines this job logged (newest last)."""
+    return "\n".join(_recent.lines)
+
+
 def setup_logging() -> logging.Logger:
     LOG_FILE.parent.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         format="[%(asctime)s] [%(levelname)s] %(message)s",
-        handlers=[logging.StreamHandler(), logging.FileHandler(LOG_FILE, encoding="utf-8")],
+        handlers=[logging.StreamHandler(), logging.FileHandler(LOG_FILE, encoding="utf-8"), _recent],
     )
     return logging.getLogger("collector")
 

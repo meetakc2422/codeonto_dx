@@ -10,7 +10,7 @@ while, the episode ends at the last check that saw the store offline, so the gap
 
 from datetime import datetime, timedelta, timezone
 
-from core import alerts, config as cfg, db, hours, notify
+from core import alerts, config as cfg, db, hours, notify, retry
 from core.common import ConfigError, log, require_env
 
 from .outlets import _cookies
@@ -31,6 +31,7 @@ class Blocked(Exception):
 
 class Unreliable(Exception):
     """Zomato answered, but not with statuses we can trust."""
+    transient = True  # degraded mode usually clears in seconds: retried
 
 
 def config(account: str) -> dict:
@@ -108,6 +109,11 @@ def sync(cur, outlet_id: int, online: bool, now: datetime, slots=None) -> str | 
     return "offline"
 
 
+def _save(outlet_id, online, now, slots):
+    with db.transaction() as cur:
+        return sync(cur, outlet_id, online, now, slots)
+
+
 def run_all(accounts: list[str], headless: bool = False, force: bool = False) -> bool:
     try:
         config("")
@@ -130,7 +136,8 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     ok = True
     for name, account in accs.items():
         try:
-            statuses |= _fetch(_cookies(db.load_credentials(account)))
+            cookies = _cookies(db.load_credentials(account))
+            statuses |= retry.call(lambda: _fetch(cookies), f"zomato uptime {name}", slow=(RateLimited, Blocked))
         except PermissionError as e:
             log.error("zomato uptime %s: %s", name, e)
             db.mark_session_expired(account["id"], f"zomato uptime: {e}")
@@ -138,7 +145,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             ok = False
         except RateLimited as e:
             log.error("zomato uptime %s: %s; next cycle retries", name, e)
-            alerts.incident("Zomato rate limit (429)", str(e), "The uptime job retries next cycle. If it keeps happening, raise the interval (--every 10).")
+            alerts.incident("Zomato rate limit (429)", str(e), "The uptime job retried and backed off, then gave up until the next cycle. If it keeps happening, raise the interval (--every 10).")
             ok = False
         except Blocked as e:
             log.error("zomato uptime %s: %s; next cycle retries", name, e)
@@ -161,8 +168,8 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         if online is None:
             continue
         try:
-            with db.transaction() as cur:
-                change = sync(cur, s["outlet_id"], online, now, store_hours.get(s["outlet_id"]))
+            change = retry.call(lambda: _save(s["outlet_id"], online, now, store_hours.get(s["outlet_id"])),
+                                f"zomato uptime save {s['res_id']}")
         except Exception as e:
             log.exception("zomato uptime %s save failed: %s", s["res_id"], e)
             ok = False
