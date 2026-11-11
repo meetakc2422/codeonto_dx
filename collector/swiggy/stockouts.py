@@ -31,7 +31,7 @@ class MenuError(RuntimeError):
 
 
 def config(account: str) -> dict:
-    return require_env("SOCIALSPORK_DATABASE_URL")
+    return require_env("CODEONTO_DATABASE_URL")
 
 
 def _fetch(token: str, swiggy_id: str) -> list[dict]:

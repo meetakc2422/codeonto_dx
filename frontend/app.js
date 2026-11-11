@@ -2040,7 +2040,7 @@ const MEALS = [
   { name: "Breakfast", hours: "5 am – 12 pm", from: 5, to: 12, tone: "#f5a524" },
   { name: "Lunch", hours: "12 – 4 pm", from: 12, to: 16, tone: "#e5484d" },
   { name: "Evening Snacks", hours: "4 – 7 pm", from: 16, to: 19, tone: "#a855f7" },
-  { name: "Dinner", hours: "7 – 11 pm", from: 19, to: 23, tone: "#408fca" },
+  { name: "Dinner", hours: "7 – 11 pm", from: 19, to: 23, tone: "#d9480f" },
   { name: "Late Night Dinner", hours: "11 pm – 5 am", from: 23, to: 29, tone: "#0b1229" },
 ];
 const stockFilters = { status: "active", q: "", meal: "", outlet: "", city: "" };
