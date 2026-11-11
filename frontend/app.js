@@ -2910,6 +2910,24 @@ async function renderMarketComp(page, outletId) {
   $("#zSelAll")?.addEventListener("change", (e) => { sels.forEach((c) => { c.checked = e.target.checked; }); syncExport(); });
   $("#zSelUs")?.addEventListener("click", (e) => e.stopPropagation());
   $("#zSelUs")?.addEventListener("change", syncExport);
+  // download through fetch so the button can say the report is being built (it takes a while)
+  $("#zExport")?.addEventListener("click", async (e) => {
+    e.preventDefault();
+    const a = e.currentTarget;
+    if (a.classList.contains("disabled") || a.dataset.busy) return;
+    a.dataset.busy = "1"; a.classList.add("disabled");
+    const label = a.textContent;
+    a.textContent = "Preparing your report… this can take a minute";
+    try {
+      const res = await apiFetch(new URL(a.href, location.origin));
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const name = /filename="?([^";]+)"?/.exec(res.headers.get("Content-Disposition") || "")?.[1] || `${state.compTab}-competition.xlsx`;
+      const f = document.createElement("a");
+      f.href = URL.createObjectURL(await res.blob()); f.download = name; f.click(); URL.revokeObjectURL(f.href);
+      toast("Report downloaded");
+    } catch (x) { toast(x.message); }
+    delete a.dataset.busy; a.classList.remove("disabled"); a.textContent = label;
+  });
   page.querySelectorAll("[data-zuntrack]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); track({ res_id: b.dataset.zuntrack }, false); }));
   page.querySelectorAll("[data-zview]").forEach((tr) => tr.addEventListener("click", () => showMarketRestaurant(outletId, tr.dataset.zview, track)));
   let results = [];
