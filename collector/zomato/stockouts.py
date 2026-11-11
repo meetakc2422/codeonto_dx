@@ -7,6 +7,7 @@ minutes (`run.py zomato stockouts --every 5`).
 
 import random
 import time
+from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 
@@ -24,6 +25,10 @@ PACE_SEC = cfg.numbers("STOCKOUT_PACE_SEC", "0.8,1.8")  # each worker waits a ra
 
 class RateLimited(Exception):
     pass
+
+
+class Blocked(Exception):
+    """Zomato's firewall (Akamai) refused the request: an "Access Denied" page, not a logged-out session."""
 
 
 def config(account: str) -> dict:
@@ -47,6 +52,9 @@ def _fetch(cookies: dict, res_id: str) -> list[dict]:
     time.sleep(random.uniform(*PACE_SEC))  # pace requests so a 5-minute loop stays under Zomato's limit
     resp = requests.get(MENU_URL, params={"action": "get_content_menu", "res_id": res_id, "service_role": cfg.text("ZOMATO_SERVICE_ROLE", "DELIVERY_TAKEAWAY")},
                         headers=headers, timeout=cfg.integer("STOCKOUT_HTTP_TIMEOUT_SEC", 20))
+    if resp.status_code == 403 and ("access denied" in resp.text[:2000].lower() or "akamai" in resp.text[:2000].lower()
+                                    or "json" not in resp.headers.get("content-type", "")):
+        raise Blocked(f"Zomato blocked the menu request (403 Access Denied from {MENU_URL.split('/')[2]})")
     if resp.status_code in (401, 403):
         raise PermissionError("Zomato session expired; run `run.py zomato session` for this account")
     if resp.status_code == 429:
@@ -168,6 +176,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     now, ok, out_total, new_total, back_total = datetime.now(timezone.utc), True, 0, 0, 0
     pending: dict[int, dict] = {}  # client_id -> what changed this run, sent as one alert per client
     expired: set = set()  # logins refused this pass: their stores are skipped, the other logins carry on
+    failures: list[str] = []  # other errors (timeouts, 5xx, bad answers): a few are normal, many mean something broke
     for s, items, err in results:
         if isinstance(err, PermissionError):
             acc_id = login_of(s)
@@ -180,12 +189,20 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                                 f"Use Log in again on the Sessions page, or run `python run.py zomato session --account {label}`.")
             ok = False
             continue
+        if isinstance(err, Blocked):
+            log.error("zomato stockouts: %s; stopping this pass, next cycle retries", err)
+            alerts.incident("Zomato blocked the stock-out checks (403)", str(err),
+                            "This is usually Zomato's firewall refusing the server, not the login: check the menu proxy "
+                            "(ZOMATO_MENU_PROXY_URL) is up, or slow the job down (--every 10). If it keeps happening "
+                            "while the proxy is fine, log in again on the Sessions page.")
+            return False
         if isinstance(err, RateLimited):
             log.error("zomato stockouts: %s; stopping this pass, next cycle retries", err)
             alerts.incident("Zomato rate limit (429)", str(err), "The stock-out job backs off until its next cycle. If it keeps happening, raise the interval (--every 10).")
             return False
         if err:
             log.error("zomato stockouts %s (%s) failed: %s", s["outlet_name"], s["res_id"], err)
+            failures.append(f"{type(err).__name__}: {str(err)[:160]}")
             ok = False
             continue
         try:
@@ -203,6 +220,11 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         out_total += len(items); new_total += new; back_total += back
         log.info("zomato stockouts %s · %s (%s): %s out of stock, %s new, %s back", s["brand"], s["outlet_name"],
                  s["res_id"], len(items), new, back)
+    if len(failures) >= max(3, len(stores) // 5):
+        top, n = Counter(failures).most_common(1)[0]
+        alerts.incident("Zomato stock-out checks failing", f"{len(failures)} of {len(stores)} menus failed this pass. "
+                        f"Most common error ({n}×): {top}",
+                        "Check the collector window on the Windows server and the menu proxy. Stock-outs for those stores are not up to date.")
     notify.send(("oos", "oos_back"))  # WhatsApp / email per Alerts settings (scope, alert types, quiet hours)
     log.info("zomato stockouts: %s out of stock across %s stores (%s new, %s back)", out_total, len(stores), new_total, back_total)
     return ok

@@ -71,6 +71,16 @@ def _module(platform: str, task: str):
     return importlib.import_module(TASKS[platform][task])
 
 
+def _crash_alert(what: str, e: Exception) -> None:
+    """Email ops that a job crashed (at most once an hour per job, via ALERT_OPS_EMAILS); never let the alert itself fail."""
+    try:
+        from core import alerts
+        alerts.incident(f"{what} crashed", f"{type(e).__name__}: {str(e)[:400]}",
+                        "Check this job's window or log on the collector server; it retries on its next cycle.")
+    except Exception:
+        log.exception("could not send the crash alert for %s", what)
+
+
 def run_jobs(jobs: list[tuple[str, str]], task: str, headless: bool, force: bool = False) -> bool:
     ok = True
     for platform in dict.fromkeys(p for p, _ in jobs):
@@ -81,6 +91,7 @@ def run_jobs(jobs: list[tuple[str, str]], task: str, headless: bool, force: bool
                 ok = module.run_all(accounts, headless=headless, force=force) and ok
             except Exception as e:
                 log.exception("%s %s crashed: %s", task, platform, e)
+                _crash_alert(f"{platform} {task}", e)
                 ok = False
             continue
         for account in accounts:
@@ -88,6 +99,7 @@ def run_jobs(jobs: list[tuple[str, str]], task: str, headless: bool, force: bool
                 ok = module.run(account, headless=headless) and ok
             except Exception as e:  # one account failing must not stop the rest
                 log.exception("%s %s/%s crashed: %s", task, platform, account, e)
+                _crash_alert(f"{platform} {task} ({account})", e)
                 if isinstance(e, PermissionError) and "expired" in str(e).lower():
                     from core.db import mark_session_expired_by_label
                     mark_session_expired_by_label(platform, account, f"{platform} {task}: {e}")
@@ -193,6 +205,7 @@ def main() -> int:
             run_jobs(jobs, args.task, args.headless, args.force)
         except Exception as e:
             log.exception("%s run crashed, will retry next cycle: %s", args.task, e)
+            _crash_alert(args.task, e)
     if args.daily_at:
         run_daily(args.daily_at, jobs, args.task, args.headless)
     return 0 if ok else 1
