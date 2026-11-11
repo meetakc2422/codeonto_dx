@@ -115,18 +115,26 @@ def main():
         if args.show_shape and n == 1:
             print(json.dumps({"http": status, "shape": _shape(body)}, indent=1))
         texts = list(_strings(body))
+        flag = str(((body.get("trackingParams") or {}).get("meta_data") or {}).get("contactNumberPresent", "")).strip().lower()
         if status != 200:
             tally[f"http {status}"] += 1
-        elif any(PHONE.search(t) for t in texts if not MASKED.search(t)):
+        elif flag in ("true", "1", "yes"):
             tally["shared"] += 1
-        elif any(MASKED.search(t) for t in texts):
-            tally["masked only"] += 1
-        else:
+            if any(PHONE.search(t) for t in texts if not MASKED.search(t)):
+                tally["shared, number in answer"] += 1
+            if args.show_shape and not tally["shown_shared"]:
+                tally["shown_shared"] += 1
+                sections = [s.get("type") for s in ((body.get("body") or {}).get("sections") or [])]
+                print(json.dumps({"first shared answer, section types": sections, "shape": _shape(body)}, indent=1))
+        elif flag in ("false", "0", "no"):
             tally["not shared"] += 1
+        else:
+            tally[f"flag '{flag or 'missing'}'"] += 1
         if n % 25 == 0:
             log.info("%s/%s asked: %s", n, len(orders), dict(tally))
         time.sleep(random.uniform(1.5, 3.0))  # gentle on the login
-    log.info("done: %s orders asked -> %s", sum(tally.values()), dict(tally))
+    tally.pop("shown_shared", None)
+    log.info("done: %s orders asked -> %s", sum(v for k, v in tally.items() if k != "shared, number in answer"), dict(tally))
 
 
 if __name__ == "__main__":
