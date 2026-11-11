@@ -565,9 +565,15 @@ async function renderOverview(page) {
   (pay?.issues || []).slice(0, 2).forEach((i) => fixes.push({ tone: i.code === "payout_mismatch" || i.code === "overdue" ? "red" : "amber",
     tag: "Payout", title: `${plural(i.count, "payout")}: ${i.label.toLowerCase()}`, sub: pay.discrepancy_total ? `${rupees(pay.discrepancy_total)} unexplained in total · ${periodLabel()}` : periodLabel(),
     href: "#/reconciliation", cta: "Check" }));
-  (stockActive || []).slice().sort((x, y) => new Date(x.first_detected_at) - new Date(y.first_detected_at)).slice(0, 3)
-    .forEach((s) => fixes.push({ tone: "amber", tag: "Out of stock", title: s.item_name,
-      sub: `${s.outlet_name} · out for ${timeAgo(s.first_detected_at).replace(" ago", "")}`, href: "#/stock_outs", cta: "View" }));
+  // one line per outlet (its items listed), outlets with the longest-running stock-out first
+  const outByOutlet = new Map();
+  (stockActive || []).forEach((s) => outByOutlet.set(s.outlet_id, [...(outByOutlet.get(s.outlet_id) || []), s]));
+  [...outByOutlet.values()]
+    .map((list) => list.sort((x, y) => new Date(x.first_detected_at) - new Date(y.first_detected_at)))
+    .sort((a, b) => new Date(a[0].first_detected_at) - new Date(b[0].first_detected_at)).slice(0, 3)
+    .forEach((list) => fixes.push({ tone: "amber", tag: "Out of stock",
+      title: list.length === 1 ? list[0].item_name : `${list.length} items: ${list.slice(0, 3).map((s) => s.item_name).join(", ")}${list.length > 3 ? ` +${list.length - 3} more` : ""}`,
+      sub: `${list[0].outlet_name.split(" · ").pop()} · out for ${timeAgo(list[0].first_detected_at).replace(" ago", "")}`, href: "#/stock_outs", cta: "View" }));
   if (rating?.change_pct != null && rating.change_pct <= -2) fixes.push({ tone: "amber", tag: "Rating", title: `Average rating down ${Math.abs(rating.change_pct).toFixed(1)}%`,
     sub: `vs previous ${state.days === 1 ? "day" : state.days + " days"}`, href: "#/reviews", set: { status: "", rating: "neg" }, cta: "See why" });
   const shown = fixes.slice(0, 5);
