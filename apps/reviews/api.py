@@ -6,16 +6,28 @@ from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from apps.outlets.access import get_brand, in_scope, require_outlet_edit, outlet_ids
+from apps.outlets.access import get_brand, in_scope, is_staff, membership, outlet_ids, require_outlet_edit
 
-from .models import Review, ReviewReply
+from .models import Review, ReviewContact, ReviewContactView, ReviewReply
 
 RATING_BANDS = {"neg": (1, 2), "mid": (3, 3), "pos": (4, 5)}
 
 
-def _review_json(r: Review) -> dict:
+def can_contact(user) -> bool:
+    """Reviewers' shared numbers: staff and the client's admins / managers (not view-only logins)."""
+    m = membership(user)
+    return is_staff(user) or bool(m and m.can_edit)
+
+
+def _contact_hint(r: Review, allowed: bool) -> dict | None:
+    c = getattr(r, "contact", None) if allowed else None
+    return {"hint": c.hint} if c and c.shared and c.hint else None
+
+
+def _review_json(r: Review, allowed: bool = False) -> dict:
     latest = r.replies.all()[0].body if r.replies.all() else None
-    return {"id": r.id, "rating": float(r.rating) if r.rating is not None else None, "title": r.title,
+    return {"contact": _contact_hint(r, allowed), "order_id": (r.raw or {}).get("order_id") if allowed and isinstance(r.raw, dict) else None,
+            "id": r.id, "rating": float(r.rating) if r.rating is not None else None, "title": r.title,
             "body": r.body, "author_name": r.author_name, "reviewed_at": r.reviewed_at, "sentiment": r.sentiment,
             "reply_status": r.reply_status, "platform": r.platform_id, "outlet_id": r.outlet_id,
             "outlet_name": r.outlet.display_name, "latest_reply": latest}
@@ -26,7 +38,7 @@ def brand_reviews(request, brand_id):
     get_brand(request.user, brand_id)
     qp = request.query_params
     qs = (in_scope(Review.objects.filter(outlet__brand_id=brand_id), request.user)
-          .select_related("outlet__brand").prefetch_related("replies"))
+          .select_related("outlet__brand", "contact").prefetch_related("replies"))
     if outlet_ids(qp.get("outlet_id")):
         qs = qs.filter(outlet_id__in=outlet_ids(qp.get("outlet_id")))
     if qp.get("platform"):
@@ -39,7 +51,10 @@ def brand_reviews(request, brand_id):
     if qp.get("q"):
         qs = qs.filter(body__icontains=qp["q"])
     offset, limit = int(qp.get("offset", 0)), min(int(qp.get("limit", 25)), 200)
-    return Response([_review_json(r) for r in qs[offset:offset + limit]])
+    if qp.get("contact") == "shared":
+        qs = qs.filter(contact__shared=True)
+    allowed = can_contact(request.user)
+    return Response([_review_json(r, allowed) for r in qs[offset:offset + limit]])
 
 
 @api_view(["GET"])
@@ -86,3 +101,20 @@ def create_reply(request, review_id):
         review.reply_status = "drafted"
         review.save(update_fields=["reply_status", "updated_at"])
     return Response({"id": reply.id, "status": reply.status, "body": reply.body}, status=201)
+
+
+@api_view(["POST"])
+def reveal_contact(request, review_id):
+    """The full number behind a review's hint. Every reveal is logged."""
+    from apps.integrations.crypto import decrypt
+
+    review = get_object_or_404(in_scope(Review.objects.select_related("outlet"), request.user), pk=review_id)
+    get_brand(request.user, review.outlet.brand_id)
+    if not can_contact(request.user):
+        return Response({"detail": "Your role can't see customer numbers."}, status=403)
+    contact = ReviewContact.objects.filter(review=review, shared=True).exclude(phone_enc="").first()
+    if not contact:
+        return Response({"detail": "This customer hasn't shared a number."}, status=404)
+    action = request.data.get("action") if request.data.get("action") in ("view", "whatsapp") else "view"
+    ReviewContactView.objects.create(contact=contact, user=request.user, action=action)
+    return Response({"phone": decrypt(contact.phone_enc)})

@@ -13,6 +13,8 @@ from core import config as cfg, db
 from core.common import ConfigError, log, require_env
 from core.refusals import Refusals
 
+from . import contacts
+
 from .outlets import _cookies
 
 ZOMATO_API = cfg.text("ZOMATO_API_BASE", "https://api.zomato.com/merchant-gw/web")
@@ -179,6 +181,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         if refusals.is_dead(acc_id):
             continue
         try:
+            fresh_ids: list[str] = []
             with db.transaction() as cur:
                 new = 0
                 for page in range(max_pages):
@@ -192,6 +195,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                     fresh = [r for r in rows if r["ext"] not in known]
                     _save(cur, rows)
                     new += len(fresh)
+                    fresh_ids += [r["ext"] for r in fresh]
                     if not fresh:  # whole page already stored: we're caught up
                         break
             # replies: the list API only says reply_count; the text comes from reviews/get/details
@@ -205,6 +209,18 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                 for m in missing:
                     got += _save_replies(cur, m["id"], _fetch_replies(creds[acc_id], s["res_id"], m["external_review_id"]))
             log.info("zomato reviews %s (%s): %s replies saved", s["outlet_name"], s["res_id"], got)
+            if fresh_ids and contacts.enabled():  # did the new reviewers share their number? (Zomato's opt-in)
+                with db.transaction() as cur:
+                    cur.execute("""SELECT r.id, r.raw->>'order_id' AS order_id FROM reviews r
+                                   WHERE r.platform = 'zomato' AND r.external_review_id = ANY(%s)
+                                     AND coalesce(r.raw->>'order_id', '') NOT IN ('', '0')
+                                     AND NOT EXISTS (SELECT 1 FROM review_contacts c WHERE c.review_id = r.id)""", (fresh_ids,))
+                    todo = cur.fetchall()
+                try:
+                    asked, shared = contacts.fetch_for(creds[acc_id], todo)
+                    log.info("zomato reviews %s (%s): %s reviewers asked, %s shared a number", s["outlet_name"], s["res_id"], asked, shared)
+                except Exception as e:  # never let this hold up reviews
+                    log.warning("zomato reviews %s (%s): contact check stopped (%s)", s["outlet_name"], s["res_id"], type(e).__name__)
             total_new += new
             log.info("zomato reviews %s · %s (%s): %s new", s["brand"], s["outlet_name"], s["res_id"], new)
             refusals.success(acc_id)

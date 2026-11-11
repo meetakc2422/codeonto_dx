@@ -45,3 +45,32 @@ class ReviewReply(models.Model):
         db_table = "review_replies"
         ordering = ["-created_at"]
         verbose_name_plural = "review replies"
+
+
+class ReviewContact(models.Model):
+    """The phone number a reviewer chose to share with the restaurant (Zomato's opt-in), for following up on their
+    review. Written by the collector; the number is encrypted (GOOGLE_TOKEN_KEY) and only `hint` is ever listed.
+    A row with shared=False means we asked and the customer hadn't shared, so we don't ask again."""
+
+    review = models.OneToOneField(Review, on_delete=models.CASCADE, related_name="contact", primary_key=True)
+    order_id = models.CharField(max_length=100)
+    shared = models.BooleanField(default=False)
+    phone_enc = models.TextField(blank=True)
+    hint = models.CharField(max_length=20, blank=True, help_text="e.g. 98•••••410")
+    checked_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "review_contacts"
+
+
+class ReviewContactView(models.Model):
+    """Who revealed a reviewer's number, and when."""
+
+    contact = models.ForeignKey(ReviewContact, on_delete=models.CASCADE, related_name="views")
+    user = models.ForeignKey("auth.User", on_delete=models.SET_NULL, null=True, related_name="+")
+    action = models.CharField(max_length=10, default="view")
+    at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "review_contact_views"
+        ordering = ["-at"]

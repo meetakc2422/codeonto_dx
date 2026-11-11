@@ -73,6 +73,7 @@ api = [
     path("brands/<int:brand_id>/reviews", reviews.brand_reviews),
     path("brands/<int:brand_id>/reviews/summary", reviews.reviews_summary),
     path("reviews/<int:review_id>/replies", reviews.create_reply),
+    path("reviews/<int:review_id>/contact", reviews.reveal_contact),
     path("brands/<int:brand_id>/money-leaked", insights.money_leaked),
     path("brands/<int:brand_id>/items", insights.item_scorecard),
     path("brands/<int:brand_id>/complaints", complaints.brand_complaints),

@@ -684,7 +684,7 @@ function funnelCard(kpis) {
 }
 
 // ---------- reviews inbox ----------
-const reviewFilters = { rating: "", status: "", q: "", offset: 0 };
+const reviewFilters = { rating: "", status: "", q: "", contact: "", offset: 0 };
 
 let reviewRows = new Map();
 const RATING_BAND = { 1: "neg", 2: "neg", 3: "mid", 4: "pos", 5: "pos" };
@@ -734,6 +734,7 @@ async function renderReviews(page) {
         <input id="rq" type="search" placeholder="Search review text…" value="${esc(reviewFilters.q)}">
         <select id="rRating"><option value="">All ratings</option><option value="neg">1–2 ★</option><option value="mid">3 ★</option><option value="pos">4–5 ★</option></select>
         <select id="rStatus"><option value="">Any status</option>${Object.entries(REPLY_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
+        <label class="muted nowrap" title="Customers who chose on Zomato to share their number with the restaurant"><input type="checkbox" id="rContact" ${reviewFilters.contact ? "checked" : ""}> Number shared</label>
         <span class="muted" style="margin-left:auto">click a row to read it and reply</span>
       </div>
       <div class="table-wrap"><table class="cp-table cp-list"><thead><tr>
@@ -747,6 +748,7 @@ async function renderReviews(page) {
   $("#rq").addEventListener("input", (e) => { clearTimeout(timer); timer = setTimeout(() => { reviewFilters.q = e.target.value; loadReviews(true); }, 300); });
   $("#rRating").addEventListener("change", (e) => { reviewFilters.rating = e.target.value; render(); });
   $("#rStatus").addEventListener("change", (e) => { reviewFilters.status = e.target.value; loadReviews(true); });
+  $("#rContact").addEventListener("change", (e) => { reviewFilters.contact = e.target.checked ? "shared" : ""; loadReviews(true); });
   page.querySelectorAll("[data-band]").forEach((r) => r.addEventListener("click", () => {
     reviewFilters.rating = reviewFilters.rating === r.dataset.band ? "" : r.dataset.band; render();
   }));
@@ -762,7 +764,7 @@ async function loadReviews(reset) {
   if (reset) { reviewFilters.offset = 0; reviewRows = new Map(); }
   const rows = await api(`/brands/${state.brandId}/reviews`, {
     outlet_id: state.locationId, platform: state.platform, reply_status: reviewFilters.status, q: reviewFilters.q,
-    rating: reviewFilters.rating, limit: 50, offset: reviewFilters.offset,
+    rating: reviewFilters.rating, contact: reviewFilters.contact, limit: 50, offset: reviewFilters.offset,
   });
   reviewFilters.offset += rows.length;
   rows.forEach((r) => reviewRows.set(String(r.id), r));
@@ -782,7 +784,7 @@ function reviewTableRow(r) {
     <td><img class="pill-icon" src="assets/${esc(r.platform)}.png" alt="${esc(r.platform)}" title="${esc(r.platform)}"></td>
     <td><span class="rv-chip ${tone}">${r.rating != null ? `${r.rating} ★` : "—"}</span></td>
     <td class="rv-text ${r.body ? "" : "muted"}" title="${esc(r.body)}">${r.body ? esc(r.body) : "Rating only"}</td>
-    <td class="cp-ellip">${esc(r.author_name || "Anonymous")}</td>
+    <td class="cp-ellip">${esc(r.author_name || "Anonymous")}${r.contact ? ` <span title="Shared their number">📞</span>` : ""}</td>
     <td><span class="status ${r.reply_status}">${esc(REPLY_LABELS[r.reply_status] || r.reply_status)}</span></td></tr>`;
 }
 
@@ -791,12 +793,50 @@ function reviewDetail(r) {
   return `<tr class="cp-detail" data-detail="${r.id}"><td colspan="7">
     <div class="review-body ${r.body ? "" : "empty"}">${r.body ? esc(r.body) : "Rating only, no text"}</div>
     ${r.latest_reply ? `<div class="latest-reply" style="margin-top:8px">${esc(r.latest_reply)}</div>` : ""}
+    ${r.contact ? contactBox(r) : ""}
     ${canReply ? `<div class="reply-box" style="margin-top:8px"><textarea rows="1" placeholder="Write a reply…"></textarea>
       <button class="btn blue" data-reply>Save draft</button></div>` : ""}</td></tr>`;
 }
 
+// a reviewer's shared number (Zomato opt-in): masked until View, which the server logs; never kept after Hide
+function contactBox(r, phone) {
+  const shown = phone ? phone.replace(/(\d{5})(\d{5})/, "$1 $2") : r.contact.hint;
+  return `<div class="rv-contact" data-contact="${r.id}" style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    <span class="muted">Shared number</span><b class="nowrap">📞 ${esc(shown)}</b>
+    ${phone ? `<a class="btn blue" target="_blank" rel="noopener" data-act="whatsapp"
+         href="https://wa.me/91${esc(phone)}?text=${encodeURIComponent(contactMessage(r))}">WhatsApp</a>
+      <button class="btn light" data-hide>Hide</button>` : `<button class="btn light" data-view>View</button>`}
+    ${r.order_id ? `<span class="muted">Order ${esc(r.order_id)}</span>` : ""}</div>`;
+}
+
+function contactMessage(r) {
+  const outlet = (r.outlet_name || "").split(" · ")[0];
+  const name = (r.author_name || "").split(" ")[0];
+  return r.rating != null && r.rating <= 2
+    ? `Hi${name ? ` ${name}` : ""}, this is ${outlet}. We saw your review of your recent order${r.order_id ? ` (${r.order_id})` : ""} and we're sorry it wasn't right. Could you tell us what went wrong? We'd like to make it up to you.`
+    : `Hi${name ? ` ${name}` : ""}, this is ${outlet}. Thank you for your review of your recent order! We'd love to hear what you'd like us to make for you next time.`;
+}
+
+async function contactClick(e) {
+  const box = e.target.closest(".rv-contact");
+  if (!box) return false;
+  const r = reviewRows.get(box.dataset.contact);
+  if (e.target.closest("[data-hide]")) { box.outerHTML = contactBox(r); return true; }
+  const act = e.target.closest("[data-act]");
+  if (act) { apiJSON(`/reviews/${r.id}/contact`, "POST", { action: act.dataset.act }).catch(() => {}); return true; }
+  const view = e.target.closest("[data-view]");
+  if (!view) return true;
+  view.disabled = true;
+  try {
+    const { phone } = await apiJSON(`/reviews/${r.id}/contact`, "POST", { action: "view" });
+    box.outerHTML = contactBox(r, phone);
+  } catch (err) { toast(err.message); view.disabled = false; }
+  return true;
+}
+
 function bindReviewTable(list) {
   list.addEventListener("click", async (e) => {
+    if (await contactClick(e)) return;
     const btn = e.target.closest("[data-reply]");
     if (btn) {
       const detail = btn.closest(".cp-detail");
