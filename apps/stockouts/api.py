@@ -15,6 +15,8 @@ from .models import StockOut
 
 
 IST = ZoneInfo("Asia/Kolkata")
+# the ₹ estimate stays out of the Excel export while it is hidden on the page (see SHOW_STOCK_LOSS in app.js)
+EXPORT_LOSS = False
 MEAL_LABELS = {"Snacks": "Evening Snacks", "Late Night": "Late Night Dinner"}
 MEALS = ["Breakfast", "Lunch", "Evening Snacks", "Dinner", "Late Night Dinner"]
 
@@ -155,14 +157,14 @@ def stock_outs_export(request, brand_id):
     ws = wb.active
     ws.title = "Stock-outs"
     head = ["Brand", "Outlet", "Platform", "Item", "Category", "Mealtime", "Status", "Went out (IST)", "Back in (IST)",
-            "Downtime (min)", "Platform says back", "Sales missed (₹, estimate)"]
+            "Downtime (min)", "Platform says back"] + (["Sales missed (₹, estimate)"] if EXPORT_LOSS else [])
     ws.append(head)
     for r in rows:
         ws.append([r.outlet.brand.name, r.outlet.display_name.split(" · ", 1)[-1], r.platform_id, r.item_name, r.category,
                    _meal(r), "Out of stock" if r.is_active else "Back in stock", _local(r.first_detected_at),
                    _local(r.restored_at), r.downtime_minutes,
-                   (r.back_at or "").replace("Out of stock till ", ""),
-                   None if losses[r.id][1] is None else round(losses[r.id][1])])
+                   (r.back_at or "").replace("Out of stock till ", "")]
+                  + ([None if losses[r.id][1] is None else round(losses[r.id][1])] if EXPORT_LOSS else []))
 
     by_item: dict[tuple, dict] = {}
     for r in rows:
@@ -173,10 +175,10 @@ def stock_outs_export(request, brand_id):
         d["outlets"].add(r.outlet_id)
         d["lost"] += losses[r.id][1] or 0
     summary = wb.create_sheet("By dish")
-    summary.append(["Item", "Category", "Times out of stock", "Out now (outlets)", "Outlets affected", "Total downtime (min)",
-                    "Sales missed (₹, estimate)"])
-    for (item, category), d in sorted(by_item.items(), key=lambda kv: (-kv[1]["lost"], -kv[1]["now"], -kv[1]["events"])):
-        summary.append([item, category, d["events"], d["now"], len(d["outlets"]), d["down"], round(d["lost"])])
+    summary.append(["Item", "Category", "Times out of stock", "Out now (outlets)", "Outlets affected", "Total downtime (min)"]
+                   + (["Sales missed (₹, estimate)"] if EXPORT_LOSS else []))
+    for (item, category), d in sorted(by_item.items(), key=lambda kv: (-(kv[1]["lost"] if EXPORT_LOSS else 0), -kv[1]["now"], -kv[1]["events"])):
+        summary.append([item, category, d["events"], d["now"], len(d["outlets"]), d["down"]] + ([round(d["lost"])] if EXPORT_LOSS else []))
 
     for sheet in (ws, summary):
         for cell in sheet[1]:

@@ -2025,6 +2025,8 @@ const MEALS = [
 const stockFilters = { status: "", q: "", meal: "", outlet: "", city: "" };
 let stockRows = [];
 let stockShowMinor = false;
+// the ₹ "sales missed" estimate stays hidden until it only counts checked hours and leaves out items switched off on purpose
+const SHOW_STOCK_LOSS = false;
 let stockAllOutlets = false;
 const TOP_OUTLETS = 10;
 // a dish that is back, was never out long and cost next to nothing is noise in the list: folded away until asked for
@@ -2076,8 +2078,8 @@ async function renderStockOuts(page) {
       <div><span class="so-live"><i></i> Live</span>
         <div class="so-big">${inr.format(summary.active)}<small> items out of stock right now</small></div>
         <p>across ${summary.outlets_affected} outlet${summary.outlets_affected === 1 ? "" : "s"} · ${inr.format(restored)} back in stock · avg downtime ${downtimeText(summary.avg_downtime) || "—"}</p>
-        <p class="so-lost" title="Estimate: each item's usual sales for the hours it was out, using the outlet's own hour-by-hour order pattern${summary.lost_unpriced ? `. ${summary.lost_unpriced} stock-outs have no sales history, so no ₹` : ""}">
-          <b>${rupees(summary.lost_sales)}</b> of sales missed in this period <small>(estimate)</small></p></div>
+        ${SHOW_STOCK_LOSS ? `<p class="so-lost" title="Estimate: each item's usual sales for the hours it was out, using the outlet's own hour-by-hour order pattern${summary.lost_unpriced ? `. ${summary.lost_unpriced} stock-outs have no sales history, so no ₹` : ""}">
+          <b>${rupees(summary.lost_sales)}</b> of sales missed in this period <small>(estimate)</small></p>` : ""}</div>
       <div class="so-now">Now serving<b>${now}</b></div>
     </div>
 
@@ -2168,7 +2170,7 @@ function drawStockItems() {
   const all = [...byItem.entries()].map(([name, list]) => ({
     name, list, category: list[0].category, out: list.filter((r) => r.is_active).length,
     longest: Math.max(0, ...list.map((r) => r.downtime_minutes || 0)),
-    lost: list.reduce((t, r) => t + (r.lost || 0), 0), priced: list.some((r) => r.lost != null),
+    lost: SHOW_STOCK_LOSS ? list.reduce((t, r) => t + (r.lost || 0), 0) : 0, priced: SHOW_STOCK_LOSS && list.some((r) => r.lost != null),
   })).sort((a, b) => b.out - a.out || b.lost - a.lost || b.list.length - a.list.length || a.name.localeCompare(b.name));
   const minor = (it) => !it.out && it.longest < MINOR_MINUTES && it.lost < MINOR_RUPEES;
   const hidden = stockFilters.q || stockShowMinor ? 0 : all.filter(minor).length;
@@ -2177,12 +2179,12 @@ function drawStockItems() {
   const clock = (ts) => (ts ? new Date(ts).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : "—");
   const comesBack = (t) => (t ? esc(t.replace(/^out of stock till\s*/i, "")) : "");
   // one expandable line per dish; the detail lists every episode with exact out / back times
-  const detail = (it) => `<table class="so-detail"><thead><tr><th>Outlet</th><th>Meal</th><th>Went out</th><th>Back in</th><th class="num">Down for</th><th class="num">Sales missed</th><th>Zomato says back</th></tr></thead><tbody>
+  const detail = (it) => `<table class="so-detail"><thead><tr><th>Outlet</th><th>Meal</th><th>Went out</th><th>Back in</th><th class="num">Down for</th>${SHOW_STOCK_LOSS ? '<th class="num">Sales missed</th>' : ""}<th>Zomato says back</th></tr></thead><tbody>
     ${[...it.list].sort((x, y) => new Date(y.first_detected_at) - new Date(x.first_detected_at)).map((r) => `<tr>
       <td>${short(r.outlet_name)}</td><td>${esc(r.mealtime)}</td><td>${clock(r.first_detected_at)}</td>
       <td>${r.is_active ? '<span class="status pending">still out</span>' : clock(r.restored_at)}</td>
       <td class="num">${r.is_active ? `${downtimeText(Math.round((Date.now() - new Date(r.first_detected_at)) / 60000))} so far` : downtimeText(r.downtime_minutes) || "—"}</td>
-      <td class="num">${r.lost == null ? '<span class="muted" title="No sales history for this item">—</span>' : rupees(r.lost)}</td>
+      ${!SHOW_STOCK_LOSS ? "" : `<td class="num">${r.lost == null ? '<span class="muted" title="No sales history for this item">—</span>' : rupees(r.lost)}</td>`}
       <td class="muted">${comesBack(r.back_at) || "—"}</td></tr>`).join("")}</tbody></table>`;
   const more = hidden ? `<button class="btn light so-minor" id="sMinor">Show ${hidden} minor stock-out${hidden === 1 ? "" : "s"} (back within ${MINOR_MINUTES} min, under ₹${MINOR_RUPEES})</button>` : "";
   $("#stockList").innerHTML = (items.length ? `<div class="so-count muted">${items.length} dish${items.length === 1 ? "" : "es"} · click a dish for exact times</div>` + items.map((it, i) => `
@@ -2190,7 +2192,7 @@ function drawStockItems() {
       <div class="so-item-main"><b>${esc(it.name)}</b>${it.category ? `<span class="so-cat">${esc(it.category)}</span>` : ""}</div>
       <div class="so-item-outlets">${it.list.slice(0, 4).map((r) => `<span class="so-chip ${r.is_active ? "out" : "back"}" title="${esc(r.mealtime)} · went out ${clock(r.first_detected_at)}${r.is_active ? "" : ` · back ${clock(r.restored_at)}`}${r.back_at ? ` · Zomato says back ${comesBack(r.back_at)}` : ""}">${short(r.outlet_name)}<small>${esc(r.mealtime)}</small></span>`).join("")}
         ${it.list.length > 4 ? `<span class="so-chip more">+${it.list.length - 4} more</span>` : ""}</div>
-      <div class="so-item-lost num">${it.priced ? `<b>${rupees(it.lost)}</b><small class="muted">missed</small>` : '<span class="muted" title="No sales history for this item">—</span>'}</div>
+      <div class="so-item-lost num">${!SHOW_STOCK_LOSS ? "" : it.priced ? `<b>${rupees(it.lost)}</b><small class="muted">missed</small>` : '<span class="muted" title="No sales history for this item">—</span>'}</div>
       <div class="so-item-state">${it.out ? `<span class="status pending">${it.out} out</span>` : `<span class="status replied">back</span>`}
         <small class="muted">${it.out ? `longest out ${timeAgo(it.list.filter((r) => r.is_active).reduce((a, r) => (new Date(r.first_detected_at) < new Date(a.first_detected_at) ? r : a)).first_detected_at).replace(" ago", "")}` : `down ${downtimeText(it.longest)}`}</small></div>
       <div class="so-item-more" hidden>${detail(it)}</div>
