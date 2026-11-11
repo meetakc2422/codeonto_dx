@@ -91,17 +91,17 @@ def _fetch(cookies: dict, res_id: str) -> list[dict]:
     return list(items.values())
 
 
-def _sync(cur, outlet_id: int, items: list[dict], now: datetime, slots=None) -> tuple[list[dict], list[dict]]:
+def _sync(cur, outlet_id: int, items: list[dict], now: datetime, slots=None, platform: str = "zomato") -> tuple[list[dict], list[dict]]:
     """Store the current state; returns (newly out of stock items, restored items with downtime).
 
     One row per episode: an item that is still out keeps its row (even across midnight); an item that left the
     list is closed with its downtime; an item that appears and has no open row starts a new one."""
-    cur.execute("SELECT item_name FROM stock_outs WHERE outlet_id = %s AND platform = 'zomato' AND is_active", (outlet_id,))
+    cur.execute("SELECT item_name FROM stock_outs WHERE outlet_id = %s AND platform = %s AND is_active", (outlet_id, platform))
     was_active = {r["item_name"] for r in cur.fetchall()}
     names = [i["item_name"] for i in items]
     # items no longer on the list are back: close them, counting only the hours the store was open as downtime
     cur.execute("""SELECT id, item_name, first_detected_at FROM stock_outs
-                   WHERE outlet_id = %s AND platform = 'zomato' AND is_active AND NOT (item_name = ANY(%s))""", (outlet_id, names))
+                   WHERE outlet_id = %s AND platform = %s AND is_active AND NOT (item_name = ANY(%s))""", (outlet_id, platform, names))
     restored = []
     local_now = now.astimezone(IST).replace(tzinfo=None)
     for r in cur.fetchall():
@@ -113,14 +113,14 @@ def _sync(cur, outlet_id: int, items: list[dict], now: datetime, slots=None) -> 
     for it in items:
         if it["item_name"] in was_active:
             cur.execute("""UPDATE stock_outs SET category = %(category)s, back_at = %(back_at)s, last_detected_at = %(now)s
-                           WHERE outlet_id = %(o)s AND platform = 'zomato' AND is_active AND item_name = %(item_name)s""",
-                        {**it, "o": outlet_id, "now": now})
+                           WHERE outlet_id = %(o)s AND platform = %(p)s AND is_active AND item_name = %(item_name)s""",
+                        {**it, "o": outlet_id, "now": now, "p": platform})
         else:
             cur.execute(
                 """INSERT INTO stock_outs (outlet_id, platform, item_name, category, back_at, mealtime, is_active, log_date,
                                            first_detected_at, last_detected_at)
-                   VALUES (%(o)s, 'zomato', %(item_name)s, %(category)s, %(back_at)s, %(meal)s, true, %(day)s, %(now)s, %(now)s)""",
-                {**it, "o": outlet_id, "meal": mealtime(local), "day": cfg.business_date(local), "now": now})
+                   VALUES (%(o)s, %(p)s, %(item_name)s, %(category)s, %(back_at)s, %(meal)s, true, %(day)s, %(now)s, %(now)s)""",
+                {**it, "o": outlet_id, "p": platform, "meal": mealtime(local), "day": cfg.business_date(local), "now": now})
             new.append(it | {"mealtime": mealtime(local)})
     return new, restored
 

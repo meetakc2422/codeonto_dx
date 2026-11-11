@@ -2201,9 +2201,9 @@ function drawStockItems() {
   const clock = (ts) => (ts ? new Date(ts).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : "—");
   const comesBack = (t) => (t ? esc(t.replace(/^out of stock till\s*/i, "")) : "");
   // one expandable line per dish; the detail lists every episode with exact out / back times
-  const detail = (it) => `<table class="so-detail"><thead><tr><th>Outlet</th><th>Meal</th><th>Went out</th><th>Back in</th><th class="num">Down for</th>${SHOW_STOCK_LOSS ? '<th class="num">Sales missed</th>' : ""}<th>Zomato says back</th></tr></thead><tbody>
+  const detail = (it) => `<table class="so-detail"><thead><tr><th>Outlet</th><th>Meal</th><th>Went out</th><th>Back in</th><th class="num">Down for</th>${SHOW_STOCK_LOSS ? '<th class="num">Sales missed</th>' : ""}<th>Platform says back</th></tr></thead><tbody>
     ${[...it.list].sort((x, y) => new Date(y.first_detected_at) - new Date(x.first_detected_at)).map((r) => `<tr>
-      <td>${short(r.outlet_name)}</td><td>${esc(r.mealtime)}</td><td>${clock(r.first_detected_at)}</td>
+      <td>${short(r.outlet_name)} <small class="muted">${r.platform === "swiggy" ? "Swiggy" : "Zomato"}</small></td><td>${esc(r.mealtime)}</td><td>${clock(r.first_detected_at)}</td>
       <td>${r.is_active ? '<span class="status pending">still out</span>' : clock(r.restored_at)}</td>
       <td class="num">${r.is_active ? `${downtimeText(Math.round((Date.now() - new Date(r.first_detected_at)) / 60000))} so far` : downtimeText(r.downtime_minutes) || "—"}</td>
       ${!SHOW_STOCK_LOSS ? "" : `<td class="num">${r.lost == null ? '<span class="muted" title="No sales history for this item">—</span>' : rupees(r.lost)}</td>`}
@@ -2212,7 +2212,7 @@ function drawStockItems() {
   $("#stockList").innerHTML = (items.length ? `<div class="so-count muted">${items.length} dish${items.length === 1 ? "" : "es"} · click a dish for exact times</div>` + items.map((it, i) => `
     <div class="so-item" data-i="${i}">
       <div class="so-item-main"><b>${esc(it.name)}</b>${it.category ? `<span class="so-cat">${esc(it.category)}</span>` : ""}</div>
-      <div class="so-item-outlets">${it.list.slice(0, 4).map((r) => `<span class="so-chip ${r.is_active ? "out" : "back"}" title="${esc(r.mealtime)} · went out ${clock(r.first_detected_at)}${r.is_active ? "" : ` · back ${clock(r.restored_at)}`}${r.back_at ? ` · Zomato says back ${comesBack(r.back_at)}` : ""}">${short(r.outlet_name)}<small>${esc(r.mealtime)}</small></span>`).join("")}
+      <div class="so-item-outlets">${it.list.slice(0, 4).map((r) => `<span class="so-chip ${r.is_active ? "out" : "back"}" title="${esc(r.mealtime)} · went out ${clock(r.first_detected_at)}${r.is_active ? "" : ` · back ${clock(r.restored_at)}`}${r.back_at ? ` · ${r.platform === "swiggy" ? "Swiggy" : "Zomato"} says back ${comesBack(r.back_at)}` : ""}">${short(r.outlet_name)}<small>${esc(r.mealtime)} · ${r.platform === "swiggy" ? "Swiggy" : "Zomato"}</small></span>`).join("")}
         ${it.list.length > 4 ? `<span class="so-chip more">+${it.list.length - 4} more</span>` : ""}</div>
       <div class="so-item-lost num">${!SHOW_STOCK_LOSS ? "" : it.priced ? `<b>${rupees(it.lost)}</b><small class="muted">missed</small>` : '<span class="muted" title="No sales history for this item">—</span>'}</div>
       <div class="so-item-state">${it.out ? `<span class="status pending">${it.out} out</span>` : `<span class="status replied">back</span>`}
