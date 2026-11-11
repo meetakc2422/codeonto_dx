@@ -23,6 +23,42 @@ MEALS = ["Breakfast", "Lunch", "Evening Snacks", "Dinner", "Late Night Dinner"]
 LONG_OFF_DAYS = 3
 
 
+MEAL_HOURS = {"Breakfast": (5, 12), "Lunch": (12, 16), "Evening Snacks": (16, 19), "Dinner": (19, 23), "Late Night Dinner": (23, 29)}
+
+
+def _meal_hits(r, lo, hi, now) -> set:
+    a = max(r.first_detected_at.astimezone(IST), lo)
+    b = min((r.restored_at or now).astimezone(IST), hi)
+    hit = set()
+    if b <= a:
+        return hit
+    d = a.date() - timedelta(days=1)
+    while d <= b.date():  # per day: only the first meal it was out in, so it isn't repeated down the day
+        base = datetime.combine(d, time.min, tzinfo=IST)
+        for m, (h1, h2) in MEAL_HOURS.items():
+            if base + timedelta(hours=h1) < b and base + timedelta(hours=h2) > a:
+                hit.add(m)
+                break
+        d += timedelta(days=1)
+    return hit
+
+
+def _range_bounds(start: date, end: date):
+    now = datetime.now(IST)
+    # the meal day runs 5 am to 5 am (Late Night Dinner, 11 pm - 5 am, belongs to the day it started)
+    return datetime.combine(start, time(5), tzinfo=IST), min(datetime.combine(end + timedelta(days=1), time(5), tzinfo=IST), now), now
+
+
+def _meal_state(rows, start: date, end: date) -> dict:
+    """meal -> stock-outs that were out during that meal's hours on any day of the period (never past now)."""
+    lo, hi, now = _range_bounds(start, end)
+    out = defaultdict(int)
+    for r in rows:
+        for m in _meal_hits(r, lo, hi, now):
+            out[m] += 1
+    return out
+
+
 def _meal(s: StockOut) -> str:
     return MEAL_LABELS.get(s.mealtime, s.mealtime)
 
@@ -74,11 +110,11 @@ def _filtered(request, brand_id):
         qs = qs.filter(outlet_id__in=outlet_ids(qp.get("outlet_id")))
     if qp.get("platform"):
         qs = qs.filter(platform_id=qp["platform"])
-    if qp.get("mealtime"):  # the meal it went out in; outside "out now", only those that started in the period
-        old = [k for k, v in MEAL_LABELS.items() if v == qp["mealtime"]]
-        qs = qs.filter(mealtime__in=[qp["mealtime"], *old])
-        if qp.get("status") not in ("active", "out", "long"):
-            qs = qs.filter(log_date__gte=start)
+    if qp.get("mealtime"):  # out during that meal's hours somewhere in the period
+        end = date.fromisoformat(qp["end"]) if qp.get("end") else date.today()
+        lo, hi, now = _range_bounds(start, end)
+        ids = [r.id for r in qs if qp["mealtime"] in _meal_hits(r, lo, hi, now)]
+        qs = qs.filter(id__in=ids)
     return qs, qp
 
 
@@ -139,6 +175,8 @@ def stock_outs_summary(request, brand_id):
     for r in (qs.filter(is_active=True).exclude(first_detected_at__lt=_long_cutoff())
               .values("mealtime").annotate(count=Count("id"))):
         meal_out[MEAL_LABELS.get(r["mealtime"], r["mealtime"])] += r["count"]
+    end = date.fromisoformat(qp["end"]) if qp.get("end") else date.today()
+    meal_state = _meal_state(list(qs.exclude(is_active=True, first_detected_at__lt=_long_cutoff())), start, end)
     losses = _losses(list(qs), qp)
     lost = [v[1] for v in losses.values() if v[1] is not None]
     by_item = defaultdict(lambda: {"lost": 0.0, "hours": 0.0, "outlets": set(), "out_now": 0})
@@ -160,7 +198,7 @@ def stock_outs_summary(request, brand_id):
         "earlier": qs.filter(is_active=True, log_date__lt=start).exclude(first_detected_at__lt=_long_cutoff()).count(),  # still out, started before the period
         "long_off": qs.filter(is_active=True, first_detected_at__lt=_long_cutoff()).count(),
         "long_off_days": LONG_OFF_DAYS,
-        "by_meal": [{"meal": m, "count": meal_counts.get(m, 0), "out": meal_out.get(m, 0)} for m in MEALS],
+        "by_meal": [{"meal": m, "count": meal_state.get(m, 0), "new": meal_counts.get(m, 0), "out": meal_out.get(m, 0)} for m in MEALS],
         "top_items": list(qs.values("item_name").annotate(count=Count("id")).order_by("-count")[:8]),
         "by_outlet": [{"outlet_id": r["outlet_id"], "outlet": f"{r['outlet__outlet_name']}", "active": r["active"], "events": r["events"]}
                       for r in qs.values("outlet_id", "outlet__outlet_name").annotate(

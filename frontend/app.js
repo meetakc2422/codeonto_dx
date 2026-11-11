@@ -2112,7 +2112,7 @@ async function renderStockOuts(page) {
       ${hasToday ? `<div class="so-now">Now serving<b>${now}</b></div>` : ""}
     </div>
 
-    <div class="so-section"><h3>By mealtime <small>stock-outs that started ${periodWord}, by the meal they went out in · click to filter</small></h3>
+    <div class="so-section"><h3>By mealtime <small>items out ${periodWord}, under the first meal each went out in · click to filter</small></h3>
       <div class="so-meals">${summary.by_meal.map((m) => {
         const meta = MEALS.find((x) => x.name === m.meal);
         return `<button class="so-meal ${stockFilters.meal === m.meal ? "on" : ""} ${hasToday && m.meal === now ? "now" : ""}" data-meal="${m.meal}" style="--tone:${meta.tone}">
