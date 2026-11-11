@@ -2015,21 +2015,12 @@ async function renderUptime(page) {
 }
 
 // ---------- stock-outs ----------
-const MEALS = [
-  { name: "Breakfast", hours: "5 am – 12 pm", from: 5, to: 12, tone: "#f5a524" },
-  { name: "Lunch", hours: "12 – 4 pm", from: 12, to: 16, tone: "#e5484d" },
-  { name: "Evening Snacks", hours: "4 – 7 pm", from: 16, to: 19, tone: "#a855f7" },
-  { name: "Dinner", hours: "7 – 11 pm", from: 19, to: 23, tone: "#d9480f" },
-  { name: "Late Night Dinner", hours: "11 pm – 5 am", from: 23, to: 29, tone: "#0b1229" },
-];
 const stockFilters = { status: "", q: "", meal: "", outlet: "" };
 let stockRows = [];
+let stockShowMinor = false;
+// a dish that is back, was never out long and cost next to nothing is noise in the list: folded away until asked for
+const MINOR_MINUTES = 15, MINOR_RUPEES = 100;
 
-function currentMeal() {
-  let h = Number(new Date().toLocaleString("en-US", { timeZone: "Asia/Kolkata", hour: "numeric", hour12: false })) % 24;
-  if (h < 5) h += 24;
-  return (MEALS.find((m) => h >= m.from && h < m.to) || MEALS[4]).name;
-}
 const downtimeText = (m) => (m == null ? "" : m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`);
 
 async function renderStockOuts(page) {
@@ -2042,59 +2033,56 @@ async function renderStockOuts(page) {
     ]).then(([a, r]) => [...a, ...r]),
   ]);
   stockRows = rows;
-  const now = currentMeal();
-  const maxMeal = Math.max(1, ...summary.by_meal.map((m) => m.count));
-  const restored = summary.restored;
+  stockShowMinor = false;
   const outlets = new Map();
   rows.forEach((r) => {
-    const o = outlets.get(r.outlet_id) || { id: r.outlet_id, name: r.outlet_name, out: 0, total: 0 };
-    o.total++; if (r.is_active) o.out++;
+    const o = outlets.get(r.outlet_id) || { id: r.outlet_id, name: r.outlet_name, out: 0 };
+    if (r.is_active) o.out++;
     outlets.set(r.outlet_id, o);
   });
-  const outletList = [...outlets.values()].sort((a, b) => b.out - a.out || b.total - a.total);
-  const maxOut = Math.max(1, ...outletList.map((o) => o.out));
+  const outletList = [...outlets.values()].sort((a, b) => b.out - a.out || a.name.localeCompare(b.name));
+  const short = (n) => n.split(" · ").slice(1).join(" · ") || n;
+  const top = summary.top_losses || [];
 
   page.innerHTML = `
     <div class="so-hero">
-      <div><span class="so-live"><i></i> Live</span>
-        <div class="so-big">${inr.format(summary.active)}<small> items out of stock right now</small></div>
-        <p>across ${summary.outlets_affected} outlet${summary.outlets_affected === 1 ? "" : "s"} · ${inr.format(restored)} back in stock · avg downtime ${downtimeText(summary.avg_downtime) || "—"}</p></div>
-      <div class="so-now">Now serving<b>${now}</b></div>
+      <div class="so-stat"><span class="so-live"><i></i> Out now</span>
+        <b>${inr.format(summary.active)}</b><small>${summary.active ? `items at ${plural(summary.outlets_affected, "outlet")}` : "full menu live"}</small></div>
+      <div class="so-stat" title="Estimate: each item's usual sales for the hours it was out, using the outlet's own hour-by-hour order pattern">
+        <span>Sales missed</span><b>${rupees(summary.lost_sales)}</b>
+        <small>in this period · estimate${summary.lost_unpriced ? ` · ${summary.lost_unpriced} without sales history` : ""}</small></div>
+      <div class="so-stat"><span>Back in stock</span><b>${inr.format(summary.restored)}</b>
+        <small>avg down ${downtimeText(summary.avg_downtime) || "—"}</small></div>
     </div>
 
-    <div class="so-section"><h3>By mealtime <small>when each stock-out was first spotted · click to filter</small></h3>
-      <div class="so-meals">${summary.by_meal.map((m) => {
-        const meta = MEALS.find((x) => x.name === m.meal);
-        return `<button class="so-meal ${stockFilters.meal === m.meal ? "on" : ""} ${m.meal === now ? "now" : ""}" data-meal="${m.meal}" style="--tone:${meta.tone}">
-          ${m.meal === now ? '<em>NOW</em>' : ""}<span class="so-meal-name">${m.meal}</span><span class="so-meal-hours">${meta.hours}</span>
-          <b>${inr.format(m.count)}</b><span class="so-bar"><i style="width:${(m.count / maxMeal) * 100}%"></i></span></button>`;
-      }).join("")}</div></div>
-
-    <div class="so-section"><h3>Outlets <small>items out of stock now · click to filter</small></h3>
-      <div class="so-outlets">${outletList.map((o) => `
-        <button class="so-outlet ${String(stockFilters.outlet) === String(o.id) ? "on" : ""}" data-outlet="${o.id}">
-          <span>${esc(o.name.split(" · ").slice(1).join(" · ") || o.name)}</span>
-          <b class="${o.out ? "bad" : "ok"}">${o.out}</b><span class="so-bar"><i style="width:${(o.out / maxOut) * 100}%"></i></span></button>`).join("")}</div></div>
+    ${top.length ? `<div class="card so-top"><h3>Costliest stock-outs <small>click a dish to see where and when</small></h3>
+      <table><thead><tr><th>Dish</th><th class="num">Outlets</th><th class="num">Hours out</th><th class="num">Sales missed</th><th></th></tr></thead><tbody>
+      ${top.map((t) => `<tr data-dish="${esc(t.item_name)}"><td><b>${esc(t.item_name)}</b></td><td class="num">${t.outlets}</td>
+        <td class="num">${inr.format(Math.round(t.hours))}</td><td class="num"><b>${rupees(t.lost)}</b></td>
+        <td>${t.out_now ? `<span class="status pending">${t.out_now} out now</span>` : ""}</td></tr>`).join("")}</tbody></table></div>` : ""}
 
     <div class="card so-list">
       <div class="toolbar">
         <input id="sq" type="search" placeholder="Search item…" value="${esc(stockFilters.q)}">
         <div class="segmented" id="sStatus">${[["", "All"], ["active", "Out now"], ["restored", "Back"]]
           .map(([v, l]) => `<button data-v="${v}" class="${stockFilters.status === v ? "active" : ""}">${l}</button>`).join("")}</div>
-        <button class="btn light" id="sClear" ${stockFilters.meal || stockFilters.outlet ? "" : "hidden"}>Clear filters</button>
+        <select id="sMeal"><option value="">Any mealtime</option>${summary.by_meal.filter((m) => m.count).map((m) =>
+          `<option value="${esc(m.meal)}" ${stockFilters.meal === m.meal ? "selected" : ""}>${esc(m.meal)} (${m.count})</option>`).join("")}</select>
+        ${outletList.length > 1 ? `<select id="sOutlet"><option value="">All outlets</option>${outletList.map((o) =>
+          `<option value="${o.id}" ${String(stockFilters.outlet) === String(o.id) ? "selected" : ""}>${esc(short(o.name))}${o.out ? ` (${o.out} out)` : ""}</option>`).join("")}</select>` : ""}
         <button class="btn blue" id="sExport" style="margin-left:auto">Export to Excel</button>
       </div>
       <div id="stockList"></div>
     </div>`;
 
-  page.querySelectorAll("[data-meal]").forEach((b) => b.addEventListener("click", () => {
-    stockFilters.meal = stockFilters.meal === b.dataset.meal ? "" : b.dataset.meal; renderStockOuts(page);
+  page.querySelectorAll("[data-dish]").forEach((tr) => tr.addEventListener("click", () => {
+    stockFilters.q = tr.dataset.dish; stockFilters.status = ""; $("#sq").value = tr.dataset.dish;
+    $("#sStatus .active")?.classList.remove("active"); $('#sStatus [data-v=""]').classList.add("active");
+    drawStockItems(); $("#stockList .so-item")?.click(); $("#stockList").scrollIntoView({ behavior: "smooth", block: "start" });
   }));
-  page.querySelectorAll("[data-outlet]").forEach((b) => b.addEventListener("click", () => {
-    stockFilters.outlet = String(stockFilters.outlet) === b.dataset.outlet ? "" : b.dataset.outlet; renderStockOuts(page);
-  }));
+  $("#sMeal").addEventListener("change", (e) => { stockFilters.meal = e.target.value; drawStockItems(); });
+  $("#sOutlet")?.addEventListener("change", (e) => { stockFilters.outlet = e.target.value; drawStockItems(); });
   $("#sExport").addEventListener("click", () => exportStockOuts($("#sExport")));
-  $("#sClear").addEventListener("click", () => { stockFilters.meal = ""; stockFilters.outlet = ""; renderStockOuts(page); });
   $("#sStatus").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
     stockFilters.status = b.dataset.v;
@@ -2132,29 +2120,37 @@ function drawStockItems() {
     (!q || r.item_name.toLowerCase().includes(q)));
   const byItem = new Map();
   rows.forEach((r) => { byItem.set(r.item_name, [...(byItem.get(r.item_name) || []), r]); });
-  const items = [...byItem.entries()].map(([name, list]) => ({
+  const all = [...byItem.entries()].map(([name, list]) => ({
     name, list, category: list[0].category, out: list.filter((r) => r.is_active).length,
     longest: Math.max(0, ...list.map((r) => r.downtime_minutes || 0)),
-  })).sort((a, b) => b.out - a.out || b.list.length - a.list.length || a.name.localeCompare(b.name));
+    lost: list.reduce((t, r) => t + (r.lost || 0), 0), priced: list.some((r) => r.lost != null),
+  })).sort((a, b) => b.out - a.out || b.lost - a.lost || b.list.length - a.list.length || a.name.localeCompare(b.name));
+  const minor = (it) => !it.out && it.longest < MINOR_MINUTES && it.lost < MINOR_RUPEES;
+  const hidden = stockFilters.q || stockShowMinor ? 0 : all.filter(minor).length;
+  const items = hidden ? all.filter((it) => !minor(it)) : all;
   const short = (n) => esc(n.split(" · ").slice(1).join(" · ") || n);
   const clock = (ts) => (ts ? new Date(ts).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true }) : "—");
   const comesBack = (t) => (t ? esc(t.replace(/^out of stock till\s*/i, "")) : "");
   // one expandable line per dish; the detail lists every episode with exact out / back times
-  const detail = (it) => `<table class="so-detail"><thead><tr><th>Outlet</th><th>Meal</th><th>Went out</th><th>Back in</th><th class="num">Down for</th><th>Zomato says back</th></tr></thead><tbody>
+  const detail = (it) => `<table class="so-detail"><thead><tr><th>Outlet</th><th>Meal</th><th>Went out</th><th>Back in</th><th class="num">Down for</th><th class="num">Sales missed</th><th>Zomato says back</th></tr></thead><tbody>
     ${[...it.list].sort((x, y) => new Date(y.first_detected_at) - new Date(x.first_detected_at)).map((r) => `<tr>
       <td>${short(r.outlet_name)}</td><td>${esc(r.mealtime)}</td><td>${clock(r.first_detected_at)}</td>
       <td>${r.is_active ? '<span class="status pending">still out</span>' : clock(r.restored_at)}</td>
       <td class="num">${r.is_active ? `${downtimeText(Math.round((Date.now() - new Date(r.first_detected_at)) / 60000))} so far` : downtimeText(r.downtime_minutes) || "—"}</td>
+      <td class="num">${r.lost == null ? '<span class="muted" title="No sales history for this item">—</span>' : rupees(r.lost)}</td>
       <td class="muted">${comesBack(r.back_at) || "—"}</td></tr>`).join("")}</tbody></table>`;
-  $("#stockList").innerHTML = items.length ? `<div class="so-count muted">${items.length} dish${items.length === 1 ? "" : "es"} · click a dish for exact times</div>` + items.map((it, i) => `
+  const more = hidden ? `<button class="btn light so-minor" id="sMinor">Show ${hidden} minor stock-out${hidden === 1 ? "" : "s"} (back within ${MINOR_MINUTES} min, under ₹${MINOR_RUPEES})</button>` : "";
+  $("#stockList").innerHTML = (items.length ? `<div class="so-count muted">${items.length} dish${items.length === 1 ? "" : "es"} · click a dish for exact times</div>` + items.map((it, i) => `
     <div class="so-item" data-i="${i}">
       <div class="so-item-main"><b>${esc(it.name)}</b>${it.category ? `<span class="so-cat">${esc(it.category)}</span>` : ""}</div>
-      <div class="so-item-outlets">${it.list.slice(0, 4).map((r) => `<span class="so-chip ${r.is_active ? "out" : "back"}" title="${esc(r.mealtime)} · went out ${clock(r.first_detected_at)}${r.is_active ? "" : ` · back ${clock(r.restored_at)}`}${r.back_at ? ` · Zomato says back ${comesBack(r.back_at)}` : ""}">${short(r.outlet_name)}<small>${esc(r.mealtime)}</small></span>`).join("")}
-        ${it.list.length > 4 ? `<span class="so-chip more">+${it.list.length - 4} more</span>` : ""}</div>
+      <div class="so-item-outlets">${it.list.slice(0, 3).map((r) => `<span class="so-chip ${r.is_active ? "out" : "back"}" title="${esc(r.mealtime)} · went out ${clock(r.first_detected_at)}${r.is_active ? "" : ` · back ${clock(r.restored_at)}`}${r.back_at ? ` · Zomato says back ${comesBack(r.back_at)}` : ""}">${short(r.outlet_name)}<small>${esc(r.mealtime)}</small></span>`).join("")}
+        ${it.list.length > 3 ? `<span class="so-chip more">+${it.list.length - 3} more</span>` : ""}</div>
+      <div class="so-item-lost num">${it.priced ? `<b>${rupees(it.lost)}</b><small class="muted">missed</small>` : '<span class="muted" title="No sales history for this item">—</span>'}</div>
       <div class="so-item-state">${it.out ? `<span class="status pending">${it.out} out</span>` : `<span class="status replied">back</span>`}
         <small class="muted">${it.out ? `since ${timeAgo(it.list.find((r) => r.is_active).first_detected_at)}` : `down ${downtimeText(it.longest)}`}</small></div>
       <div class="so-item-more" hidden>${detail(it)}</div>
-    </div>`).join("") : `<div class="empty-state"><h3>No stock-outs match these filters</h3></div>`;
+    </div>`).join("") : `<div class="empty-state"><h3>No stock-outs match these filters</h3></div>`) + more;
+  $("#sMinor")?.addEventListener("click", () => { stockShowMinor = true; drawStockItems(); });
   $("#stockList").querySelectorAll(".so-item").forEach((row) => row.addEventListener("click", (e) => {
     if (e.target.closest(".so-item-more")) return;  // clicks inside the detail table do not collapse it
     const more = row.querySelector(".so-item-more");

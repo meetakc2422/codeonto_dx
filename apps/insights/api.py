@@ -93,18 +93,24 @@ def _item_daily_sales(outlet_ids: set[int], end: date) -> dict:
     return out
 
 
-def stockout_losses(stockouts: list, end: date) -> list[tuple]:
-    """[(stock-out, hours out, ₹ missed or None when the item has no sales history)], and the SalesModel used."""
+def stockout_losses(stockouts: list, end: date, since: datetime | None = None, until: datetime | None = None) -> list[tuple]:
+    """[(stock-out, hours out, ₹ missed or None when the item has no sales history)], and the SalesModel used.
+    since / until clip each episode to a period, so a stock-out that started before it only counts its hours inside."""
     if not stockouts:
         return [], None
     model = SalesModel({s.outlet_id for s in stockouts}, end)
     items = _item_daily_sales({s.outlet_id for s in stockouts}, end)
     out = []
     for s in stockouts:
-        s_end = s.restored_at or s.last_detected_at
-        minutes = s.downtime_minutes if s.downtime_minutes is not None else (s_end - s.first_detected_at).total_seconds() / 60
+        s_start, s_end = s.first_detected_at, s.restored_at or s.last_detected_at
+        if since or until:
+            s_start, s_end = max(s_start, since or s_start), min(s_end, until or s_end)
+            minutes = max(0.0, (s_end - s_start).total_seconds() / 60)
+        else:
+            minutes = s.downtime_minutes if s.downtime_minutes is not None else (s_end - s_start).total_seconds() / 60
         daily = items.get((s.outlet_id, _norm(s.item_name)))
-        out.append((s, minutes / 60, None if daily is None else daily * model.share(s.outlet_id, s.first_detected_at, s_end)))
+        loss = None if daily is None else (daily * model.share(s.outlet_id, s_start, s_end) if s_end > s_start else 0.0)
+        out.append((s, minutes / 60, loss))
     return out, model
 
 
