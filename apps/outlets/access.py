@@ -56,7 +56,7 @@ def clients_for(user):
 
 def brands_for(user):
     ids = visible_client_ids(user)
-    qs = Brand.objects.filter(is_active=True).select_related("client", "industry")
+    qs = Brand.objects.filter(is_active=True, client__is_active=True).select_related("client", "industry")
     if ids is not None:
         qs = qs.filter(client_id__in=ids)
     limit = outlet_limit(user)
