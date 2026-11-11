@@ -2192,7 +2192,7 @@ function drawStockItems() {
         ${it.list.length > 4 ? `<span class="so-chip more">+${it.list.length - 4} more</span>` : ""}</div>
       <div class="so-item-lost num">${it.priced ? `<b>${rupees(it.lost)}</b><small class="muted">missed</small>` : '<span class="muted" title="No sales history for this item">—</span>'}</div>
       <div class="so-item-state">${it.out ? `<span class="status pending">${it.out} out</span>` : `<span class="status replied">back</span>`}
-        <small class="muted">${it.out ? `since ${timeAgo(it.list.find((r) => r.is_active).first_detected_at)}` : `down ${downtimeText(it.longest)}`}</small></div>
+        <small class="muted">${it.out ? `longest out ${timeAgo(it.list.filter((r) => r.is_active).reduce((a, r) => (new Date(r.first_detected_at) < new Date(a.first_detected_at) ? r : a)).first_detected_at).replace(" ago", "")}` : `down ${downtimeText(it.longest)}`}</small></div>
       <div class="so-item-more" hidden>${detail(it)}</div>
     </div>`).join("") : `<div class="empty-state"><h3>No stock-outs match these filters</h3></div>`) + more;
   $("#sMinor")?.addEventListener("click", () => { stockShowMinor = true; drawStockItems(); });
