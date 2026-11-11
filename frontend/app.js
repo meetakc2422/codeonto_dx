@@ -1956,6 +1956,8 @@ const uptimeFilters = { status: "", outlet: "" };
 
 const offlineFor = (e) => downtimeText(e.downtime_minutes) || "under a minute";
 
+let uptimeAll = false, uptimeCity = "";
+const UP_TOP = 10;
 async function renderUptime(page) {
   const params = () => filterParams({ limit: 500, status: uptimeFilters.status, outlet_id: uptimeFilters.outlet || state.locationId });
   const [summary, episodes] = await Promise.all([
@@ -1968,34 +1970,39 @@ async function renderUptime(page) {
       <p>Store uptime is checked live on Zomato every 5 minutes during opening hours. Numbers appear here after the first checks of this period.</p></div>`;
     return;
   }
-  const worst = Math.max(1, ...summary.outlets.map((o) => 100 - (o.uptime_pct ?? 100)));
+  const cityMap = new Map();
+  summary.outlets.forEach((o) => {
+    const c = cityMap.get(o.city || "Other") || { name: o.city || "Other", outlets: 0, off: 0, checks: 0, online: 0 };
+    c.outlets++; c.off += o.offline_since ? 1 : 0; c.checks += o.checks || 0; c.online += o.online || 0; cityMap.set(c.name, c);
+  });
+  const cityList = [...cityMap.values()].map((c) => ({ ...c, pct: c.checks ? (100 * c.online) / c.checks : null }))
+    .sort((a, b) => (a.pct ?? 101) - (b.pct ?? 101));
+    const shown = uptimeCity ? summary.outlets.filter((o) => (o.city || "Other") === uptimeCity) : summary.outlets;
+  const dayList = [...new Set(summary.outlets.flatMap((o) => Object.keys(o.days || {})))].sort();
+  const upColor = (v) => (v == null ? "#e6e9ef" : v >= 95 ? "#12a150" : v >= 85 ? "#7ccf8e" : v >= 70 ? "#f5a524" : "#e5484d");
   page.innerHTML = `
     <div class="so-hero">
       <div><span class="so-live"><i></i> Live</span>
         <div class="so-big">${inr.format(summary.offline_now)}<small> outlet${summary.offline_now === 1 ? "" : "s"} offline right now</small></div>
-        <p>Zomato · during opening hours · ${summary.last_checked_at ? `last checked ${timeAgo(summary.last_checked_at)}` : "no checks yet"}</p></div>
+        <p>Zomato · during opening hours · ${summary.last_checked_at ? `last checked ${timeAgo(summary.last_checked_at)}` : "no checks yet"}</p>
+        <p>${plural(summary.events, "offline event")} · avg downtime ${downtimeText(summary.avg_downtime) || (summary.offline_now ? "n/a, none back yet" : "—")} · total ${downtimeText(summary.total_downtime) || "0m"}</p></div>
       <div class="so-now">Uptime<b>${summary.uptime_pct == null ? "—" : `${summary.uptime_pct.toFixed(1)}%`}</b></div>
     </div>
 
-    <div class="grid cols-3" style="margin-bottom:20px">
-      <div class="card kpi"><span class="kpi-label">Offline events</span><div class="kpi-value">${inr.format(summary.events)}</div></div>
-      <div class="card kpi"><span class="kpi-label">Avg downtime</span>
-        <div class="kpi-value">${downtimeText(summary.avg_downtime) || (summary.offline_now ? `${inr.format(summary.offline_now)} ongoing` : "—")}</div>
-        <span class="muted">${summary.avg_downtime != null ? "for offline spells that ended" : summary.offline_now ? "none back online yet, so no average" : ""}</span></div>
-      <div class="card kpi"><span class="kpi-label">Total downtime</span><div class="kpi-value">${downtimeText(summary.total_downtime) || "0m"}</div></div>
-    </div>
+    <div class="so-section"><h3>Cities <small>uptime in this period · click a city to filter its outlets</small></h3>
+      <div class="so-rank">${cityList.map((c) => `
+        <button class="so-rank-row ${uptimeCity === c.name ? "on" : ""}" data-ucity="${esc(c.name)}">
+          <span>${esc(c.name)} <small class="muted">${plural(c.outlets, "outlet")}</small>${c.off ? ` <em class="uptime-off">${c.off} offline</em>` : ""}</span>
+          <span class="so-bar"><i style="width:${c.pct == null ? 0 : 100 - c.pct}%;--tone:var(--red)"></i></span>
+          <b class="${c.off ? "bad" : "ok"}">${c.pct == null ? "—" : `${c.pct.toFixed(1)}%`}</b></button>`).join("")}</div></div>
 
-    ${summary.trend.length ? `<div class="card" style="margin-bottom:20px"><div class="card-head"><h3>Uptime by day</h3>
-        ${summary.trend.length < 7 ? `<small class="muted">${plural(summary.trend.length, "day")} of checks so far · a trend line appears after a week</small>` : ""}</div>
-      <div style="height:220px"><canvas id="uptimeChart"></canvas></div></div>` : ""}
-
-    <div class="so-section"><h3>Outlets <small>uptime in this period, worst first · click to filter</small></h3>
-      <div class="so-outlets">${summary.outlets.map((o) => `
-        <button class="so-outlet ${String(uptimeFilters.outlet) === String(o.id) ? "on" : ""}" data-outlet="${o.id}">
-          <span>${esc(o.name)}${o.offline_since ? ' <em class="uptime-off">offline</em>' : ""}</span>
-          <b class="${o.offline_since ? "bad" : "ok"}">${o.uptime_pct == null ? "—" : `${o.uptime_pct.toFixed(1)}%`}</b>
-          <small class="uptime-sub muted">${esc([o.city, o.zomato_id].filter(Boolean).join(" · "))}</small>
-          <span class="so-bar"><i style="width:${((100 - (o.uptime_pct ?? 100)) / worst) * 100}%;--tone:var(--red)"></i></span></button>`).join("")}</div></div>
+    <div class="so-section"><h3>Outlets <small>${dayList.length > 1 ? "daily uptime, one square per day" : "uptime in this period"}, worst first · ${uptimeAll ? `all ${shown.length}` : `worst ${Math.min(UP_TOP, shown.length)} of ${shown.length}`}${uptimeCity ? ` in ${esc(uptimeCity)}` : ""} · click to filter</small></h3>
+      <div class="up-heat">${(uptimeAll ? shown : shown.slice(0, UP_TOP)).map((o) => `
+        <button class="up-row ${String(uptimeFilters.outlet) === String(o.id) ? "on" : ""}" data-outlet="${o.id}" title="${esc(o.name)}">
+          <span class="up-name">${esc(o.name)} <small class="muted">${esc(o.city || "")}</small>${o.offline_since ? ' <em class="uptime-off">offline</em>' : ""}</span>
+          ${dayList.length > 1 ? `<span class="up-cells">${dayList.map((d) => { const v = o.days[d]; return `<i style="background:${upColor(v)}" title="${shortDate(d)}: ${v == null ? "no checks" : `${v.toFixed(1)}%`}"></i>`; }).join("")}</span>` : ""}
+          <b class="${o.offline_since ? "bad" : "ok"}">${o.uptime_pct == null ? "—" : `${o.uptime_pct.toFixed(1)}%`}</b></button>`).join("")}</div>
+      ${shown.length > UP_TOP ? `<button class="btn light" id="uAll" style="margin-top:8px">${uptimeAll ? "Show fewer" : `Show all ${shown.length}`}</button>` : ""}</div>
 
     <div class="card so-list">
       <div class="toolbar">
@@ -2012,24 +2019,12 @@ async function renderUptime(page) {
           <td>${offlineFor(e)}</td></tr>`).join("")}</tbody></table>`
         : `<div class="empty-state"><h3>No offline events match</h3><p>Every checked outlet stayed online.</p></div>`}
     </div>`;
-  if (summary.trend.length >= 7) {
-    lineChart($("#uptimeChart"), summary.trend.map((d) => shortDate(d.date)), [{ label: "Uptime", data: summary.trend.map((d) => d.value) }], "percent");
-  } else if (summary.trend.length) {
-    // too few days for a line: one bar per day, on a full 0-100% scale so a short dip doesn't look like a crash
-    chart($("#uptimeChart"), {
-      type: "bar",
-      data: { labels: summary.trend.map((d) => shortDate(d.date)),
-        datasets: [{ label: "Uptime", data: summary.trend.map((d) => d.value), maxBarThickness: 56, borderRadius: 6,
-          backgroundColor: summary.trend.map((d) => (d.value >= 90 ? "#12a150" : d.value >= 75 ? "#f5a524" : "#e5484d")) }] },
-      options: { maintainAspectRatio: false, plugins: { legend: { display: false },
-          tooltip: { callbacks: { label: (c) => ` Uptime: ${fmt(c.parsed.y, "percent", false)}` } } },
-        scales: { x: { grid: { display: false } },
-          y: { min: 0, max: 100, grid: { color: "#eef1f5" }, border: { display: false }, ticks: { callback: (v) => `${v}%` } } } },
-    });
-  }
   page.querySelectorAll("[data-outlet]").forEach((b) => b.addEventListener("click", () => {
     uptimeFilters.outlet = String(uptimeFilters.outlet) === b.dataset.outlet ? "" : b.dataset.outlet;
     renderUptime(page);
+  }));
+  page.querySelectorAll("[data-ucity]").forEach((b) => b.addEventListener("click", () => {
+    uptimeCity = uptimeCity === b.dataset.ucity ? "" : b.dataset.ucity; uptimeAll = false; renderUptime(page);
   }));
   $("#uStatus").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
@@ -2037,6 +2032,7 @@ async function renderUptime(page) {
     renderUptime(page);
   });
   $("#uClear").addEventListener("click", () => { uptimeFilters.outlet = ""; renderUptime(page); });
+  $("#uAll")?.addEventListener("click", () => { uptimeAll = !uptimeAll; renderUptime(page); });
 }
 
 // ---------- stock-outs ----------

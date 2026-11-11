@@ -40,10 +40,13 @@ def uptime_summary(request, brand_id):
     fields = ("outlet_id", "outlet__outlet_name", "outlet__area", "outlet__city", "outlet__zomato_id")
     # the area tells stores apart: many have the brand as their name, and a few share an area, so the id goes along
     entry = lambda r: {"id": r["outlet_id"], "name": r["outlet__area"] or r["outlet__outlet_name"], "city": r["outlet__city"],
-                       "zomato_id": r["outlet__zomato_id"], "uptime_pct": None, "events": 0, "downtime_minutes": 0, "offline_since": None}
+                       "zomato_id": r["outlet__zomato_id"], "uptime_pct": None, "checks": 0, "online": 0, "days": {}, "events": 0, "downtime_minutes": 0, "offline_since": None}
     by_outlet = {}
     for r in days.values(*fields).annotate(checks=Sum("checks"), online=Sum("online_checks")):
-        by_outlet[r["outlet_id"]] = {**entry(r), "uptime_pct": _pct(r["online"], r["checks"])}
+        by_outlet[r["outlet_id"]] = {**entry(r), "uptime_pct": _pct(r["online"], r["checks"]), "checks": r["checks"], "online": r["online"], "days": {}}
+    for r in days.values("outlet_id", "day").annotate(checks=Sum("checks"), online=Sum("online_checks")):
+        if r["outlet_id"] in by_outlet:
+            by_outlet[r["outlet_id"]]["days"][r["day"].isoformat()] = _pct(r["online"], r["checks"])
     for r in episodes.values(*fields, "is_active", "first_detected_at", "downtime_minutes"):
         o = by_outlet.setdefault(r["outlet_id"], entry(r))
         o["events"] += 1
