@@ -25,6 +25,10 @@ class RateLimited(Exception):
     pass
 
 
+class Blocked(Exception):
+    """Zomato's firewall (Akamai) refused the request: an "Access Denied" page, not a logged-out session."""
+
+
 class Unreliable(Exception):
     """Zomato answered, but not with statuses we can trust."""
 
@@ -39,6 +43,9 @@ def _fetch(cookies: dict) -> dict[str, bool]:
 
     resp = requests.get(STATUS_URL, headers={**_headers(cookies), "user-agent": cfg.user_agent()},
                         timeout=cfg.integer("UPTIME_HTTP_TIMEOUT_SEC", 20))
+    if resp.status_code == 403 and ("access denied" in resp.text[:2000].lower() or "akamai" in resp.text[:2000].lower()
+                                    or "json" not in resp.headers.get("content-type", "")):
+        raise Blocked("Zomato blocked the outlet-status request (403 Access Denied)")
     if resp.status_code in (401, 403):
         raise PermissionError("Zomato session expired; run `run.py zomato session` for this account")
     if resp.status_code == 429:
@@ -133,8 +140,17 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             log.error("zomato uptime %s: %s; next cycle retries", name, e)
             alerts.incident("Zomato rate limit (429)", str(e), "The uptime job retries next cycle. If it keeps happening, raise the interval (--every 10).")
             ok = False
+        except Blocked as e:
+            log.error("zomato uptime %s: %s; next cycle retries", name, e)
+            alerts.incident("Zomato blocked the uptime checks (403)", str(e),
+                            "This is usually Zomato's firewall refusing the server, not the login. Slow the job down "
+                            "(--every 10); if it keeps happening, log in again on the Sessions page.")
+            ok = False
         except Exception as e:  # nothing is recorded for this account's stores: unknown, not offline
             log.error("zomato uptime %s: %s", name, e)
+            alerts.incident(f"Zomato uptime checks failing: {name}", f"{type(e).__name__}: {str(e)[:300]}",
+                            "Outlet online/offline status is not being recorded for this login's stores. "
+                            "Check the uptime window on the Windows server.")
             ok = False
 
     store_hours = hours.load("zomato", cfg.text("UPTIME_HOURS_SERVICE", "delivery"))
