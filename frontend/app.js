@@ -738,7 +738,7 @@ async function renderReviews(page) {
         <input id="rq" type="search" placeholder="Search review text…" value="${esc(reviewFilters.q)}">
         <select id="rRating"><option value="">All ratings</option><option value="neg">1–2 ★</option><option value="mid">3 ★</option><option value="pos">4–5 ★</option></select>
         <select id="rStatus"><option value="">Any status</option>${Object.entries(REPLY_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
-        <label class="muted nowrap" title="Customers who chose on Zomato to share their number with the restaurant"><input type="checkbox" id="rContact" ${reviewFilters.contact ? "checked" : ""}> Number shared</label>
+        <label class="check nowrap" title="Customers who chose on Zomato to share their number with the restaurant"><input type="checkbox" id="rContact" ${reviewFilters.contact ? "checked" : ""}> Number shared</label>
         <span class="muted" style="margin-left:auto">click a row to read it and reply</span>
       </div>
       <div class="table-wrap"><table class="cp-table cp-list"><thead><tr>
