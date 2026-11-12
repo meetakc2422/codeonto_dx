@@ -2059,14 +2059,16 @@ function topSellerStrip(summary, periodWord = "in this period") {
         <div class="so-loss-items">${items.slice(0, 8).map((i) => `<span class="so-chip out ${hasPer && i.episodes?.length ? "clickable" : ""}" ${hasPer && i.episodes?.length ? `data-lossitem="${esc(i.item_name)}" role="button" tabindex="0"` : ""} title="${hasPer ? `Click for when and where it was out. Out at ${i.outlets} outlet${i.outlets === 1 ? "" : "s"}` : `Out since ${esc(since(i.since))} at ${i.outlets} outlet${i.outlets === 1 ? "" : "s"}`}${i.price ? ` · ₹${inr.format(i.price)} each` : ""}">${esc(i.item_name)}<small>${(hasPer || i.enough_history) && i.high ? range(i.low, i.high) : "no estimate yet"}</small></span>`).join("")}</div>
         <div class="so-loss-detail" id="lossDetail" hidden></div>
         <p class="so-loss-note"><span class="so-how" tabindex="0">How is this estimated?
-          <span class="so-how-body"><b>How this is estimated</b>
-            <ol><li>For each outlet we find its best sellers: the dishes that make up most of its sales in the last 30 days of orders.</li>
-            <li>For each dish we work out how many it normally sells in each mealtime, using only the days it was in stock.</li>
-            <li>For every hour the dish was out, we count the sales it would normally have made in that mealtime.</li>
-            <li>We multiply by the dish's latest price. That is the high end.</li>
-            <li>The low end is 40% of that, because some customers order something else instead.</li></ol>
-            <i>Example: a burger that normally sells 6 at lunch, out for all of lunch at ₹200, shows ₹480 – ₹1,200.</i>
-            <i>Zomato only. Dishes with under 7 in-stock days of history get no figure. Dishes off the menu for 3+ days are left out.</i></span></span></p></div>` : ""}
+          <span class="so-how-body">
+            <span class="so-how-title">How this is estimated</span>
+            <span class="so-how-line">1. For each outlet we find its best sellers: the dishes that make up most of its sales in the last 30 days of orders.</span>
+            <span class="so-how-line">2. For each dish we work out how many it normally sells in each mealtime, using only the days it was in stock.</span>
+            <span class="so-how-line">3. For every hour the dish was out, we count the sales it would normally have made in that mealtime.</span>
+            <span class="so-how-line">4. We multiply by the dish's latest price. That is the high end.</span>
+            <span class="so-how-line">5. The low end is 40% of that, because some customers order something else instead.</span>
+            <span class="so-how-note">Example: a burger that normally sells 6 at lunch, out for all of lunch at ₹200, shows ₹480 – ₹1,200.</span>
+            <span class="so-how-note">Zomato only. Dishes with under 7 in-stock days of history get no figure. Dishes off the menu for 3+ days are left out.</span>
+          </span></span></p></div>` : ""}
     ${rej && rej.orders ? `<div class="so-loss-side"><b>${plural(rej.orders, "order")}</b><small>turned away for items out of stock in this period · ${rupees(rej.value)} in orders (measured, not estimated)</small></div>` : ""}
   </div>`;
 }
