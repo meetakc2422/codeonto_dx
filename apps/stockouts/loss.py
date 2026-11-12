@@ -24,6 +24,7 @@ TOP_MAX = 20            # ...but never more than this many
 MIN_UNITS = 8           # an item needs this many sales in the window to count as a best seller
 EPISODES_SHOWN = 40     # stock-outs listed per dish in the breakdown panel
 ITEMS_WITH_EPISODES = 12  # dishes that carry that list (the rest are totals only)
+CAP_DAYS = 3            # a stock-out counts for at most its first 3 days: beyond that the dish is more likely delisted than lost sales (same rule as the 'off 3+ days' group)
 MIN_DAYS = 7            # and this many in-stock days before we put a rupee figure on it
 LOW_FACTOR = 0.4        # low end of the range: share of the loss that is real if some customers choose something else
 SOLD = ("Delivered", "Picked up")
@@ -161,8 +162,8 @@ def _units_by_meal(rate: dict[str, float], a: datetime, b: datetime) -> dict[str
 
 def period_loss(episodes: list[StockOut], start: date, end: date, now: datetime, long_cutoff: datetime) -> dict:
     """What best sellers cost over the period: every stock-out of a best seller, valued for the hours it was out
-    (expected units for those hours x price), as a low-high range. Items off the menu for days (still out past
-    long_cutoff) are left out: they are most likely delisted, not lost sales.
+    (expected units for those hours x price), as a low-high range. Each stock-out counts for at most CAP_DAYS, and items
+    still out past long_cutoff are left out: beyond that they are most likely delisted, not lost sales.
     -> {"items": [{item_name, outlets, units, low, high, price}], "low": ₹, "high": ₹}"""
     lo_t, hi_t = _period_bounds(start, end, now)
     eps = [e for e in episodes if not (e.is_active and e.first_detected_at < long_cutoff)]
@@ -213,7 +214,8 @@ def period_loss(episodes: list[StockOut], start: date, end: date, now: datetime,
     by_meal = defaultdict(float)
     for e in eps:
         key = (e.outlet_id, e.item_name)
-        a, b = max(e.first_detected_at.astimezone(IST), lo_t), min((e.restored_at or now).astimezone(IST), hi_t)
+        first = e.first_detected_at.astimezone(IST)
+        a, b = max(first, lo_t), min((e.restored_at or now).astimezone(IST), hi_t, first + timedelta(days=CAP_DAYS))
         if key not in rates or key not in price or b <= a:
             continue
         per_meal = {m: u * price[key] for m, u in _units_by_meal(rates[key], a, b).items()}  # ₹ (high end) per meal

@@ -2067,7 +2067,7 @@ function topSellerStrip(summary, periodWord = "in this period") {
             <span class="so-how-line">4. We multiply by the dish's latest price. That is the high end.</span>
             <span class="so-how-line">5. The low end is 40% of that, because some customers order something else instead.</span>
             <span class="so-how-note">Example: a burger that normally sells 6 at lunch, out for all of lunch at ₹200, shows ₹480 – ₹1,200.</span>
-            <span class="so-how-note">Zomato only. Dishes with under 7 in-stock days of history get no figure. Dishes off the menu for 3+ days are left out.</span>
+            <span class="so-how-note">Zomato only. Dishes with under 7 in-stock days of history get no figure. Each stock-out counts for at most its first 3 days; dishes off the menu longer than that are left out.</span>
           </span></span></p></div>` : ""}
     ${rej && rej.orders ? `<div class="so-loss-side"><b>${plural(rej.orders, "order")}</b><small>turned away for items out of stock in this period · ${rupees(rej.value)} in orders (measured, not estimated)</small></div>` : ""}
   </div>`;
@@ -2088,7 +2088,7 @@ function showLossDetail(name) {
       ${it.episodes.map((e) => `<tr><td>${esc(e.outlet)}</td><td>${esc(at(e.from))}</td><td>${e.back ? esc(at(e.back)) : '<b class="bad">still out</b>'}</td><td>${hrs(e.hours)}</td>
         <td class="num"><b>${rupees(e.low)} – ${rupees(e.high)}</b></td><td class="muted">${meals(e.meals)}</td></tr>`).join("")}</tbody></table>
     ${it.episode_count > it.episodes.length ? `<p class="muted">Showing the ${it.episodes.length} biggest of ${it.episode_count} stock-outs.</p>` : ""}
-    <p class="muted">Estimate: what this dish normally sells in each mealtime at that outlet, for the hours it was out, at its latest price. The low end assumes 6 in 10 of those customers order something else. Times before the period start are cut off at the start.</p>`;
+    <p class="muted">Estimate: what this dish normally sells in each mealtime at that outlet, for the hours it was out, at its latest price. The low end assumes 6 in 10 of those customers order something else. Each stock-out counts for at most its first 3 days, and times before the period start are cut off.</p>`;
   box.hidden = false;
 }
 document.addEventListener("click", (e) => {

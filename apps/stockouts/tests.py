@@ -100,6 +100,18 @@ class TopSellers(OutletsBase):
         narrow = loss.period_loss([old, self.out], today, today, now, now - timedelta(days=3))  # a shorter period leaves the older stock-out out
         self.assertLess(narrow["high"], res["high"])
 
+    def test_a_long_stock_out_counts_only_its_first_three_days(self):
+        now = timezone.now()
+        today = loss.service_day(now)
+        start = datetime.combine(today - timedelta(days=15), datetime.min.time(), tzinfo=IST) + timedelta(hours=5)
+        long_ep = StockOut.objects.create(outlet=self.mine, platform=self.platform, item_name="Hit Burger", log_date=today - timedelta(days=15),
+                                          first_detected_at=start, last_detected_at=start, restored_at=start + timedelta(days=12), is_active=False)
+        three = StockOut(outlet=self.mine, platform=self.platform, item_name="Hit Burger", log_date=today - timedelta(days=15),
+                         first_detected_at=start, last_detected_at=start, restored_at=start + timedelta(days=3), is_active=False)
+        a = loss.period_loss([long_ep], today - timedelta(days=29), today, now, now - timedelta(days=3))
+        b = loss.period_loss([three], today - timedelta(days=29), today, now, now - timedelta(days=3))
+        self.assertEqual(a["high"], b["high"])  # 12 days out is valued the same as 3
+
     def test_summary_has_the_period_loss(self):
         owner = self.as_user(self.owner).get(f"/api/brands/{self.brand_a.pk}/stock-outs/summary").json()
         self.assertIn("period_loss", owner)
