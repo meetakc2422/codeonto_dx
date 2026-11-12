@@ -1897,7 +1897,12 @@ function unseenChanges(kind, rows) {
   return { firstVisit: saved == null, fresh: rows.filter((r) => !seen.has(r.id)) };
 }
 
-const noticeTime = (ts) => new Date(ts).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+const noticeTime = (ts) => {
+  const d = new Date(ts), t = d.toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" });
+  const days = Math.round((new Date().setHours(0, 0, 0, 0) - new Date(d).setHours(0, 0, 0, 0)) / 864e5);
+  if (days <= 0) return t;
+  return `${days === 1 ? "Yesterday" : d.toLocaleDateString("en-IN", { day: "numeric", month: "short" })}, ${t}`;
+};
 const manyOutlets = (n) => `${n} outlet${n === 1 ? "" : "s"}`;
 
 function showChanges(fresh, one, summary, online) {
