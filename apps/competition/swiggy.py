@@ -189,6 +189,112 @@ def suggest(place: dict, text: str) -> list[dict]:
     return out
 
 
+def _pb_bytes(s: str) -> bytes:
+    """A protobuf widget's value as it arrives inside JSON: bytes >= 0x80 come as U+FF80..U+FFFF, and \\a \\v \\' stand for 0x07 0x0b '."""
+    s = s.replace("\\a", "\x07").replace("\\v", "\x0b").replace("\\'", "'")
+    return bytes((ord(c) - 0xFF00 if ord(c) >= 0xFF00 else ord(c) & 0xFF) for c in s)
+
+
+def _pb_varint(b: bytes, i: int) -> tuple[int, int]:
+    n = shift = 0
+    while True:
+        x = b[i]
+        i += 1
+        n |= (x & 0x7F) << shift
+        shift += 7
+        if x < 0x80:
+            return n, i
+
+
+def _pb_fields(b: bytes) -> list[tuple[int, int, object]]:
+    """[(field number, wire type, value)] for one protobuf message; raises on anything that isn't one."""
+    i, out = 0, []
+    while i < len(b):
+        key, i = _pb_varint(b, i)
+        field, wire = key >> 3, key & 7
+        if wire == 0:
+            v, i = _pb_varint(b, i)
+        elif wire == 2:
+            n, i = _pb_varint(b, i)
+            v, i = b[i:i + n], i + n
+        elif wire == 1:
+            v, i = b[i:i + 8], i + 8
+        elif wire == 5:
+            v, i = b[i:i + 4], i + 4
+        else:
+            raise ValueError("not protobuf")
+        if i > len(b):
+            raise ValueError("cut short")
+        out.append((field, wire, v))
+    return out
+
+
+def parse_restaurant_card(value: str) -> dict | None:
+    """One Restaurant widget of the app's search results -> {res_id, name, area, address, rating, ratings, ...}; None when unreadable."""
+    try:
+        top = dict((f, v) for f, w, v in _pb_fields(_pb_bytes(value)) if w == 2)
+        info: dict = {}
+        cuisines = []
+        for f, w, v in _pb_fields(top[1]):
+            if w == 2:
+                if f == 12:
+                    cuisines.append(v.decode("utf-8", "replace"))
+                elif f == 22:
+                    info["sla"] = {sf: sv for sf, sw, sv in _pb_fields(v) if sw == 2}
+                else:
+                    info.setdefault(f, v)
+        txt = lambda k: info[k].decode("utf-8", "replace").strip() if isinstance(info.get(k), bytes) else ""
+        res_id = txt(1)
+        if not res_id.isdigit():
+            return None
+        sla = info.get("sla", {})
+        st = lambda k: sla[k].decode("utf-8", "replace") if isinstance(sla.get(k), bytes) else ""
+        km = re.search(r"[\d.]+", st(17))
+        rating = re.search(r"\d\.\d", txt(18))
+        return {"res_id": res_id, "name": txt(2), "city_id": txt(3), "address": txt(7), "locality": txt(8), "area": txt(9) or txt(8),
+                "rating": float(rating.group(0)) if rating else None, "ratings": txt(19),
+                "cost_for_two": txt(11).replace(" FOR TWO", " for two"), "cuisines": cuisines,
+                "delivery_time": st(16).lower(), "distance_km": float(km.group(0)) if km else None,
+                "serviceable": st(7) == "SERVICEABLE", "closed_note": txt(68)}
+    except Exception:
+        return None
+
+
+def search_restaurants(place: dict, text: str, tries: int = 3) -> list[dict]:
+    """What the app shows after typing a name and pressing search: the restaurants that deliver to this spot, so a chain
+    shows the branch near it (auto-suggest only names the chain's default branch). Retried on a bad answer; [] when nothing readable."""
+    import time
+
+    body = {"categoryPage": "FOOD", "deselectedFacets": {}, "isSimilarRxFlow": 0,
+            "marketplaces": [{"businessLineId": "FOOD", "marketplaceId": "SWIGGY"}], "query": text, "queryUniqueId": str(uuid.uuid4()),
+            "redirection": 1, "secondaryFacets": {}, "showIntentLocation": False, "sldEnabled": 0, "submitAction": "ENTER",
+            "supportedMarketplaces": [{"businessLineId": "FOOD", "marketplaceId": "SWIGGY"}], "supportedTabs": ["RESTAURANT", "DISH"],
+            "trackingId": str(uuid.uuid4())}
+    last = None
+    for attempt in range(tries):
+        try:
+            r = call("POST", "https://disc.swiggy.com/api/v3/search/", place["lat"], place["lng"], place.get("city_id", ""), place.get("city", ""),
+                     params={"lat": place["lat"], "lng": place["lng"]}, body=body)
+            break
+        except SwiggyAppError as e:
+            last = e
+            if "rejected the app session" in str(e) or attempt == tries - 1:
+                raise
+            time.sleep(2 * (attempt + 1))
+    rows, seen = [], set()
+    for c in _cards(r):
+        if c["type_url"].endswith(".Restaurant") and isinstance(c.get("value"), str):
+            row = parse_restaurant_card(c["value"])
+            if row and row["res_id"] not in seen:
+                seen.add(row["res_id"])
+                rows.append(row)
+    # the page also lists look-alikes and other nearby places: a name that holds every word typed comes first (stable order)
+    want = set(re.findall(r"[a-z0-9]+", text.lower()))
+    if want:
+        rows.sort(key=lambda r: not want <= set(re.findall(r"[a-z0-9]+", r["name"].lower())))
+    return rows
+
+
 # app-made sections that repeat real menu items for this user
 PERSONAL_SECTIONS = ("recommended", "combos for", "your", "previously ordered", "top picks")
 

@@ -116,8 +116,10 @@ class ManagerDataTests(Base):
         from openpyxl import load_workbook
 
         res = self.c.get(self.brand_url("stock-outs/export"))
-        sheet = load_workbook(BytesIO(res.content))["Stock-outs"]
-        self.assertEqual([r[3] for r in sheet.iter_rows(min_row=2, values_only=True)], ["Item Mine"])
+        book = load_workbook(BytesIO(res.content))
+        # the export is an insights workbook now: one row per dish and per outlet, only for the assigned outlets
+        self.assertEqual([r[0] for r in book["By dish"].iter_rows(min_row=2, values_only=True)], ["Item Mine"])
+        self.assertEqual(len(list(book["By outlet"].iter_rows(min_row=2, values_only=True))), 1)
 
     def test_config_platforms_come_from_assigned_outlets_only(self):
         self.assertEqual(self.c.get(self.brand_url("config")).json()["connected_platforms"], [])

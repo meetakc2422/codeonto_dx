@@ -1,6 +1,8 @@
 """One adapter per delivery app, so the competition pages work the same for Zomato and Swiggy. Each turns the app's
 own calls into: find a spot to stand at, search around it, and read a restaurant's menu (all in the same shapes)."""
 
+import re
+
 from . import swiggy, zomato
 
 INDIA = (20.5937, 78.9629)  # where to search from before an outlet has a spot or a Google listing
@@ -76,13 +78,32 @@ class Swiggy:
         return {**s, "title": d["title"], "address": d["address"], "serviceable": bool(s["city_id"])}
 
     @staticmethod
+    def _nearby(spot, q):
+        """What the app lists after pressing search (the branches that deliver to this spot); [] when that isn't readable."""
+        try:
+            return swiggy.search_restaurants(spot, q)
+        except swiggy.SwiggyAppError:
+            return []
+
+    @staticmethod
     def search(spot, q):
+        listed = Swiggy._nearby(spot, q)
+        if listed:
+            rows = [{"res_id": r["res_id"], "name": r["name"], "rating": r["rating"], "offers": [], "is_ad": False,
+                     "distance_km": r["distance_km"], "delivery_time": r["delivery_time"], "area": r["area"]} for r in listed]
+            return q, None, rows[:40]
         rows = [{"res_id": h["res_id"], "name": h["name"], "rating": h["rating"], "offers": [], "is_ad": False, "distance_km": None,
                  "delivery_time": h["delivery_time"], "area": h["area"]} for h in swiggy.suggest(spot, q) if h["res_id"]]
         return q, None, rows
 
     @staticmethod
     def names(spot, text):
+        listed = Swiggy._nearby(spot, text)
+        if listed:  # nearest branch first, so "us" is the branch next to the spot, not the chain's default one
+            want = set(re.findall(r"[a-z0-9]+", text.lower()))
+            listed.sort(key=lambda r: (not want <= set(re.findall(r"[a-z0-9]+", r["name"].lower())),
+                                       r["distance_km"] if r["distance_km"] is not None else 1e9))
+            return [(r["res_id"], r["name"]) for r in listed]
         return [(h["res_id"], h["name"]) for h in swiggy.suggest(spot, text) if h["res_id"]]
 
     @staticmethod
