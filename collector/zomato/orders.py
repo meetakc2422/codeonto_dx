@@ -105,7 +105,8 @@ def _download(cookies: dict, user_id: str, res_id: str, start: date, end: date) 
     resp = requests.post(f"{BASE}/query", headers=headers, cookies=cookies, json=body, timeout=cfg.http_timeout())
     if resp.status_code in (401, 403):
         raise PermissionError(f"Zomato refused the order history request ({resp.status_code}): check the login and ORDER_USER_IDS")
-    resp.raise_for_status()
+    if resp.status_code >= 400:
+        raise RuntimeError(f"Zomato answered {resp.status_code} to the order report request: {resp.text[:200]!r}")
     answer = resp.json()
     link = answer.get("download_link")
     for _ in range(POLL_TRIES):
@@ -118,7 +119,8 @@ def _download(cookies: dict, user_id: str, res_id: str, start: date, end: date) 
                             params={"uuid": user_id, "query_id": answer.get("query_id", ""), "download_type": "all_orders"})
         if resp.status_code in (401, 403):
             raise PermissionError(f"Zomato refused the order history status check ({resp.status_code})")
-        resp.raise_for_status()
+        if resp.status_code >= 400:
+            raise RuntimeError(f"Zomato answered {resp.status_code} to the order report status check: {resp.text[:200]!r}")
         answer = {**answer, **resp.json()}
         link = answer.get("download_link")
     if not link:
@@ -222,7 +224,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                 break
             except Exception as e:  # noqa: BLE001
                 # one bad store must not hold up the rest of its batch: try the stores one at a time
-                log.warning("zomato orders: a batch of %s stores failed (%s); trying them one by one", len(group), type(e).__name__)
+                log.warning("zomato orders: a batch of %s stores failed (%s: %s); trying them one by one", len(group), type(e).__name__, str(e)[:220])
                 saved = 0
                 for s in group:
                     try:
@@ -236,7 +238,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                     except Exception as se:  # noqa: BLE001
                         ok = False
                         failures.append(f"{type(se).__name__}: {str(se)[:160]}")
-                        log.warning("zomato orders %s · %s (%s) failed: %s", s["brand"], s["outlet_name"], s["res_id"], type(se).__name__)
+                        log.warning("zomato orders %s · %s (%s) failed: %s: %s", s["brand"], s["outlet_name"], s["res_id"], type(se).__name__, str(se)[:220])
             saved_total += saved
             log.info("zomato orders (%s): %s stores, %s order lines, %s to %s", label, len(group), saved, start, end)
     if len(failures) >= max(3, len(stores) // 5):
