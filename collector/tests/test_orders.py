@@ -61,8 +61,8 @@ class Parsing(unittest.TestCase):
 
     def test_user_ids(self):
         import os
-        os.environ["ORDER_USER_IDS"] = "main:381, bad:x ,paras:77"
-        self.assertEqual(orders.user_ids(), {"main": "381", "paras": "77"})
+        os.environ["ORDER_USER_IDS"] = "main:381, bad:x ,other:77"
+        self.assertEqual(orders.user_ids(), {"main": "381", "other": "77"})
         os.environ.pop("ORDER_USER_IDS")
 
 

@@ -5,7 +5,7 @@ reads the zip + CSV straight from memory (nothing is written to disk) and keeps 
 columns (name, id, phone) are never read. Runs once a day: it re-reads the last ORDERS_DAYS days (default 2), and saving
 is an upsert, so running twice is harmless. The first run for an outlet can backfill: BACKFILL_FROM / BACKFILL_TO.
 
-The report request carries the merchant user's id ("uuid"): set it per login in ORDER_USER_IDS=main:381317736,other:123.
+The report request carries the merchant user's id ("uuid"): set it per login in ORDER_USER_IDS=main:123456789,other:987654321.
 """
 
 import csv
@@ -40,7 +40,7 @@ def config(account: str) -> dict:
 
 
 def user_ids() -> dict[str, str]:
-    """ORDER_USER_IDS=main:381317736,paras:123 -> {'main': '381317736', 'paras': '123'}"""
+    """ORDER_USER_IDS=main:111,other:222 -> {'main': '111', 'other': '222'}"""
     out = {}
     for part in cfg.text("ORDER_USER_IDS").split(","):
         label, _, uid = part.partition(":")
