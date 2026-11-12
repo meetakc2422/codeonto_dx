@@ -36,7 +36,7 @@ ITEM = re.compile(r"^\s*(\d+)\s*x\s*(.+?)\s*$", re.S)
 
 
 def config(account: str) -> dict:
-    return require_env("SOCIALSPORK_DATABASE_URL")
+    return require_env("CODEONTO_DATABASE_URL")
 
 
 def user_ids() -> dict[str, str]:
