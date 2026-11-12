@@ -1010,21 +1010,24 @@ table.stmt .off { opacity: .35; }
 .up-row b { text-align: right; }
 
 /* stock-outs: best sellers out now + orders turned away */
-.so-loss { display: flex; gap: 14px; flex-wrap: wrap; margin: 0 0 16px; }
-.so-loss-main, .so-loss-side { background: var(--card, #fff); border: 1px solid var(--line, #e6e9ef); border-radius: 12px; padding: 12px 16px; }
+.so-loss { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-start; margin: 0 0 12px; }
+.so-loss-main, .so-loss-side { background: var(--card, #fff); border: 1px solid var(--line, #e6e9ef); border-radius: 12px; padding: 9px 14px; }
 .so-loss-main { flex: 2 1 420px; border-left: 4px solid #e5484d; }
 .so-loss-side { flex: 1 1 240px; border-left: 4px solid #f5a524; display: flex; flex-direction: column; justify-content: center; }
 .so-loss-label { display: block; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #6b7280; }
-.so-loss-main b { font-size: 22px; margin-right: 8px; }
+.so-loss-main b { font-size: 18px; margin-right: 6px; }
 .so-loss-main small, .so-loss-side small { color: #6b7280; }
-.so-loss-side b { font-size: 22px; }
-.so-loss-items { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
-.so-loss-today { margin: 6px 0 0; font-size: 13px; color: #5b6472; }
+.so-loss-side b { font-size: 18px; }
+.so-loss-side small { font-size: 11px; }
+.so-loss-items { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 6px; }
+.so-loss-items .so-chip { font-size: 11px; padding: 2px 7px; border-radius: 6px; }
+.so-loss-items .so-chip small { font-size: 9.5px; }
+.so-loss-today { margin: 2px 0 0; font-size: 12px; color: #5b6472; }
 .so-chip.clickable { cursor: pointer; }
 .so-loss-detail { margin-top: 12px; padding: 12px; border: 1px solid #e6e9ef; border-radius: 10px; background: #fff; overflow-x: auto; }
 .so-loss-detail-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
 .so-loss-detail-head .btn { margin-left: auto; }
-.so-meal-loss { display: block; margin-top: 6px; font-size: 11px; color: #5b6472; }
+.so-meal-loss { display: block; margin-top: 3px; font-size: 10.5px; color: #5b6472; white-space: nowrap; }
 .so-meal b.x, .so-meal .so-meal-loss b { font-size: 11px; margin-top: 0; color: #b4232a; font-weight: 600; }
 .so-how { position: relative; display: inline-block; cursor: help; }
 .so-how-body { display: none; position: absolute; left: 0; top: 100%; z-index: 30; width: 360px; max-width: 80vw; margin-top: 6px; padding: 12px 14px;
@@ -1034,4 +1037,4 @@ table.stmt .off { opacity: .35; }
 .so-how-title { display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; }
 .so-how-line { display: block; margin-bottom: 4px; }
 .so-how-note { display: block; margin-top: 6px; color: #5b6472; }
-.so-loss-note { margin: 8px 0 0; font-size: 12px; color: #d9480f; cursor: help; }
+.so-loss-note { margin: 5px 0 0; font-size: 11px; color: #d9480f; cursor: help; }

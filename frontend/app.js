@@ -1337,6 +1337,10 @@ function wireStaffBilling(page, clientId) {
 // ---------- payout reconciliation ----------
 const payoutFilters = { status: "", q: "", open: null, issue: "", view: "list" };
 const stmtSel = new Map();  // statement view: "outletId:platform" -> Set of unticked cycle ids
+const rupeesShort = (v) => {  // ₹12.6k, ₹3.13 L, ₹1.2 Cr: for tight spaces
+  const n = Math.abs(v || 0);
+  return `₹${n >= 1e7 ? `${(n / 1e7).toFixed(2)} Cr` : n >= 1e5 ? `${(n / 1e5).toFixed(2)} L` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : Math.round(n)}`;
+};
 const rupees = (v) => (v == null ? "—" : `${v < 0 && Math.round(Math.abs(v)) ? "-" : ""}₹${inr.format(Math.abs(v))}`);  // no "-₹0" for tiny negatives
 const cycleDates = (c) => (c.start_date === c.end_date ? dayLabel(c.start_date) : `${dayLabel(c.start_date)} – ${dayLabel(c.end_date)}`);
 
@@ -2049,7 +2053,7 @@ function topSellerStrip(summary, periodWord = "in this period") {
   const hasPer = !!(per && per.high);
   const items = hasPer ? per.items : (t?.items || []);
   if (!items.length && !(rej && rej.orders)) return "";
-  const range = (lo, hi) => (hi ? `${rupees(lo)} – ${rupees(hi)}` : "");
+  const range = (lo, hi) => (hi ? `${rupeesShort(lo)} – ${rupeesShort(hi)}` : "");
   const since = (ts) => new Date(ts).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
   return `<div class="so-loss">
     ${items.length ? `<div class="so-loss-main"><span class="so-loss-label">${hasPer ? "Best sellers lost to stock-outs" : "Best sellers out right now"}</span>
@@ -2184,7 +2188,7 @@ async function renderStockOuts(page) {
           ${hasToday && m.meal === now ? '<em>NOW</em>' : ""}<span class="so-meal-name">${m.meal}</span><span class="so-meal-hours">${meta.hours}</span>
           <b>${inr.format(mealNum(m))}</b>
           <span class="so-bar"><i style="width:${(mealNum(m) / maxMeal) * 100}%"></i></span>
-          ${(() => { const l = summary.period_loss?.by_meal?.[m.meal]; return l && l.high ? `<span class="so-meal-loss" title="Estimated best-seller sales lost during ${m.meal} hours ${periodWord}">est. sales lost <b>${rupees(l.low)} – ${rupees(l.high)}</b></span>` : ""; })()}</button>`;
+          ${(() => { const l = summary.period_loss?.by_meal?.[m.meal]; return l && l.high ? `<span class="so-meal-loss" title="Estimated best-seller sales lost during ${m.meal} hours ${periodWord}">lost <b>${rupeesShort(l.low)} – ${rupeesShort(l.high)}</b></span>` : ""; })()}</button>`;
       }).join("")}</div>
       ${summary.long_off ? `<button class="so-earlier ${stockFilters.status === "long" ? "on" : ""}" id="sLong"><b>+${inr.format(summary.long_off)}</b> off for ${summary.long_off_days}+ days · probably taken off the menu · click to see</button>` : ""}</div>
 
