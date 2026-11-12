@@ -163,6 +163,29 @@ def brand_stock_outs(request, brand_id):
     return Response([{**_json(s, losses[s.id][1], start, losses[s.id][0]), "range_meals": sorted(_meal_hits(s, lo, hi, now))} for s in rows])
 
 
+def _order_based_loss(request, brand_id, qp, qs, start: date, end: date) -> dict:
+    """Best sellers out now with their estimated loss today, and orders rejected for stock in the period (both from order history).
+    Never raises: when there is no order history yet, or anything goes wrong, the page just doesn't get these."""
+    try:
+        from apps.outlets.models import BrandOutlet
+
+        from .loss import rejected_for_stock, top_sellers_out
+
+        if qp.get("platform") not in (None, "", "zomato"):
+            return {"top_sellers_out": None, "stock_rejections": None}
+        outlets = in_scope(BrandOutlet.objects.filter(brand_id=brand_id), request.user, field="id")
+        if outlet_ids(qp.get("outlet_id")):
+            outlets = outlets.filter(id__in=outlet_ids(qp.get("outlet_id")))
+        ids = list(outlets.values_list("id", flat=True))
+        active = list(qs.filter(is_active=True, platform_id="zomato").exclude(first_detected_at__lt=_long_cutoff()))
+        return {"top_sellers_out": top_sellers_out(active, datetime.now(IST)), "stock_rejections": rejected_for_stock(ids, start, end)}
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).exception("order-based stock-out loss failed")
+        return {"top_sellers_out": None, "stock_rejections": None}
+
+
 @api_view(["GET"])
 def stock_outs_summary(request, brand_id):
     qs, qp = _filtered(request, brand_id)
@@ -192,6 +215,7 @@ def stock_outs_summary(request, brand_id):
     top = sorted(by_item.items(), key=lambda kv: -kv[1]["lost"])
     return Response({
         **totals,
+        **_order_based_loss(request, brand_id, qp, qs, start, end),
         "lost_sales": round(sum(lost)),
         "lost_unpriced": len(losses) - len(lost),  # stock-outs of items with no sales history: no ₹ estimate
         "top_losses": [{"item_name": k, "lost": round(d["lost"]), "hours": round(d["hours"], 1), "outlets": len(d["outlets"]),

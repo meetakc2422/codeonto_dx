@@ -2035,6 +2035,23 @@ async function renderUptime(page) {
   $("#uAll")?.addEventListener("click", () => { uptimeAll = !uptimeAll; renderUptime(page); });
 }
 
+// best sellers that are out now, valued from the outlet's own order history (a range: the low end assumes some customers pick another dish),
+// and orders turned away because an item was out (a measured loss, not an estimate)
+function topSellerStrip(summary) {
+  const t = summary.top_sellers_out, rej = summary.stock_rejections;
+  const items = t?.items || [];
+  if (!items.length && !(rej && rej.orders)) return "";
+  const range = (lo, hi) => (hi ? `${rupees(lo)} – ${rupees(hi)}` : "");
+  const since = (ts) => new Date(ts).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
+  return `<div class="so-loss">
+    ${items.length ? `<div class="so-loss-main"><span class="so-loss-label">Best sellers out right now</span>
+        ${t.high ? `<b>${range(t.low, t.high)}</b><small>estimated sales lost so far today</small>` : `<small>not enough order history yet to value them</small>`}
+        <div class="so-loss-items">${items.slice(0, 8).map((i) => `<span class="so-chip out" title="Out since ${esc(since(i.since))} at ${i.outlets} outlet${i.outlets === 1 ? "" : "s"}${i.price ? ` · ₹${inr.format(i.price)} each` : ""}">${esc(i.item_name)}<small>${i.enough_history && i.high ? range(i.low, i.high) : "no estimate yet"}</small></span>`).join("")}</div>
+        <p class="so-loss-note" title="From this outlet's last 30 days of orders: what the item normally sells in each mealtime on days it was in stock, for the hours it has been out today, at its latest price. The low end assumes 6 in 10 of those customers order something else.">How is this estimated?</p></div>` : ""}
+    ${rej && rej.orders ? `<div class="so-loss-side"><b>${plural(rej.orders, "order")}</b><small>turned away for items out of stock in this period · ${rupees(rej.value)} in orders (measured, not estimated)</small></div>` : ""}
+  </div>`;
+}
+
 // ---------- stock-outs ----------
 const MEALS = [
   { name: "Breakfast", hours: "5 am – 12 pm", from: 5, to: 12, tone: "#f5a524" },
@@ -2108,6 +2125,8 @@ async function renderStockOuts(page) {
           <b>${rupees(summary.lost_sales)}</b> of sales missed in this period <small>(estimate)</small></p>` : ""}</div>
       ${hasToday ? `<div class="so-now">Now serving<b>${now}</b></div>` : ""}
     </div>
+
+    ${topSellerStrip(summary)}
 
     <div class="so-section"><h3>By mealtime <small>items out ${periodWord}, under the first meal each went out in · click to filter</small></h3>
       <div class="so-meals">${summary.by_meal.map((m) => {

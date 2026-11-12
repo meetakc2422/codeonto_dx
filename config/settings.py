@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     "apps.outlets",
     "apps.reviews",
     "apps.stockouts",
+    "apps.orders",
     "apps.complaints",
     "apps.insights",
     "apps.uptime",
