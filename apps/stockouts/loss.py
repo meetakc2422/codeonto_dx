@@ -22,6 +22,8 @@ WINDOW_DAYS = 30        # how far back demand is learned from
 TOP_SHARE = 0.8         # best sellers: the items that make up this share of the outlet's units...
 TOP_MAX = 20            # ...but never more than this many
 MIN_UNITS = 8           # an item needs this many sales in the window to count as a best seller
+EPISODES_SHOWN = 40     # stock-outs listed per dish in the breakdown panel
+ITEMS_WITH_EPISODES = 12  # dishes that carry that list (the rest are totals only)
 MIN_DAYS = 7            # and this many in-stock days before we put a rupee figure on it
 LOW_FACTOR = 0.4        # low end of the range: share of the loss that is real if some customers choose something else
 SOLD = ("Delivered", "Picked up")
@@ -135,3 +137,100 @@ def rejected_for_stock(outlet_ids, start: date, end: date) -> dict:
             .values("order_id", "order_subtotal").distinct())
     value = sum(float(r["order_subtotal"] or 0) for r in rows)
     return {"orders": len(rows), "value": round(value)}
+
+
+def _period_bounds(start: date, end: date, now: datetime) -> tuple[datetime, datetime]:
+    """The service days start..end (5 am to 5 am), never past now."""
+    lo = datetime.combine(start, datetime.min.time(), tzinfo=IST) + timedelta(hours=5)
+    return lo, min(datetime.combine(end, datetime.min.time(), tzinfo=IST) + timedelta(days=1, hours=5), now)
+
+
+def _units_by_meal(rate: dict[str, float], a: datetime, b: datetime) -> dict[str, float]:
+    """Expected units over the hours a..b, per meal: each service day's meal windows that overlap it, at the normal rate per meal."""
+    units, d = defaultdict(float), service_day(a)
+    while d <= service_day(b):
+        base = datetime.combine(d, datetime.min.time(), tzinfo=IST)
+        for meal, (h1, h2) in MEALS.items():
+            s, e = base + timedelta(hours=h1), base + timedelta(hours=h2)
+            lo, hi = max(s, a), min(e, b)
+            if hi > lo:
+                units[meal] += rate.get(meal, 0.0) * ((hi - lo).total_seconds() / (e - s).total_seconds())
+        d += timedelta(days=1)
+    return units
+
+
+def period_loss(episodes: list[StockOut], start: date, end: date, now: datetime, long_cutoff: datetime) -> dict:
+    """What best sellers cost over the period: every stock-out of a best seller, valued for the hours it was out
+    (expected units for those hours x price), as a low-high range. Items off the menu for days (still out past
+    long_cutoff) are left out: they are most likely delisted, not lost sales.
+    -> {"items": [{item_name, outlets, units, low, high, price}], "low": ₹, "high": ₹}"""
+    lo_t, hi_t = _period_bounds(start, end, now)
+    eps = [e for e in episodes if not (e.is_active and e.first_detected_at < long_cutoff)]
+    if not eps:
+        return {"items": [], "low": 0, "high": 0}
+    today = service_day(now)
+    top = best_sellers({e.outlet_id for e in eps}, today)
+    eps = [e for e in eps if e.item_name in top.get(e.outlet_id, ())]
+    if not eps:
+        return {"items": [], "low": 0, "high": 0}
+    pairs = {(e.outlet_id, e.item_name) for e in eps}
+    outlets = {o for o, _ in pairs}
+    since = today - timedelta(days=WINDOW_DAYS)
+    window = {since + timedelta(days=i) for i in range((today - since).days)}
+
+    out_days = defaultdict(set)  # days each item was out in the learning window: not normal demand
+    for e in StockOut.objects.filter(outlet_id__in=outlets, log_date__gte=since - timedelta(days=60)):
+        if (e.outlet_id, e.item_name) in pairs:
+            d, last = max(e.log_date, since), (e.restored_at or now).astimezone(IST).date()
+            while d <= last:
+                out_days[(e.outlet_id, e.item_name)].add(d)
+                d += timedelta(days=1)
+    sold = defaultdict(list)  # (outlet, item) -> [(meal, day, units)]
+    for r in (OrderLine.objects.filter(outlet_id__in=outlets, status__in=SOLD, order_date__gte=since, order_date__lt=today)
+              .values("outlet_id", "item_name", "mealtime", "order_date").annotate(u=Sum("quantity"))):
+        if (r["outlet_id"], r["item_name"]) in pairs:
+            sold[(r["outlet_id"], r["item_name"])].append((r["mealtime"], r["order_date"], float(r["u"])))
+    price = {}
+    for o, i, p in (OrderLine.objects.filter(outlet_id__in=outlets, unit_price__gt=0, order_date__gte=since).order_by("-placed_at")
+                    .values_list("outlet_id", "item_name", "unit_price")):
+        if (o, i) in pairs and (o, i) not in price:
+            price[(o, i)] = float(p)
+    for o, i in pairs - set(price):  # no priced order lately: the item sales report has it
+        p = price_of(o, i)
+        if p is not None:
+            price[(o, i)] = p
+
+    rates = {}
+    for key in pairs:
+        days = window - out_days[key]
+        if len(days) >= MIN_DAYS:
+            per = defaultdict(float)
+            for meal, day, u in sold[key]:
+                if day in days:
+                    per[meal] += u
+            rates[key] = {m: u / len(days) for m, u in per.items()}
+    merged: dict[str, dict] = {}
+    by_meal = defaultdict(float)
+    for e in eps:
+        key = (e.outlet_id, e.item_name)
+        a, b = max(e.first_detected_at.astimezone(IST), lo_t), min((e.restored_at or now).astimezone(IST), hi_t)
+        if key not in rates or key not in price or b <= a:
+            continue
+        per_meal = {m: u * price[key] for m, u in _units_by_meal(rates[key], a, b).items()}  # ₹ (high end) per meal
+        high = sum(per_meal.values())
+        m = merged.setdefault(e.item_name, {"item_name": e.item_name, "outlet_set": set(), "high": 0.0, "price": price[key], "episodes": []})
+        m["outlet_set"].add(e.outlet_id)
+        m["high"] += high
+        for meal, v in per_meal.items():
+            by_meal[meal] += v
+        m["episodes"].append({"outlet": e.outlet.outlet_name, "from": a.isoformat(), "back": e.restored_at.isoformat() if e.restored_at else None,
+                              "hours": round((b - a).total_seconds() / 3600, 1), "high": round(high), "low": round(high * LOW_FACTOR),
+                              "meals": {k: [round(v * LOW_FACTOR), round(v)] for k, v in per_meal.items() if v >= 1}})
+    items = sorted(({"item_name": m["item_name"], "outlets": len(m["outlet_set"]), "price": m["price"], "high": round(m["high"]),
+                     "low": round(m["high"] * LOW_FACTOR), "episode_count": len(m["episodes"]),
+                     "episodes": sorted((x for x in m["episodes"] if x["high"] >= 1), key=lambda x: -x["high"])[:EPISODES_SHOWN]}
+                    for m in merged.values() if m["high"] >= 1), key=lambda x: -x["high"])
+    for it in items[ITEMS_WITH_EPISODES:]:
+        it["episodes"] = []
+    return {"items": items, "low": sum(i["low"] for i in items), "high": sum(i["high"] for i in items),
+            "by_meal": {k: {"low": round(v * LOW_FACTOR), "high": round(v)} for k, v in by_meal.items()}}

@@ -2042,20 +2042,54 @@ async function renderUptime(page) {
 
 // best sellers that are out now, valued from the outlet's own order history (a range: the low end assumes some customers pick another dish),
 // and orders turned away because an item was out (a measured loss, not an estimate)
-function topSellerStrip(summary) {
-  const t = summary.top_sellers_out, rej = summary.stock_rejections;
-  const items = t?.items || [];
+let lossItems = [];
+function topSellerStrip(summary, periodWord = "in this period") {
+  lossItems = summary.period_loss?.items || [];
+  const t = summary.top_sellers_out, rej = summary.stock_rejections, per = summary.period_loss;
+  const hasPer = !!(per && per.high);
+  const items = hasPer ? per.items : (t?.items || []);
   if (!items.length && !(rej && rej.orders)) return "";
   const range = (lo, hi) => (hi ? `${rupees(lo)} – ${rupees(hi)}` : "");
   const since = (ts) => new Date(ts).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
   return `<div class="so-loss">
-    ${items.length ? `<div class="so-loss-main"><span class="so-loss-label">Best sellers out right now</span>
-        ${t.high ? `<b>${range(t.low, t.high)}</b><small>estimated sales lost so far today</small>` : `<small>not enough order history yet to value them</small>`}
-        <div class="so-loss-items">${items.slice(0, 8).map((i) => `<span class="so-chip out" title="Out since ${esc(since(i.since))} at ${i.outlets} outlet${i.outlets === 1 ? "" : "s"}${i.price ? ` · ₹${inr.format(i.price)} each` : ""}">${esc(i.item_name)}<small>${i.enough_history && i.high ? range(i.low, i.high) : "no estimate yet"}</small></span>`).join("")}</div>
-        <p class="so-loss-note" title="From this outlet's last 30 days of orders: what the item normally sells in each mealtime on days it was in stock, for the hours it has been out today, at its latest price. The low end assumes 6 in 10 of those customers order something else.">How is this estimated?</p></div>` : ""}
+    ${items.length ? `<div class="so-loss-main"><span class="so-loss-label">${hasPer ? "Best sellers lost to stock-outs" : "Best sellers out right now"}</span>
+        ${hasPer ? `<b>${range(per.low, per.high)}</b><small>estimated sales lost ${esc(periodWord)}</small>`
+          : t.high ? `<b>${range(t.low, t.high)}</b><small>estimated sales lost so far today</small>` : `<small>not enough order history yet to value them</small>`}
+        ${hasPer && t?.items?.length ? `<p class="so-loss-today">${plural(t.items.length, "best seller")} out right now${t.high ? ` · ${range(t.low, t.high)} lost so far today` : ""}</p>` : ""}
+        <div class="so-loss-items">${items.slice(0, 8).map((i) => `<span class="so-chip out ${hasPer && i.episodes?.length ? "clickable" : ""}" ${hasPer && i.episodes?.length ? `data-lossitem="${esc(i.item_name)}" role="button" tabindex="0"` : ""} title="${hasPer ? `Click for when and where it was out. Out at ${i.outlets} outlet${i.outlets === 1 ? "" : "s"}` : `Out since ${esc(since(i.since))} at ${i.outlets} outlet${i.outlets === 1 ? "" : "s"}`}${i.price ? ` · ₹${inr.format(i.price)} each` : ""}">${esc(i.item_name)}<small>${(hasPer || i.enough_history) && i.high ? range(i.low, i.high) : "no estimate yet"}</small></span>`).join("")}</div>
+        <div class="so-loss-detail" id="lossDetail" hidden></div>
+        <p class="so-loss-note" title="From each outlet's last 30 days of orders: what the item normally sells in each mealtime on days it was in stock, for the hours it was out, at its latest price. The low end assumes 6 in 10 of those customers order something else.">How is this estimated?</p></div>` : ""}
     ${rej && rej.orders ? `<div class="so-loss-side"><b>${plural(rej.orders, "order")}</b><small>turned away for items out of stock in this period · ${rupees(rej.value)} in orders (measured, not estimated)</small></div>` : ""}
   </div>`;
 }
+
+// click a dish in the loss box: every stock-out of it in the period, when it went out and came back, hours out, and the sales it cost
+function showLossDetail(name) {
+  const box = $("#lossDetail"), it = lossItems.find((x) => x.item_name === name);
+  if (!box || !it) return;
+  if (!box.hidden && box.dataset.item === name) { box.hidden = true; return; }  // click again to close
+  const at = (ts) => new Date(ts).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
+  const hrs = (h) => (h >= 48 ? `${Math.round(h / 24)} days` : h >= 1 ? `${Math.round(h)} h` : `${Math.round(h * 60)} min`);
+  const meals = (m) => Object.entries(m || {}).map(([k, [lo, hi]]) => `${esc(k)} ${rupees(lo)}–${rupees(hi)}`).join(" · ") || "—";
+  box.dataset.item = name;
+  box.innerHTML = `<div class="so-loss-detail-head"><b>${esc(name)}</b> <span class="muted">${plural(it.episode_count, "stock-out")} in this period · ${rupees(it.low)} – ${rupees(it.high)} estimated sales lost</span>
+      <button class="btn light" data-closeloss>Close</button></div>
+    <table class="cp-table"><thead><tr><th>Outlet</th><th>Went out</th><th>Back</th><th>Out for</th><th class="num">Sales lost</th><th>By mealtime</th></tr></thead><tbody>
+      ${it.episodes.map((e) => `<tr><td>${esc(e.outlet)}</td><td>${esc(at(e.from))}</td><td>${e.back ? esc(at(e.back)) : '<b class="bad">still out</b>'}</td><td>${hrs(e.hours)}</td>
+        <td class="num"><b>${rupees(e.low)} – ${rupees(e.high)}</b></td><td class="muted">${meals(e.meals)}</td></tr>`).join("")}</tbody></table>
+    ${it.episode_count > it.episodes.length ? `<p class="muted">Showing the ${it.episodes.length} biggest of ${it.episode_count} stock-outs.</p>` : ""}
+    <p class="muted">Estimate: what this dish normally sells in each mealtime at that outlet, for the hours it was out, at its latest price. The low end assumes 6 in 10 of those customers order something else. Times before the period start are cut off at the start.</p>`;
+  box.hidden = false;
+}
+document.addEventListener("click", (e) => {
+  const chip = e.target.closest("[data-lossitem]");
+  if (chip) return showLossDetail(chip.dataset.lossitem);
+  if (e.target.closest("[data-closeloss]")) $("#lossDetail").hidden = true;
+});
+document.addEventListener("keydown", (e) => {
+  const chip = e.key === "Enter" && e.target.closest?.("[data-lossitem]");
+  if (chip) showLossDetail(chip.dataset.lossitem);
+});
 
 // ---------- stock-outs ----------
 const MEALS = [
@@ -2131,15 +2165,16 @@ async function renderStockOuts(page) {
       ${hasToday ? `<div class="so-now">Now serving<b>${now}</b></div>` : ""}
     </div>
 
-    ${topSellerStrip(summary)}
+    ${topSellerStrip(summary, periodWord)}
 
-    <div class="so-section"><h3>By mealtime <small>items out ${periodWord}, under the first meal each went out in · click to filter</small></h3>
+    <div class="so-section"><h3>By mealtime <small>big number: items out ${periodWord}, counted under the first meal each went out in · ₹: best-seller sales lost in that meal\'s hours · click to filter</small></h3>
       <div class="so-meals">${summary.by_meal.map((m) => {
         const meta = MEALS.find((x) => x.name === m.meal);
         return `<button class="so-meal ${stockFilters.meal === m.meal ? "on" : ""} ${hasToday && m.meal === now ? "now" : ""}" data-meal="${m.meal}" style="--tone:${meta.tone}">
           ${hasToday && m.meal === now ? '<em>NOW</em>' : ""}<span class="so-meal-name">${m.meal}</span><span class="so-meal-hours">${meta.hours}</span>
           <b>${inr.format(mealNum(m))}</b>
-          <span class="so-bar"><i style="width:${(mealNum(m) / maxMeal) * 100}%"></i></span></button>`;
+          <span class="so-bar"><i style="width:${(mealNum(m) / maxMeal) * 100}%"></i></span>
+          ${(() => { const l = summary.period_loss?.by_meal?.[m.meal]; return l && l.high ? `<span class="so-meal-loss" title="Estimated best-seller sales lost during ${m.meal} hours ${periodWord}">est. sales lost <b>${rupees(l.low)} – ${rupees(l.high)}</b></span>` : ""; })()}</button>`;
       }).join("")}</div>
       ${summary.long_off ? `<button class="so-earlier ${stockFilters.status === "long" ? "on" : ""}" id="sLong"><b>+${inr.format(summary.long_off)}</b> off for ${summary.long_off_days}+ days · probably taken off the menu · click to see</button>` : ""}</div>
 

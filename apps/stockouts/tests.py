@@ -87,6 +87,23 @@ class TopSellers(OutletsBase):
                                              first_detected_at=timezone.now(), last_detected_at=timezone.now())], timezone.now())
         self.assertEqual(res["items"], [])  # nothing sold at this outlet, so it is not a best seller
 
+    def test_period_loss_counts_best_sellers_over_the_range(self):
+        now = timezone.now()
+        today = loss.service_day(now)
+        dinner = datetime.combine(today - timedelta(days=2), datetime.min.time(), tzinfo=IST) + timedelta(hours=19)  # all of Dinner, 2 days ago
+        old = StockOut.objects.create(outlet=self.mine, platform=self.platform, item_name="Hit Burger", log_date=today - timedelta(days=2),
+                                      first_detected_at=dinner, last_detected_at=dinner, restored_at=dinner + timedelta(hours=4), is_active=False)
+        res = loss.period_loss([old, self.out, self.rare], today - timedelta(days=29), today, now, now - timedelta(days=3))
+        self.assertEqual([i["item_name"] for i in res["items"]], ["Hit Burger"])  # the rare dish gets no figure
+        self.assertGreater(res["high"], 0)
+        self.assertLessEqual(res["low"], res["high"])
+        narrow = loss.period_loss([old, self.out], today, today, now, now - timedelta(days=3))  # a shorter period leaves the older stock-out out
+        self.assertLess(narrow["high"], res["high"])
+
+    def test_summary_has_the_period_loss(self):
+        owner = self.as_user(self.owner).get(f"/api/brands/{self.brand_a.pk}/stock-outs/summary").json()
+        self.assertIn("period_loss", owner)
+
     def test_rejections_for_stock_are_counted_once(self):
         today = loss.service_day(timezone.now())
         self.assertEqual(loss.rejected_for_stock([self.mine.pk], today - timedelta(days=30), today), {"orders": 1, "value": 450})

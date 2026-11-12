@@ -169,7 +169,7 @@ def _order_based_loss(request, brand_id, qp, qs, start: date, end: date) -> dict
     try:
         from apps.outlets.models import BrandOutlet
 
-        from .loss import rejected_for_stock, top_sellers_out
+        from .loss import period_loss, rejected_for_stock, top_sellers_out
 
         if qp.get("platform") not in (None, "", "zomato"):
             return {"top_sellers_out": None, "stock_rejections": None}
@@ -178,7 +178,9 @@ def _order_based_loss(request, brand_id, qp, qs, start: date, end: date) -> dict
             outlets = outlets.filter(id__in=outlet_ids(qp.get("outlet_id")))
         ids = list(outlets.values_list("id", flat=True))
         active = list(qs.filter(is_active=True, platform_id="zomato").exclude(first_detected_at__lt=_long_cutoff()))
-        return {"top_sellers_out": top_sellers_out(active, datetime.now(IST)), "stock_rejections": rejected_for_stock(ids, start, end)}
+        now = datetime.now(IST)
+        period = period_loss(list(qs.filter(platform_id="zomato")), start, end, now, _long_cutoff())
+        return {"top_sellers_out": top_sellers_out(active, now), "period_loss": period, "stock_rejections": rejected_for_stock(ids, start, end)}
     except Exception:  # noqa: BLE001
         import logging
 

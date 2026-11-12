@@ -1019,4 +1019,11 @@ table.stmt .off { opacity: .35; }
 .so-loss-main small, .so-loss-side small { color: #6b7280; }
 .so-loss-side b { font-size: 22px; }
 .so-loss-items { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.so-loss-today { margin: 6px 0 0; font-size: 13px; color: #5b6472; }
+.so-chip.clickable { cursor: pointer; }
+.so-loss-detail { margin-top: 12px; padding: 12px; border: 1px solid #e6e9ef; border-radius: 10px; background: #fff; overflow-x: auto; }
+.so-loss-detail-head { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.so-loss-detail-head .btn { margin-left: auto; }
+.so-meal-loss { display: block; margin-top: 6px; font-size: 11px; color: #5b6472; }
+.so-meal b.x, .so-meal .so-meal-loss b { font-size: 11px; margin-top: 0; color: #b4232a; font-weight: 600; }
 .so-loss-note { margin: 8px 0 0; font-size: 12px; color: #d9480f; cursor: help; }
