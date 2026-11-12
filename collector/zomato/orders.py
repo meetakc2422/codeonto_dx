@@ -203,6 +203,34 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             n += save(parse_report(text, outlets))
         return n
 
+    worked: set = set()
+
+    def one_by_one(acc_id: int, group: list, why: str) -> int:
+        nonlocal ok
+        label, saved, refused = by_id[acc_id]["label"], 0, 0
+        log.warning("zomato orders: a batch of %s stores failed (%s); trying them one by one", len(group), why)
+        for s in group:
+            try:
+                saved += fetch(acc_id, [s])
+                worked.add(acc_id)
+                refused = 0
+            except PermissionError as pe:
+                ok = False
+                refused += 1
+                failures.append(f"PermissionError: {str(pe)[:160]}")
+                log.warning("zomato orders %s · %s (%s) refused by Zomato for login '%s': %s", s["brand"], s["outlet_name"], s["res_id"], label, pe)
+                if refused >= 3:  # three stores in a row refused: the login or Zomato itself is the problem, not one store
+                    dead.add(acc_id)
+                    log.error("zomato orders: login '%s' keeps being refused; stopping its stores this run", label)
+                    db.mark_session_expired(acc_id, f"zomato orders: {pe}")
+                    alerts.incident(f"Zomato session expired: {label}", str(pe), f"Use Log in again on the Sessions page, or run `python run.py zomato session --account {label}`.")
+                    break
+            except Exception as se:  # noqa: BLE001
+                ok = False
+                failures.append(f"{type(se).__name__}: {str(se)[:160]}")
+                log.warning("zomato orders %s · %s (%s) failed: %s: %s", s["brand"], s["outlet_name"], s["res_id"], type(se).__name__, str(se)[:220])
+        return saved
+
     first = True
     for acc_id, mine in by_login.items():
         label = by_id[acc_id]["label"]
@@ -215,30 +243,21 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             first = False
             try:
                 saved = fetch(acc_id, group)
+                worked.add(acc_id)
             except PermissionError as e:
-                dead.add(acc_id)
-                ok = False
-                log.error("zomato orders: login '%s' was refused (%s); its stores are skipped this run", label, e)
-                db.mark_session_expired(acc_id, f"zomato orders: {e}")
-                alerts.incident(f"Zomato session expired: {label}", str(e), f"Use Log in again on the Sessions page, or run `python run.py zomato session --account {label}`.")
-                break
+                if acc_id not in worked:
+                    # nothing worked yet for this login: the saved Zomato login is really stale
+                    dead.add(acc_id)
+                    ok = False
+                    log.error("zomato orders: login '%s' was refused (%s); its stores are skipped this run", label, e)
+                    db.mark_session_expired(acc_id, f"zomato orders: {e}")
+                    alerts.incident(f"Zomato session expired: {label}", str(e), f"Use Log in again on the Sessions page, or run `python run.py zomato session --account {label}`.")
+                    break
+                # the login worked on earlier batches, so a refusal now is most likely one store this login cannot see: go one at a time
+                saved = one_by_one(acc_id, group, f"refused ({e})")
             except Exception as e:  # noqa: BLE001
                 # one bad store must not hold up the rest of its batch: try the stores one at a time
-                log.warning("zomato orders: a batch of %s stores failed (%s: %s); trying them one by one", len(group), type(e).__name__, str(e)[:220])
-                saved = 0
-                for s in group:
-                    try:
-                        saved += fetch(acc_id, [s])
-                    except PermissionError as pe:
-                        dead.add(acc_id)
-                        ok = False
-                        log.error("zomato orders: login '%s' was refused (%s); its stores are skipped this run", label, pe)
-                        db.mark_session_expired(acc_id, f"zomato orders: {pe}")
-                        break
-                    except Exception as se:  # noqa: BLE001
-                        ok = False
-                        failures.append(f"{type(se).__name__}: {str(se)[:160]}")
-                        log.warning("zomato orders %s · %s (%s) failed: %s: %s", s["brand"], s["outlet_name"], s["res_id"], type(se).__name__, str(se)[:220])
+                saved = one_by_one(acc_id, group, f"{type(e).__name__}: {str(e)[:220]}")
             saved_total += saved
             log.info("zomato orders (%s): %s stores, %s order lines, %s to %s", label, len(group), saved, start, end)
     if len(failures) >= max(3, len(stores) // 5):
