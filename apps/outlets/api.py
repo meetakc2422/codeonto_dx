@@ -85,6 +85,8 @@ def brand_detail(request, brand_id):
             if b.outlets.exclude(zomato=None, swiggy=None, google=None).exists():
                 return Response({"detail": "Unmap this brand's ids before moving it to another client"}, status=400)
             b.client = access.get_client(request.user, request.data["client_id"])
+        if request.data.get("is_active") is False:  # archive: hidden everywhere, nothing deleted (restore from the Django admin)
+            b.is_active = False
         b.save()
     return Response(_brand_json(b))
 

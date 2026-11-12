@@ -2309,6 +2309,7 @@ async function renderSetup(page, { creating = false } = {}) {
         <label>Brand name<input id="brandName" value="${creating ? "" : esc(brand.name)}" placeholder="As the client wants it shown"></label>
         <label>Industry<select id="brandIndustryInput">${industries.map((i) => `<option value="${i.code}">${esc(i.name)}</option>`).join("")}</select></label>
         <button class="btn blue" id="saveBrand">${creating ? "Create brand" : "Save brand"}</button>
+        ${creating ? "" : `<button class="btn light" id="archiveBrand" title="Hide this brand everywhere. Nothing is deleted.">Archive brand</button>`}
       </div>
     </div>
     ${creating ? "" : `
@@ -2361,6 +2362,7 @@ async function renderSetup(page, { creating = false } = {}) {
   }
   $("#brandIndustryInput").value = creating ? "restaurant" : brand.industry_code;
   $("#saveBrand").addEventListener("click", () => saveBrand(creating));
+  $("#archiveBrand")?.addEventListener("click", archiveBrand);
   lockIfViewer(page);
   if (creating) {
     $("#cancelNew")?.addEventListener("click", () => (state.config ? render() : (location.hash = "#/overview")));
@@ -2704,6 +2706,19 @@ async function saveBrand(creating) {
     await loadBrand(id);
   } catch (e) { toast(e.message); }
   btn.disabled = false;
+}
+
+async function archiveBrand() {
+  const b = state.brands.find((x) => x.id === state.brandId);
+  if (!b || !confirm(`Archive "${b.name}"? It disappears from the dashboard for everyone. Nothing is deleted.`)) return;
+  try {
+    await apiJSON(`/brands/${b.id}`, "PATCH", { is_active: false });
+    toast("Brand archived");
+    await loadBrandList();
+    if (!state.brands.length) { state.config = null; return render(); }
+    $("#brandSelect").value = state.brands[0].id;
+    await loadBrand(state.brands[0].id);
+  } catch (e) { toast(e.message); }
 }
 
 async function saveOutlets(moveConflicts) {
