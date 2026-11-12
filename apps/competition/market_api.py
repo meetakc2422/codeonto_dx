@@ -3,7 +3,7 @@ around it, open any restaurant's menu and offers, and keep a few to compare with
 the URL; markets.py does the app-specific part. The apps are only called on demand, never on a schedule."""
 
 import json
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from django.http import Http404
 from django.utils import timezone
@@ -15,6 +15,7 @@ from .api import MAX_TRACKED, _outlet
 from .markets import INDIA, MARKETS
 from .models import MarketCompetitor, MarketRestaurant, MarketSnapshot, MarketSpot
 
+PROFILE_FRESH = timedelta(days=7)  # cuisines and hours of a listing rarely change
 MENU_FRESH = timedelta(hours=6)  # only spares a second read when Compare follows straight after opening
 
 
@@ -95,7 +96,8 @@ def load_menu(m, res_id: str, place: dict, name: str = "", force: bool = False) 
     ins = zomato.menu_insights(mn)
     r, _ = MarketRestaurant.objects.update_or_create(platform=m.code, res_id=res_id, defaults={
         "name": mn["name"] or name or (r.name if r else res_id), "rating": mn["rating"], "votes": mn["votes"], "offers": mn["offers"],
-        "combos": mn["combos"], "items": mn["items"], "insights": ins, "info": mn.get("info") or {}, "menu_refreshed_at": timezone.now()})
+        "combos": mn["combos"], "items": mn["items"], "insights": ins, "info": {**(r.info if r else {}), **(mn.get("info") or {})},
+        "menu_refreshed_at": timezone.now()})
     MarketSnapshot.objects.update_or_create(restaurant=r, day=date.today(), defaults={
         "rating": r.rating, "votes": r.votes, "items": ins["items"], "out_of_stock": len(ins["out_of_stock"]),
         "avg_price": ins["avg_price"], "offers": r.offers})
@@ -149,6 +151,51 @@ def overview(request, brand_id, outlet_id, platform):
                      "area": {"title": a.title, "address": a.address} if a else None,
                      "us": _summary(us) if us else None,
                      "competitors": [_summary(c.restaurant, c, True) for c in comps]})
+
+
+def _fresh(stamp) -> bool:
+    try:
+        return timezone.now() - datetime.fromisoformat(stamp) < PROFILE_FRESH
+    except (TypeError, ValueError):
+        return False
+
+
+def _profile_json(r: MarketRestaurant) -> dict:
+    i = r.info or {}
+    return {"res_id": r.res_id, "name": r.name, "cuisines": i.get("cuisines") or [], "cost_text": i.get("cost_text") or i.get("cost_for_two", ""),
+            "address": i.get("address", ""), "open_text": i.get("open_text", ""), "timings": i.get("timings") or []}
+
+
+@api_view(["GET"])
+def cuisines(request, brand_id, outlet_id, platform):
+    """The outlet's own listing's cuisines (and price, address, opening hours), read from the app the first time and kept
+    for a week. The page shows the cuisines as buttons; each one runs the normal search for that cuisine."""
+    m = _market(platform)
+    outlet = _outlet(request, brand_id, outlet_id)
+    place = _spot(request, outlet, m)
+    if not place:
+        return Response({"detail": f"Set the outlet's {m.name} location first."}, status=400)
+    ours = our_res_id(outlet, m, find=True)[0]
+    if not ours:
+        return Response({"res_id": None, "cuisines": [], "detail": f"We couldn't find this outlet's own {m.name} listing."})
+    r = MarketRestaurant.objects.filter(platform=m.code, res_id=ours).first()
+    info = (r.info or {}) if r else {}
+    if info.get("cuisines") and (not hasattr(m, "profile") or _fresh(info.get("profile_at"))):
+        return Response(_profile_json(r))
+    try:
+        if hasattr(m, "profile"):
+            p = m.profile(place, ours)
+            r, _ = MarketRestaurant.objects.get_or_create(platform=m.code, res_id=ours, defaults={"name": p["name"] or ours})
+            r.info = {**(r.info or {}), "cuisines": p["cuisines"], "cost_text": p["cost_text"], "address": p["address"],
+                      "open_text": p["open_text"], "timings": p["timings"], "profile_at": timezone.now().isoformat()}
+            r.save(update_fields=["info"])
+        else:  # the app has no light info call: the menu read carries the cuisines
+            r = load_menu(m, ours, place)
+    except m.Error as e:
+        if r and (r.info or {}).get("cuisines"):  # the app is unreachable: what we kept is better than nothing
+            return Response(_profile_json(r))
+        return _error(e)
+    return Response(_profile_json(r))
 
 
 @api_view(["POST"])

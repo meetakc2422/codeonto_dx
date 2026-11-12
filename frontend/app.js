@@ -2916,6 +2916,29 @@ function zGap(n, of, usN, usOf, isUs) {
 }
 const zRating = (r) => (r.rating != null ? `${r.rating.toFixed(1)} ★${r.votes ? ` <small class="muted">(${esc(r.votes)})</small>` : ""}` : '<span class="muted">—</span>');
 
+// the outlet's own cuisines on this app, as buttons: each runs the normal search for that cuisine around the outlet
+async function loadMarketCuisines(outletId) {
+  const box = $("#zCuisines"), form = $("#zSearch");
+  if (!box || !form) return;
+  box.innerHTML = `<small class="muted">Reading your ${zName()} cuisines…</small>`;
+  try {
+    const spot = zPeek(outletId)?.spot;
+    const p = await api(`${zBase(outletId)}/cuisines`, spot ? { spot: JSON.stringify(spot) } : {});
+    if (!$("#zCuisines")) return;  // the page changed while we waited
+    if (!p.cuisines?.length) { box.innerHTML = p.detail ? `<small class="muted">${esc(p.detail)}</small>` : ""; return; }
+    box.innerHTML = `<div class="comp-cuisine-head"><b>${esc(p.name || "This outlet")}</b> serves <small class="muted">click a cuisine to see who else serves it nearby</small></div>
+      <div class="comp-cuisine-row">${p.cuisines.map((c) => `<button type="button" class="comp-cuisine" data-cuisine="${esc(c)}">${esc(c)}</button>`).join("")}</div>
+      ${p.open_text || p.cost_text ? `<small class="muted">${[p.open_text, p.cost_text].filter(Boolean).map(esc).join(" · ")}</small>` : ""}`;
+    box.onclick = (e) => {
+      const b = e.target.closest("[data-cuisine]");
+      if (!b) return;
+      box.querySelectorAll(".comp-cuisine").forEach((x) => x.classList.toggle("on", x === b));
+      form.q.value = b.dataset.cuisine;
+      form.requestSubmit();
+    };
+  } catch (x) { if ($("#zCuisines")) box.innerHTML = `<small class="muted">Couldn't read the cuisines: ${esc(x.message)}</small>`; }
+}
+
 async function renderMarketComp(page, outletId) {
   const d = await api(zBase(outletId));
   if (!d.configured) {
@@ -2930,6 +2953,7 @@ async function renderMarketComp(page, outletId) {
     <div class="card">
       <form id="zSearch" class="comp-search comp-search-lg"><input name="q" placeholder="Search a restaurant, dish or cuisine on ${zName()}, e.g. Meghana, biryani, chinese" autofocus>
         <button class="btn blue">Search</button></form>
+      <div id="zCuisines" class="comp-cuisines"></div>
       ${zPeek(outletId) ? `<p class="comp-peek">Viewing from <strong>${esc(zPeek(outletId).title)}</strong>${zPeek(outletId).address ? `, ${esc(zPeek(outletId).address)}` : ""}
           <small>just for now, not saved</small> · <button class="login-link" id="zPeekOff">Back to the outlet's location</button></p>`
         : `<p class="comp-near">Showing what customers see around <strong>${esc(d.area.title)}</strong>${d.area.address ? `, ${esc(d.area.address)}` : ""}
@@ -2960,6 +2984,7 @@ async function renderMarketComp(page, outletId) {
     <div id="zDetail"></div>`;
 
   const err = (e) => { $("#zError").textContent = e.message; };
+  loadMarketCuisines(outletId);
   const track = async (r, on) => {
     try { await apiJSON(`${zBase(outletId)}/track`, "POST", { res_id: r.res_id, tracked: on, name: r.name, distance_km: r.distance_km, delivery_time: r.delivery_time, spot: zPeek(outletId)?.spot }); render(); return true; }
     catch (e) { err(e); return false; }

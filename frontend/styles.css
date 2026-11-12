@@ -1038,3 +1038,10 @@ table.stmt .off { opacity: .35; }
 .so-how-line { display: block; margin-bottom: 4px; }
 .so-how-note { display: block; margin-top: 6px; color: #5b6472; }
 .so-loss-note { margin: 5px 0 0; font-size: 11px; color: #d9480f; cursor: help; }
+
+.comp-cuisines { margin: 10px 0 2px; }
+.comp-cuisine-head { margin-bottom: 6px; font-size: 13px; }
+.comp-cuisine-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 4px; }
+.comp-cuisine { border: 1px solid #d5dbe6; background: #fff; color: #1d2433; border-radius: 999px; padding: 4px 12px; font-size: 12.5px; cursor: pointer; }
+.comp-cuisine:hover { border-color: #d9480f; color: #d9480f; }
+.comp-cuisine.on { background: #d9480f; border-color: #d9480f; color: #fff; }

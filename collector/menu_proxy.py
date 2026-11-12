@@ -8,6 +8,7 @@ each request, so nothing secret is stored in this file or on this machine.
 
     GET  /health                         -> {"status": "online"}
     POST /fetch-menu  {"res_id", "lat", "lon", "city_id", "access_token"}  -> {"status": 200, "menu_json": {...}}
+    POST /fetch-res-info  (same body)                                      -> {"status": 200, "res_info_json": {...}}
 
 .env (optional):
     MENU_PROXY_PORT      port to listen on (default 5000)
@@ -55,7 +56,7 @@ APP_HEADERS = {
 }
 
 
-def fetch_menu(res_id: int, lat: float, lon: float, city_id: str, token: str) -> tuple[int, dict | None]:
+def _app_headers(lat: float, lon: float, city_id: str, token: str) -> tuple[dict, str, str]:
     la, lo, city = f"{lat:.7f}", f"{lon:.7f}", str(city_id or "1")
     headers = {**APP_HEADERS,
                "x-zomato-access-token": token,
@@ -66,6 +67,11 @@ def fetch_menu(res_id: int, lat: float, lon: float, city_id: str, token: str) ->
                "x-appsflyer-uid": f"{int(time.time() * 1000)}-{random.randint(10**18, 10**19 - 1)}",
                "x-jumbo-session-id": f"{uuid.uuid4()}{int(time.time() * 1000)}",
                "x-zomato-uuid": str(uuid.uuid4()), "x-request-id": str(uuid.uuid4()), "x-app-session-id": str(uuid.uuid4())}
+    return headers, la, lo
+
+
+def fetch_menu(res_id: int, lat: float, lon: float, city_id: str, token: str) -> tuple[int, dict | None]:
+    headers, la, lo = _app_headers(lat, lon, city_id, token)
     params = {"user_defined_longitude": lo, "user_defined_latitude": la, "device_lat": la, "device_lon": lo,
               "mode": "delivery", "tabId": "menu", "res_id": str(res_id)}
     body = {"has_active_group_order": "false", "type": "all", "mode": "delivery", "is_order_location": "1",
@@ -82,6 +88,24 @@ def fetch_menu(res_id: int, lat: float, lon: float, city_id: str, token: str) ->
             log.warning("menu %s: Zomato returned %s (try %s/%s)", res_id, status, attempt, TRIES)
         except (requests.RequestException, ValueError) as e:
             log.warning("menu %s: %s (try %s/%s)", res_id, e, attempt, TRIES)
+        time.sleep(1.0)
+    return status, None
+
+
+def fetch_res_info(res_id: int, lat: float, lon: float, city_id: str, token: str) -> tuple[int, dict | None]:
+    """The restaurant's info page (cuisines, address, timings)."""
+    headers, _, _ = _app_headers(lat, lon, city_id, token)
+    headers["content-type"] = "application/json; charset=utf-8"
+    status = 0
+    for attempt in range(1, TRIES + 1):
+        try:
+            r = requests.post(f"https://api.zomato.com/gw/menu/res_info/{res_id}", headers=headers, json={"should_fetch_res_info_from_agg": True}, timeout=15)
+            status = r.status_code
+            if status == 200:
+                return 200, r.json()
+            log.warning("res_info %s: Zomato returned %s (try %s/%s)", res_id, status, attempt, TRIES)
+        except (requests.RequestException, ValueError) as e:
+            log.warning("res_info %s: %s (try %s/%s)", res_id, e, attempt, TRIES)
         time.sleep(1.0)
     return status, None
 
@@ -104,7 +128,8 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"error": "not found"})
 
     def do_POST(self):
-        if self.path.rstrip("/") != "/fetch-menu":
+        route = self.path.rstrip("/")
+        if route not in ("/fetch-menu", "/fetch-res-info"):
             return self._send(404, {"error": "not found"})
         if SECRET and not hmac.compare_digest(self.headers.get("X-Proxy-Secret", ""), SECRET):
             return self._send(403, {"error": "bad or missing X-Proxy-Secret"})
@@ -116,9 +141,9 @@ class Handler(BaseHTTPRequestHandler):
         token = str(body.get("access_token") or body.get("token") or "").strip()
         if not token:
             return self._send(400, {"error": "send the customer-app access_token"})
-        status, menu = fetch_menu(res_id, float(body.get("lat") or 28.605), float(body.get("lon") or 77.376),
-                                  str(body.get("city_id") or "1"), token)
-        self._send(200 if status == 200 else 502, {"status": status, "res_id": str(res_id), "menu_json": menu})
+        fetch, key = (fetch_menu, "menu_json") if route == "/fetch-menu" else (fetch_res_info, "res_info_json")
+        status, data = fetch(res_id, float(body.get("lat") or 28.605), float(body.get("lon") or 77.376), str(body.get("city_id") or "1"), token)
+        self._send(200 if status == 200 else 502, {"status": status, "res_id": str(res_id), key: data})
 
 
 def main() -> None:

@@ -297,6 +297,61 @@ def _menu_via_proxy(place: dict, res_id: str) -> dict:
     return data["menu_json"]
 
 
+def res_info_raw(place: dict, res_id: str) -> dict:
+    """The restaurant's info page as the app loads it: cuisines, address, today's status and the weekly timings."""
+    if settings.ZOMATO_MENU_PROXY_URL:
+        h = _headers()
+        body = {"res_id": int(res_id), "lat": place["lat"], "lon": place["lng"], "city_id": str(place.get("city_id") or 1),
+                "access_token": h.get("x-zomato-access-token", "")}
+        try:
+            secret = {"X-Proxy-Secret": settings.ZOMATO_MENU_PROXY_SECRET} if settings.ZOMATO_MENU_PROXY_SECRET else {}
+            resp = httpx.post(f"{settings.ZOMATO_MENU_PROXY_URL.rstrip('/')}/fetch-res-info", json=body, headers=secret, timeout=60)
+            data = resp.json()
+        except (httpx.HTTPError, ValueError) as e:
+            raise ZomatoAppError(f"Couldn't reach the Zomato proxy: {e}") from e
+        if not data.get("res_info_json"):
+            raise ZomatoAppError("The Zomato proxy couldn't load this restaurant's info. Check the Windows proxy's log and session, and that it is up to date.")
+        return data["res_info_json"]
+    return post(f"menu/res_info/{res_id}", {"should_fetch_res_info_from_agg": True}, place["lat"], place["lng"], place.get("city_id"))
+
+
+_MARKUP = re.compile(r"<[^|>]*\||\{[^|}]*\||[}>]")
+
+
+def parse_res_info(d: dict) -> dict:
+    """res_info answer -> {name, cuisines, cost_text, address, open_text, timings: [{day, slots}], delivery_and_dining}.
+    Only what customers see on the restaurant's page; the legal and tax details it also carries are not read."""
+    out = {"name": "", "cuisines": [], "cost_text": "", "address": "", "open_text": "", "timings": [], "delivery_and_dining": None}
+    for item in d.get("results") or []:
+        for kind, body in item.items():
+            if not isinstance(body, dict):
+                continue
+            if kind == "v4_image_text_snippet_type_3":
+                for it in body.get("items") or []:
+                    top = _text(it.get("top_title"))
+                    if top.startswith("Provides"):
+                        out["delivery_and_dining"] = "dining" in top.lower()
+                    if it.get("subtitle1") and not out["name"]:
+                        out["name"] = _text(it.get("title"))
+                        parts = [x.strip() for x in _text(it["subtitle1"]).split("·") if x.strip()]
+                        out["cost_text"] = next((x for x in parts if "₹" in x), "")
+                        out["cuisines"] = [x for x in parts if "₹" not in x]
+                        out["address"] = _text(it.get("subtitle2"))
+            elif kind == "accordion_snippet_type_14":
+                out["open_text"] = _MARKUP.sub("", _text(body.get("title"))).strip()
+                for row in (body.get("expanded_state") or {}).get("subtitle_list") or []:
+                    day, slot = _MARKUP.sub("", _text(row.get("subtitle1"))).strip(), _MARKUP.sub("", _text(row.get("subtitle2"))).strip()
+                    if day:
+                        out["timings"].append({"day": day, "slots": [slot] if slot else []})
+                    elif slot and out["timings"]:
+                        out["timings"][-1]["slots"].append(slot)  # a second slot on the same day has no day label
+    return out
+
+
+def res_info(place: dict, res_id: str) -> dict:
+    return parse_res_info(res_info_raw(place, res_id))
+
+
 # app-made sections that repeat real menu items for this user; the real categories come after them
 PERSONAL_SECTIONS = ("your orders", "recommended for you", "most ordered together", "items starting at", "pair with")
 

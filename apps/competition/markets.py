@@ -50,6 +50,11 @@ class Zomato:
     def menu(spot, res_id):
         return {**zomato.menu(spot, res_id), "info": {}}
 
+    @staticmethod
+    def profile(spot, res_id):
+        """Cuisines, price, address and opening hours from the restaurant's info page (one light call, no menu)."""
+        return zomato.res_info(spot, res_id)
+
 
 class Swiggy:
     code, name = "swiggy", "Swiggy"

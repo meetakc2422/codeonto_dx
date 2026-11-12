@@ -4,7 +4,7 @@ from unittest import mock
 
 from django.test import SimpleTestCase
 
-from . import markets, swiggy
+from . import markets, swiggy, zomato
 
 CARD = json.loads((Path(__file__).parent / "test_data" / "swiggy_restaurant_card.json").read_text())["574401"]
 SPOT = {"lat": 28.6461, "lng": 77.3666, "city_id": "10459", "city": "Noida 1"}
@@ -56,3 +56,37 @@ class SwiggyAdapter(SimpleTestCase):
         rows = _rows(*[(str(i), f"R{i}", 1.0) for i in range(100)])
         with mock.patch.object(swiggy, "search_restaurants", return_value=rows):
             self.assertEqual(len(markets.Swiggy.search(SPOT, "x")[2]), 40)
+
+
+class ZomatoResInfo(SimpleTestCase):
+    """The restaurant info page: cuisines and the weekly timings, as the app lays them out for display."""
+
+    ANSWER = {"results": [
+        {"v4_image_text_snippet_type_3": {"items": [{"title": {"text": "Test Kitchen"}, "subtitle1": {"text": "Mughlai · Chinese · Beverages · ₹350 for one"},
+                                                       "subtitle2": {"text": "Lane 3, Saket, New Delhi"}}]}},
+        {"accordion_snippet_type_14": {"title": {"text": "<regular-300|{green-500|Open now}> • Closes 11:59 pm"}, "expanded_state": {"subtitle_list": [
+            {"subtitle1": {"text": "Monday"}, "subtitle2": {"text": "12:00 am - 1:00 am"}},
+            {"subtitle1": {"text": " "}, "subtitle2": {"text": "11:30 am - 11:59 pm"}},
+            {"subtitle1": {"text": "Tuesday"}, "subtitle2": {"text": "11:30 am - 11:59 pm"}}]}}},
+        {"v4_image_text_snippet_type_3": {"items": [{"top_title": {"text": "Provides both delivery & dining"}}]}},
+        {"text_snippet_type_5": {"title": {"text": "GST Number"}, "subtitle1": {"text": "07XXXXXXXXXX1ZH"}}}]}
+
+    def test_cuisines_price_and_address(self):
+        r = zomato.parse_res_info(self.ANSWER)
+        self.assertEqual((r["name"], r["cuisines"], r["cost_text"]), ("Test Kitchen", ["Mughlai", "Chinese", "Beverages"], "₹350 for one"))
+        self.assertEqual(r["address"], "Lane 3, Saket, New Delhi")
+        self.assertTrue(r["delivery_and_dining"])
+
+    def test_open_status_has_no_markup(self):
+        self.assertEqual(zomato.parse_res_info(self.ANSWER)["open_text"], "Open now • Closes 11:59 pm")
+
+    def test_a_second_slot_belongs_to_the_day_above(self):
+        t = zomato.parse_res_info(self.ANSWER)["timings"]
+        self.assertEqual(t, [{"day": "Monday", "slots": ["12:00 am - 1:00 am", "11:30 am - 11:59 pm"]}, {"day": "Tuesday", "slots": ["11:30 am - 11:59 pm"]}])
+
+    def test_legal_and_tax_details_are_not_kept(self):
+        self.assertNotIn("07XXXXXXXXXX1ZH", str(zomato.parse_res_info(self.ANSWER)))
+
+    def test_an_empty_answer_gives_empty_fields(self):
+        r = zomato.parse_res_info({})
+        self.assertEqual((r["cuisines"], r["timings"], r["open_text"]), ([], [], ""))
