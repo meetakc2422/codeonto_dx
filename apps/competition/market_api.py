@@ -168,30 +168,32 @@ def _profile_json(r: MarketRestaurant) -> dict:
 
 @api_view(["GET"])
 def cuisines(request, brand_id, outlet_id, platform):
-    """The outlet's own listing's cuisines (and price, address, opening hours), read from the app the first time and kept
-    for a week. The page shows the cuisines as buttons; each one runs the normal search for that cuisine."""
+    """The outlet's own cuisines (and price, address, opening hours), read once from Zomato's restaurant info page and kept
+    for a week. A cuisine is the outlet's, not a platform's, so the Swiggy page shows the same buttons; each one runs that
+    platform's normal search for the cuisine."""
     m = _market(platform)
     outlet = _outlet(request, brand_id, outlet_id)
-    place = _spot(request, outlet, m)
+    src = MARKETS["zomato"] if m.code != "zomato" and MARKETS["zomato"].configured() else m  # where the cuisines are read
+    place = _spot(request, outlet, m) if src is m else (_area(outlet, src) or (_auto_area(outlet, src) and _area(outlet, src)))
     if not place:
-        return Response({"detail": f"Set the outlet's {m.name} location first."}, status=400)
-    ours = our_res_id(outlet, m, find=True)[0]
+        return Response({"detail": f"Set the outlet's {src.name} location first."}, status=400)
+    ours = our_res_id(outlet, src, find=True)[0]
     if not ours:
-        return Response({"res_id": None, "cuisines": [], "detail": f"We couldn't find this outlet's own {m.name} listing."})
-    r = MarketRestaurant.objects.filter(platform=m.code, res_id=ours).first()
+        return Response({"res_id": None, "cuisines": [], "detail": f"We couldn't find this outlet's own {src.name} listing."})
+    r = MarketRestaurant.objects.filter(platform=src.code, res_id=ours).first()
     info = (r.info or {}) if r else {}
-    if info.get("cuisines") and (not hasattr(m, "profile") or _fresh(info.get("profile_at"))):
+    if info.get("cuisines") and (not hasattr(src, "profile") or _fresh(info.get("profile_at"))):
         return Response(_profile_json(r))
     try:
-        if hasattr(m, "profile"):
-            p = m.profile(place, ours)
-            r, _ = MarketRestaurant.objects.get_or_create(platform=m.code, res_id=ours, defaults={"name": p["name"] or ours})
+        if hasattr(src, "profile"):
+            p = src.profile(place, ours)
+            r, _ = MarketRestaurant.objects.get_or_create(platform=src.code, res_id=ours, defaults={"name": p["name"] or ours})
             r.info = {**(r.info or {}), "cuisines": p["cuisines"], "cost_text": p["cost_text"], "address": p["address"],
                       "open_text": p["open_text"], "timings": p["timings"], "profile_at": timezone.now().isoformat()}
             r.save(update_fields=["info"])
         else:  # the app has no light info call: the menu read carries the cuisines
-            r = load_menu(m, ours, place)
-    except m.Error as e:
+            r = load_menu(src, ours, place)
+    except src.Error as e:
         if r and (r.info or {}).get("cuisines"):  # the app is unreachable: what we kept is better than nothing
             return Response(_profile_json(r))
         return _error(e)
