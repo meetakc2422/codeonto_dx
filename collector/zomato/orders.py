@@ -27,6 +27,7 @@ BASE = cfg.text("ZOMATO_ORDER_HISTORY_URL", "https://api.zomato.com/merchant-gw/
 IST = timezone(timedelta(minutes=cfg.timezone_offset_minutes()))
 DAYS = cfg.integer("ORDERS_DAYS", 2)
 CHUNK_DAYS = cfg.integer("ORDERS_CHUNK_DAYS", 7)
+BATCH = cfg.integer("ORDERS_BATCH", 10)  # outlets per report (Zomato takes a comma-separated list of ids)
 POLL_TRIES = cfg.integer("ORDERS_POLL_TRIES", 30)
 POLL_SEC = cfg.integer("ORDERS_POLL_SEC", 3)
 PACE_SEC = cfg.numbers("ORDERS_PACE_SEC", "2,4")  # pause between reports, so a long backfill stays under Zomato's limits
@@ -178,38 +179,66 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     start, end = cfg.date_range(today - timedelta(days=DAYS - 1), today)
     spans = windows(start, end)
     ok, dead, skipped, saved_total, failures = True, set(), set(), 0, []
-    for n, s in enumerate(stores):
+    by_login: dict[int, list] = {}
+    for s in stores:
         acc_id = s["account_id"] if s["account_id"] in by_id else default
         label = by_id[acc_id]["label"]
-        if acc_id in dead:
-            continue
         if label not in uids:
             if label not in skipped:
                 skipped.add(label)
                 log.warning("zomato orders: no user id for login '%s' (set ORDER_USER_IDS=%s:<id>); its stores are skipped", label, label)
             ok = False
             continue
-        if n:
-            time.sleep(random.uniform(*PACE_SEC))
-        saved = 0
-        try:
-            for a, b in spans:
-                text = retry.call(lambda: _download(creds[acc_id], uids[label], s["res_id"], a, b), f"zomato orders {s['res_id']}", quiet=True)
-                saved += save(parse_report(text, {str(s["res_id"]): s["outlet_id"]}))
-        except PermissionError as e:
-            dead.add(acc_id)
-            ok = False
-            log.error("zomato orders: login '%s' was refused (%s); its stores are skipped this run", label, e)
-            db.mark_session_expired(acc_id, f"zomato orders: {e}")
-            alerts.incident(f"Zomato session expired: {label}", str(e), f"Use Log in again on the Sessions page, or run `python run.py zomato session --account {label}`.")
-            continue
-        except Exception as e:  # noqa: BLE001
-            ok = False
-            failures.append(f"{type(e).__name__}: {str(e)[:160]}")
-            log.warning("zomato orders %s · %s (%s) failed: %s", s["brand"], s["outlet_name"], s["res_id"], type(e).__name__)
-            continue
-        saved_total += saved
-        log.info("zomato orders %s · %s (%s): %s order lines, %s to %s", s["brand"], s["outlet_name"], s["res_id"], saved, start, end)
+        by_login.setdefault(acc_id, []).append(s)
+
+    def fetch(acc_id: int, group: list) -> int:
+        """One report per date window for these stores; saved as it arrives. Returns the order lines saved."""
+        label, n = by_id[acc_id]["label"], 0
+        outlets = {str(s["res_id"]): s["outlet_id"] for s in group}
+        for a, b in spans:
+            text = retry.call(lambda: _download(creds[acc_id], uids[label], ",".join(outlets), a, b),
+                              f"zomato orders {len(group)} stores", quiet=True)
+            n += save(parse_report(text, outlets))
+        return n
+
+    first = True
+    for acc_id, mine in by_login.items():
+        label = by_id[acc_id]["label"]
+        for i in range(0, len(mine), max(1, BATCH)):
+            group = mine[i:i + max(1, BATCH)]
+            if acc_id in dead:
+                break
+            if not first:
+                time.sleep(random.uniform(*PACE_SEC))
+            first = False
+            try:
+                saved = fetch(acc_id, group)
+            except PermissionError as e:
+                dead.add(acc_id)
+                ok = False
+                log.error("zomato orders: login '%s' was refused (%s); its stores are skipped this run", label, e)
+                db.mark_session_expired(acc_id, f"zomato orders: {e}")
+                alerts.incident(f"Zomato session expired: {label}", str(e), f"Use Log in again on the Sessions page, or run `python run.py zomato session --account {label}`.")
+                break
+            except Exception as e:  # noqa: BLE001
+                # one bad store must not hold up the rest of its batch: try the stores one at a time
+                log.warning("zomato orders: a batch of %s stores failed (%s); trying them one by one", len(group), type(e).__name__)
+                saved = 0
+                for s in group:
+                    try:
+                        saved += fetch(acc_id, [s])
+                    except PermissionError as pe:
+                        dead.add(acc_id)
+                        ok = False
+                        log.error("zomato orders: login '%s' was refused (%s); its stores are skipped this run", label, pe)
+                        db.mark_session_expired(acc_id, f"zomato orders: {pe}")
+                        break
+                    except Exception as se:  # noqa: BLE001
+                        ok = False
+                        failures.append(f"{type(se).__name__}: {str(se)[:160]}")
+                        log.warning("zomato orders %s · %s (%s) failed: %s", s["brand"], s["outlet_name"], s["res_id"], type(se).__name__)
+            saved_total += saved
+            log.info("zomato orders (%s): %s stores, %s order lines, %s to %s", label, len(group), saved, start, end)
     if len(failures) >= max(3, len(stores) // 5):
         alerts.incident("Zomato order history failing", f"{len(failures)} of {len(stores)} stores failed. Example: {failures[0]}",
                         "Check the collector window and the Zomato login. Order history for those stores is not up to date.")
