@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from apps.outlets.access import get_brand, in_scope, is_staff, membership, outlet_ids, require_outlet_edit
 
 from .models import Review, ReviewContact, ReviewContactView, ReviewReply
+from .topics import TOPIC_LABELS, topic_q, topics_of
 
 RATING_BANDS = {"neg": (1, 2), "mid": (3, 3), "pos": (4, 5)}
 
@@ -50,11 +51,33 @@ def brand_reviews(request, brand_id):
         qs = qs.filter(reply_status=qp["reply_status"])
     if qp.get("q"):
         qs = qs.filter(body__icontains=qp["q"])
+    if qp.get("topic"):
+        qs = qs.filter(topic_q(qp["topic"]))
     offset, limit = int(qp.get("offset", 0)), min(int(qp.get("limit", 25)), 200)
     if qp.get("contact") == "shared":
         qs = qs.filter(contact__shared=True)
     allowed = can_contact(request.user)
     return Response([_review_json(r, allowed) for r in qs[offset:offset + limit]])
+
+
+def _by_topic(qs) -> dict:
+    """How many reviews touch each topic (and how many of those are 1-2 star), plus reviews with no text at all."""
+    count, neg, no_text, other, other_neg = {}, {}, 0, 0, 0
+    for body, rating in qs.values_list("body", "rating").iterator():
+        if not (body or "").strip():
+            no_text += 1
+            continue
+        low = rating is not None and rating <= 2
+        found = topics_of(body)
+        if not found:
+            other += 1
+            other_neg += low
+        for t in found:
+            count[t] = count.get(t, 0) + 1
+            neg[t] = neg.get(t, 0) + low
+    rows = [{"slug": t, "label": TOPIC_LABELS[t], "count": count.get(t, 0), "negative": neg.get(t, 0)} for t in TOPIC_LABELS]
+    rows.append({"slug": "other", "label": "Other", "count": other, "negative": other_neg})
+    return {"topics": rows, "no_text": no_text}
 
 
 @api_view(["GET"])
@@ -75,6 +98,7 @@ def reviews_summary(request, brand_id):
     totals["avg_rating"] = round(float(totals["avg_rating"]), 2) if totals["avg_rating"] is not None else None
     return Response({
         **totals,
+        "by_topic": _by_topic(qs),
         "by_rating": list(qs.annotate(stars=Floor("rating")).values("stars").annotate(count=Count("id")).order_by("-stars")),
         "by_platform": [{"platform": r["platform_id"], "count": r["count"],
                          "avg_rating": round(float(r["avg"]), 2) if r["avg"] is not None else None}

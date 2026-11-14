@@ -681,7 +681,7 @@ function funnelCard(kpis) {
 }
 
 // ---------- reviews inbox ----------
-const reviewFilters = { rating: "", status: "", q: "", contact: "", offset: 0 };
+const reviewFilters = { rating: "", status: "", q: "", contact: "", topic: "", offset: 0 };
 
 let reviewRows = new Map();
 const RATING_BAND = { 1: "neg", 2: "neg", 3: "mid", 4: "pos", 5: "pos" };
@@ -704,6 +704,10 @@ async function renderReviews(page) {
       ${stat("Negative (1–2★)", inr.format(s.negative), s.negative ? "bad" : "")}${stat("Pending", inr.format(s.pending), s.pending ? "warn" : "")}
       ${stat("Replied", inr.format(s.replied), "ok")}${stat("Response rate", pct(s.replied))}
     </div>
+    ${s.by_topic?.topics?.some((t) => t.count) ? `<div class="card cp-card rv-topics">
+      <div class="cp-head"><h3>What customers talk about</h3><span class="muted">${reviewFilters.topic ? "click again to clear" : "click a topic to filter the reviews"}${s.by_topic.no_text ? ` · ${inr.format(s.by_topic.no_text)} rated with no text` : ""}</span></div>
+      <div class="rv-topic-row">${s.by_topic.topics.filter((t) => t.count).sort((a, b) => (b.slug === "food_safety" && b.negative) - (a.slug === "food_safety" && a.negative) || b.negative - a.negative || b.count - a.count).map((t) =>
+        `<button type="button" class="rv-topic ${t.slug === "food_safety" ? "danger" : ""} ${reviewFilters.topic === t.slug ? "on" : ""}" data-topic="${t.slug}" title="${t.count} review${t.count === 1 ? "" : "s"} mention this, ${t.negative} of them 1–2★">${esc(t.label)} <b>${inr.format(t.count)}</b>${t.negative ? `<small>${inr.format(t.negative)} negative</small>` : ""}</button>`).join("")}</div></div>` : ""}
     ${s.total ? `<div class="cp-grid rv-grid">
       <div class="card cp-card"><div class="cp-head"><h3>By rating</h3><span class="muted">click to filter</span></div>
         <table class="cp-table"><thead><tr><th>Stars</th><th class="num">#</th><th class="num">Share</th><th></th></tr></thead><tbody>
@@ -746,6 +750,9 @@ async function renderReviews(page) {
   $("#rRating").addEventListener("change", (e) => { reviewFilters.rating = e.target.value; render(); });
   $("#rStatus").addEventListener("change", (e) => { reviewFilters.status = e.target.value; loadReviews(true); });
   $("#rContact").addEventListener("change", (e) => { reviewFilters.contact = e.target.checked ? "shared" : ""; loadReviews(true); });
+  page.querySelectorAll("[data-topic]").forEach((b) => b.addEventListener("click", () => {
+    reviewFilters.topic = reviewFilters.topic === b.dataset.topic ? "" : b.dataset.topic; render();
+  }));
   page.querySelectorAll("[data-band]").forEach((r) => r.addEventListener("click", () => {
     reviewFilters.rating = reviewFilters.rating === r.dataset.band ? "" : r.dataset.band; render();
   }));
@@ -761,7 +768,7 @@ async function loadReviews(reset) {
   if (reset) { reviewFilters.offset = 0; reviewRows = new Map(); }
   const rows = await api(`/brands/${state.brandId}/reviews`, {
     outlet_id: state.locationId, platform: state.platform, reply_status: reviewFilters.status, q: reviewFilters.q,
-    rating: reviewFilters.rating, contact: reviewFilters.contact, limit: 50, offset: reviewFilters.offset,
+    rating: reviewFilters.rating, contact: reviewFilters.contact, topic: reviewFilters.topic, limit: 50, offset: reviewFilters.offset,
   });
   reviewFilters.offset += rows.length;
   rows.forEach((r) => reviewRows.set(String(r.id), r));
