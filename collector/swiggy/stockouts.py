@@ -58,17 +58,24 @@ def _fetch(token: str, swiggy_id: str) -> list[dict]:
             raise PermissionError(f"Swiggy session expired ({msg}); run `run.py swiggy session` for this account")
         raise MenuError(f"Swiggy menu {swiggy_id}: {msg}")
 
-    items: dict[str, dict] = {}
+    return out_items(menu)
+
+
+def out_items(menu: dict) -> list[dict]:
+    """The items customers cannot order, from the partner menu. An item is out when it is on the menu (enabled) but
+    in_stock is 0; one switched off on purpose (enabled 0 / active false) is not a stock-out. A name listed twice is
+    out only when every listing of it is, so a second listing that is in stock keeps the dish orderable."""
+    listings: dict[str, list[dict]] = {}
     for w in menu.get("items_vo") or []:
         it = w.get("item") or {}
         name = (it.get("name") or "").strip()
         if not name or not it.get("enabled") or it.get("active") is False:
             continue  # switched off the menu on purpose: not a stock-out
-        if it.get("in_stock") in (0, False):
-            back = ((it.get("availability") or {}).get("next_change_time_text") or "").strip()
-            items.setdefault(name, {"item_name": name, "category": w.get("main_category_name") or "",
-                                    "back_at": "" if back.lower() == "unavailable" else back})
-    return list(items.values())
+        back = ((it.get("availability") or {}).get("next_change_time_text") or "").strip()
+        listings.setdefault(name, []).append({"out": it.get("in_stock") in (0, False), "category": w.get("main_category_name") or "",
+                                              "back_at": "" if back.lower() == "unavailable" else back})
+    return [{"item_name": name, "category": ls[0]["category"], "back_at": next((x["back_at"] for x in ls if x["back_at"]), "")}
+            for name, ls in listings.items() if all(x["out"] for x in ls)]
 
 
 def run_all(accounts: list[str], headless: bool = False, force: bool = False) -> bool:
