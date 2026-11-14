@@ -1980,7 +1980,19 @@ async function renderUptime(page) {
   const cityList = [...cityMap.values()].map((c) => ({ ...c, pct: c.checks ? (100 * c.online) / c.checks : null }))
     .sort((a, b) => (a.pct ?? 101) - (b.pct ?? 101));
     const shown = uptimeCity ? summary.outlets.filter((o) => (o.city || "Other") === uptimeCity) : summary.outlets;
-  const dayList = [...new Set(summary.outlets.flatMap((o) => Object.keys(o.days || {})))].sort();
+  // one square per day needs two or more days: for a one-day period (Today / Yesterday, which the other pages share), show the last 7 days instead
+  let dayOf = (o) => o.days || {};
+  let squaresNote = "";
+  if (new Set(summary.outlets.flatMap((o) => Object.keys(o.days || {}))).size <= 1) {
+    const end = new Date(), start = new Date(); start.setDate(end.getDate() - 6);
+    try {
+      const week = await api(`/brands/${state.brandId}/uptime/summary`, filterParams({ start: isoDate(start), end: isoDate(end) }));
+      const byId = new Map(week.outlets.map((o) => [o.id, o.days || {}]));
+      dayOf = (o) => byId.get(o.id) || {};
+      squaresNote = "last 7 days, ";
+    } catch { /* keep the one-day view */ }
+  }
+  const dayList = [...new Set(summary.outlets.flatMap((o) => Object.keys(dayOf(o))))].sort();
   const upColor = (v) => (v == null ? "#e6e9ef" : v >= 95 ? "#12a150" : v >= 85 ? "#7ccf8e" : v >= 70 ? "#f5a524" : "#e5484d");
   page.innerHTML = `
     <div class="so-hero">
@@ -1998,11 +2010,11 @@ async function renderUptime(page) {
           <span class="so-bar"><i style="width:${c.pct == null ? 0 : 100 - c.pct}%;--tone:var(--red)"></i></span>
           <b class="${c.off ? "bad" : "ok"}">${c.pct == null ? "—" : `${c.pct.toFixed(1)}%`}</b></button>`).join("")}</div></div>
 
-    <div class="so-section"><h3>Outlets <small>${dayList.length > 1 ? "daily uptime, one square per day" : "uptime in this period"}, worst first · ${uptimeAll ? `all ${shown.length}` : `worst ${Math.min(UP_TOP, shown.length)} of ${shown.length}`}${uptimeCity ? ` in ${esc(uptimeCity)}` : ""} · click to filter</small></h3>
+    <div class="so-section"><h3>Outlets <small>${dayList.length > 1 ? `${squaresNote}daily uptime, one square per day` : "uptime in this period"}, worst first · ${uptimeAll ? `all ${shown.length}` : `worst ${Math.min(UP_TOP, shown.length)} of ${shown.length}`}${uptimeCity ? ` in ${esc(uptimeCity)}` : ""} · click to filter</small></h3>
       <div class="up-heat">${(uptimeAll ? shown : shown.slice(0, UP_TOP)).map((o) => `
         <button class="up-row ${String(uptimeFilters.outlet) === String(o.id) ? "on" : ""}" data-outlet="${o.id}" title="${esc(o.name)}">
           <span class="up-name">${esc(o.name)} <small class="muted">${esc(o.city || "")}</small>${o.offline_since ? ' <em class="uptime-off">offline</em>' : ""}</span>
-          ${dayList.length > 1 ? `<span class="up-cells">${dayList.map((d) => { const v = o.days[d]; return `<i style="background:${upColor(v)}" title="${shortDate(d)}: ${v == null ? "no checks" : `${v.toFixed(1)}%`}"></i>`; }).join("")}</span>` : ""}
+          ${dayList.length > 1 ? `<span class="up-cells">${dayList.map((d) => { const v = dayOf(o)[d]; return `<i style="background:${upColor(v)}" title="${shortDate(d)}: ${v == null ? "no checks" : `${v.toFixed(1)}%`}"></i>`; }).join("")}</span>` : ""}
           <b class="${o.offline_since ? "bad" : "ok"}">${o.uptime_pct == null ? "—" : `${o.uptime_pct.toFixed(1)}%`}</b></button>`).join("")}</div>
       ${shown.length > UP_TOP ? `<button class="btn light" id="uAll" style="margin-top:8px">${uptimeAll ? "Show fewer" : `Show all ${shown.length}`}</button>` : ""}</div>
 
@@ -2053,7 +2065,12 @@ function topSellerStrip(summary, periodWord = "in this period") {
         ${hasPer ? `<b>${range(per.low, per.high)}</b><small>estimated sales lost ${esc(periodWord)}</small>`
           : t.high ? `<b>${range(t.low, t.high)}</b><small>estimated sales lost so far today</small>` : `<small>not enough order history yet to value them</small>`}
         ${hasPer && t?.items?.length ? `<p class="so-loss-today">${plural(t.items.length, "best seller")} out right now${t.high ? ` · ${range(t.low, t.high)} lost so far today` : ""}</p>` : ""}
-        <div class="so-loss-items">${items.slice(0, 8).map((i) => `<span class="so-chip out ${hasPer && i.episodes?.length ? "clickable" : ""}" ${hasPer && i.episodes?.length ? `data-lossitem="${esc(i.item_name)}" role="button" tabindex="0"` : ""} title="${hasPer ? `Click for when and where it was out. Out at ${i.outlets} outlet${i.outlets === 1 ? "" : "s"}` : `Out since ${esc(since(i.since))} at ${i.outlets} outlet${i.outlets === 1 ? "" : "s"}`}${i.price ? ` · ₹${inr.format(i.price)} each` : ""}">${esc(i.item_name)}<small>${(hasPer || i.enough_history) && i.high ? range(i.low, i.high) : "no estimate yet"}</small></span>`).join("")}</div>
+        <div class="so-loss-items" id="lossItems">${items.slice(0, 20).map((i) => {
+          const est = (hasPer || i.enough_history) && i.high ? `${range(i.low, i.high)} estimated lost` : "no estimate yet";
+          const where = hasPer ? `out at ${i.outlets} outlet${i.outlets === 1 ? "" : "s"}` : `out since ${since(i.since)} at ${i.outlets} outlet${i.outlets === 1 ? "" : "s"}`;
+          const tip = `${est} · ${where}${i.price ? ` · ₹${inr.format(i.price)} each` : ""}${hasPer && i.episodes?.length ? " · click for details" : ""}`;
+          return `<span class="so-chip out ${hasPer && i.episodes?.length ? "clickable" : ""}" ${hasPer && i.episodes?.length ? `data-lossitem="${esc(i.item_name)}" role="button" tabindex="0"` : ""} data-tip="${esc(tip)}">${esc(i.item_name)}</span>`;
+        }).join("")}${items.length > 5 ? `<button type="button" class="so-chip more" id="lossMore" data-n="${Math.min(items.length, 20) - 5}">+${Math.min(items.length, 20) - 5} more</button>` : ""}</div>
         <div class="so-loss-detail" id="lossDetail" hidden></div>
         <p class="so-loss-note"><span class="so-how" tabindex="0">How is this estimated?
           <span class="so-how-body">
@@ -2089,6 +2106,12 @@ function showLossDetail(name) {
   box.hidden = false;
 }
 document.addEventListener("click", (e) => {
+  const more = e.target.closest("#lossMore");
+  if (more) {
+    const open = $("#lossItems").classList.toggle("open");
+    more.textContent = open ? "Show less" : `+${more.dataset.n} more`;
+    return;
+  }
   const chip = e.target.closest("[data-lossitem]");
   if (chip) return showLossDetail(chip.dataset.lossitem);
   if (e.target.closest("[data-closeloss]")) $("#lossDetail").hidden = true;
@@ -2174,14 +2197,15 @@ async function renderStockOuts(page) {
 
     ${topSellerStrip(summary, periodWord)}
 
-    <div class="so-section"><h3>By mealtime <small>big number: items out ${periodWord}, counted under the first meal each went out in · ₹: best-seller sales lost in that meal\'s hours · click to filter</small></h3>
+    <div class="so-section"><h3>By mealtime <small>big number: items out ${periodWord}, counted under the first meal each went out in · hover for the sales lost in that meal · click to filter</small></h3>
       <div class="so-meals">${summary.by_meal.map((m) => {
         const meta = MEALS.find((x) => x.name === m.meal);
-        return `<button class="so-meal ${stockFilters.meal === m.meal ? "on" : ""} ${hasToday && m.meal === now ? "now" : ""}" data-meal="${m.meal}" style="--tone:${meta.tone}">
+        const ml = summary.period_loss?.by_meal?.[m.meal];
+        return `<button class="so-meal ${stockFilters.meal === m.meal ? "on" : ""} ${hasToday && m.meal === now ? "now" : ""}" data-meal="${m.meal}" style="--tone:${meta.tone}"${ml && ml.high ? ` data-tip="Best-seller sales lost in ${m.meal.toLowerCase()} hours: ${rupeesShort(ml.low)} – ${rupeesShort(ml.high)}"` : ""}>
           ${hasToday && m.meal === now ? '<em>NOW</em>' : ""}<span class="so-meal-name">${m.meal}</span><span class="so-meal-hours">${meta.hours}</span>
           <b>${inr.format(mealNum(m))}</b>
           <span class="so-bar"><i style="width:${(mealNum(m) / maxMeal) * 100}%"></i></span>
-          ${(() => { const l = summary.period_loss?.by_meal?.[m.meal]; return l && l.high ? `<span class="so-meal-loss" title="Estimated best-seller sales lost during ${m.meal} hours ${periodWord}">lost <b>${rupeesShort(l.low)} – ${rupeesShort(l.high)}</b></span>` : ""; })()}</button>`;
+</button>`;
       }).join("")}</div>
       ${summary.long_off ? `<button class="so-earlier ${stockFilters.status === "long" ? "on" : ""}" id="sLong"><b>+${inr.format(summary.long_off)}</b> off for ${summary.long_off_days}+ days · probably taken off the menu · click to see</button>` : ""}</div>
 

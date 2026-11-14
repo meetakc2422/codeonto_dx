@@ -1072,3 +1072,13 @@ table.stmt .off { opacity: .35; }
 .rv-topic.danger { border-color: #f0b4b6; background: var(--red-soft); }
 .rv-topic.on { background: var(--navy, #0f172a); border-color: var(--navy, #0f172a); color: #fff; }
 .rv-topic.on small { color: #ffb4b6; }
+
+/* stock-outs: figures on hover instead of on every chip and tile */
+[data-tip] { position: relative; }
+[data-tip]:hover::after, [data-tip]:focus-visible::after { content: attr(data-tip); position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 30; width: max-content; max-width: 300px; padding: 6px 10px; border-radius: 8px; background: #0f172a; color: #fff; font-size: 12px; font-weight: 400; line-height: 1.4; white-space: normal; text-align: left; box-shadow: 0 8px 24px rgba(15,23,42,.25); pointer-events: none; }
+.so-meal[data-tip]:hover::after { left: 50%; transform: translateX(-50%); }
+
+/* best-seller chips: five by default, the rest behind "+N more" */
+.so-loss-items:not(.open) .so-chip.out:nth-child(n+6) { display: none; }
+.so-loss-items .so-chip.more { border: 0; cursor: pointer; font: inherit; font-size: 11px; padding: 2px 9px; align-self: center; }
+.so-loss-items .so-chip.more:hover { background: #e3e8f0; }
