@@ -140,6 +140,12 @@ def rejected_for_stock(outlet_ids, start: date, end: date) -> dict:
     return {"orders": len(rows), "value": round(value)}
 
 
+def _outlet_label(o) -> str:
+    """The outlet's name, with its area when the name alone does not tell outlets of a chain apart."""
+    extra = o.area or o.city
+    return f"{o.outlet_name} · {extra}" if extra and extra.lower() not in o.outlet_name.lower() else o.outlet_name
+
+
 def _period_bounds(start: date, end: date, now: datetime) -> tuple[datetime, datetime]:
     """The service days start..end (5 am to 5 am), never past now."""
     lo = datetime.combine(start, datetime.min.time(), tzinfo=IST) + timedelta(hours=5)
@@ -215,7 +221,8 @@ def period_loss(episodes: list[StockOut], start: date, end: date, now: datetime,
     for e in eps:
         key = (e.outlet_id, e.item_name)
         first = e.first_detected_at.astimezone(IST)
-        a, b = max(first, lo_t), min((e.restored_at or now).astimezone(IST), hi_t, first + timedelta(days=CAP_DAYS))
+        a, real_end = max(first, lo_t), min((e.restored_at or now).astimezone(IST), hi_t)
+        b = min(real_end, first + timedelta(days=CAP_DAYS))
         if key not in rates or key not in price or b <= a:
             continue
         per_meal = {m: u * price[key] for m, u in _units_by_meal(rates[key], a, b).items()}  # ₹ (high end) per meal
@@ -225,8 +232,8 @@ def period_loss(episodes: list[StockOut], start: date, end: date, now: datetime,
         m["high"] += high
         for meal, v in per_meal.items():
             by_meal[meal] += v
-        m["episodes"].append({"outlet": e.outlet.outlet_name, "from": a.isoformat(), "back": e.restored_at.isoformat() if e.restored_at else None,
-                              "hours": round((b - a).total_seconds() / 3600, 1), "high": round(high), "low": round(high * LOW_FACTOR),
+        m["episodes"].append({"outlet": _outlet_label(e.outlet), "from": a.isoformat(), "back": e.restored_at.isoformat() if e.restored_at else None,
+                              "hours": round((real_end - a).total_seconds() / 3600, 1), "counted_hours": round((b - a).total_seconds() / 3600, 1), "high": round(high), "low": round(high * LOW_FACTOR),
                               "meals": {k: [round(v * LOW_FACTOR), round(v)] for k, v in per_meal.items() if v >= 1}})
     items = sorted(({"item_name": m["item_name"], "outlets": len(m["outlet_set"]), "price": m["price"], "high": round(m["high"]),
                      "low": round(m["high"] * LOW_FACTOR), "episode_count": len(m["episodes"]),
