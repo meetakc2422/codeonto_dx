@@ -514,13 +514,11 @@ function kpiCards(kpis, moduleIcon, sparks = {}) {
 async function renderOverview(page) {
   const has = (code) => state.config.modules.some((m) => m.code === code);
   const opt = (p) => p.catch(() => null);
-  const [kpiRes, summary, negPending, uptime, stock, stockActive, pay, payIssues] = await Promise.all([
+  const [kpiRes, summary, uptime, stock, pay, payIssues] = await Promise.all([
     api(`/brands/${state.brandId}/kpis`, filterParams()),
     api(`/brands/${state.brandId}/reviews/summary`, filterParams()),
-    api(`/brands/${state.brandId}/reviews`, { outlet_id: state.locationId, platform: state.platform, rating: "neg", reply_status: "pending", limit: 3 }),
     has("store_uptime") ? opt(api(`/brands/${state.brandId}/uptime/summary`, filterParams())) : null,
     has("stock_outs") ? opt(api(`/brands/${state.brandId}/stock-outs/summary`, filterParams())) : null,
-    has("stock_outs") ? opt(api(`/brands/${state.brandId}/stock-outs`, filterParams({ status: "active", limit: 500 }))) : null,
     has("reconciliation") ? opt(api(`/brands/${state.brandId}/payouts/summary`, filterParams())) : null,
     has("reconciliation") ? opt(api(`/brands/${state.brandId}/payouts/cycles`, filterParams({ status: "issues", limit: 500 }))) : null,
   ]);
@@ -545,7 +543,7 @@ async function renderOverview(page) {
       : tile(rating?.change_pct <= -2 ? "amber" : "ok", "#/reviews", "Rating",
           rating?.value != null ? `${fmt(rating.value, "rating")}<small>★</small>` : summary.avg_rating != null ? `${fmt(summary.avg_rating, "rating")}<small>★</small>` : "—",
           `${inr.format(summary.total)} reviews · ${periodLabel()}`, rating ? changeChip(rating) : ""),
-    tile(summary.pending ? (negPending.length ? "red" : "amber") : "ok", "#/reviews", "Reviews to reply",
+    tile(summary.pending ? (summary.negative ? "red" : "amber") : "ok", "#/reviews", "Reviews to reply",
       inr.format(summary.pending), summary.pending ? `${inr.format(summary.negative)} negative in this period` : "All replied"),
   ];
   if (uptime) tiles.push(tile(offline.length ? "red" : "ok", "#/store_uptime", "Outlets offline", inr.format(offline.length),
@@ -561,31 +559,6 @@ async function renderOverview(page) {
          <span>${pay.discrepancy_total ? `${rupees(pay.discrepancy_total)} unexplained` : "money matches orders"}</span>`
       : `All ${inr.format(pay.reconciled)} checked payouts match`));
 
-  // ---- 2. fix these now: the five most urgent things, offline outlets first ----
-  const fixes = [];
-  offline.forEach((o) => fixes.push({ tone: "red", tag: "Offline", title: `${o.name} is offline`,
-    sub: `${o.city ? o.city + " · " : ""}since ${timeAgo(o.offline_since).replace(" ago", "")}`, href: "#/store_uptime", cta: "Check outlet" }));
-  negPending.forEach((r) => fixes.push({ tone: "red", tag: `${Math.round(r.rating)}★ review`, title: r.body ? r.body.slice(0, 90) + (r.body.length > 90 ? "…" : "") : "Rating with no text",
-    sub: `${r.outlet_name} · ${timeAgo(r.reviewed_at)}`, href: "#/reviews", set: { status: "pending", rating: "neg" }, cta: "Reply" }));
-  if (pay?.new_lines?.length) fixes.push({ tone: "amber", tag: "New deduction",
-    title: pay.new_lines.length === 1 ? `New ${pay.new_lines[0].platform === "swiggy" ? "Swiggy" : "Zomato"} statement line: ${pay.new_lines[0].label}` : `${pay.new_lines.length} new lines on payout statements`,
-    sub: `${pay.new_lines.map((l) => `${l.label} ${rupees(l.total)}`).slice(0, 3).join(" · ")}`, href: "#/reconciliation", cta: "Review" });
-  (pay?.issues || []).slice(0, 2).forEach((i) => fixes.push({ tone: i.code === "payout_mismatch" || i.code === "overdue" ? "red" : "amber",
-    tag: "Payout", title: `${plural(i.count, "payout")}: ${i.label.toLowerCase()}`, sub: pay.discrepancy_total ? `${rupees(pay.discrepancy_total)} unexplained in total · ${periodLabel()}` : periodLabel(),
-    href: "#/reconciliation", cta: "Check" }));
-  // one line per outlet (its items listed), outlets with the longest-running stock-out first
-  const outByOutlet = new Map();
-  (stockActive || []).forEach((s) => outByOutlet.set(s.outlet_id, [...(outByOutlet.get(s.outlet_id) || []), s]));
-  [...outByOutlet.values()]
-    .map((list) => list.sort((x, y) => new Date(x.first_detected_at) - new Date(y.first_detected_at)))
-    .sort((a, b) => new Date(a[0].first_detected_at) - new Date(b[0].first_detected_at)).slice(0, 3)
-    .forEach((list) => fixes.push({ tone: "amber", tag: "Out of stock",
-      title: list.length === 1 ? list[0].item_name : `${list.length} items: ${list.slice(0, 3).map((s) => s.item_name).join(", ")}${list.length > 3 ? ` +${list.length - 3} more` : ""}`,
-      sub: `${list[0].outlet_name.split(" · ").pop()} · out for ${timeAgo(list[0].first_detected_at).replace(" ago", "")}`, href: "#/stock_outs", cta: "View" }));
-  if (rating?.change_pct != null && rating.change_pct <= -2) fixes.push({ tone: "amber", tag: "Rating", title: `Average rating down ${Math.abs(rating.change_pct).toFixed(1)}%`,
-    sub: `vs previous ${state.days === 1 ? "day" : state.days + " days"}`, href: "#/reviews", set: { status: "", rating: "neg" }, cta: "See why" });
-  const shown = fixes.slice(0, 5);
-
   // ---- 3. one row per outlet, worst first ----
   const rev = new Map((summary.by_outlet || []).map((o) => [o.outlet_id, o]));
   const up = new Map((uptime?.outlets || []).map((o) => [o.id, o]));
@@ -598,26 +571,15 @@ async function renderOverview(page) {
 
   page.innerHTML = `
     <div class="ov-tiles">${tiles.join("")}</div>
-    <div class="ov-two">
-    <div class="card ov-fix">
-      <div class="card-head"><h3>Fix these now</h3><span class="muted">${fixes.length > 5 ? `top 5 of ${fixes.length}` : ""}</span></div>
-      ${shown.length ? shown.map((f, i) => `<a class="ov-fix-row ${f.tone}" href="${f.href}" data-fix="${i}">
-          <span class="ov-fix-tag">${esc(f.tag)}</span>
-          <span class="ov-fix-text"><strong>${esc(f.title)}</strong><small>${esc(f.sub)}</small></span>
-          <span class="btn light">${f.cta}</span></a>`).join("")
-        : `<div class="ov-fix-row ok"><span class="ov-fix-tag">✓</span><span class="ov-fix-text"><strong>All clear</strong><small>Nothing needs fixing right now</small></span></div>`}
-    </div>
     ${pay?.cycles ? `<div class="card ov-pay-card">
       <div class="card-head"><h3>Payouts</h3><a class="muted" href="#/reconciliation">Open reconciliation →</a></div>
       <div class="ov-pay">
         <div><span class="ov-tile-label">Paid</span><b>${rupees(pay.paid_total)}</b><small class="muted">${periodLabel()}</small></div>
         <div><span class="ov-tile-label">To be paid</span><b>${rupees(pay.to_be_paid_total)}</b><small class="muted">${plural(pay.to_be_paid_cycles, "payout")}</small></div>
-        <div><span class="ov-tile-label">Unexplained difference</span><b class="${pay.discrepancy_total ? "ov-bad" : ""}">${rupees(pay.discrepancy_total)}</b><small class="muted">${inr.format(pay.reconciled)} of ${inr.format(pay.cycles)} checked against orders</small></div>
+        <div><span class="ov-tile-label">Unexplained difference</span><b class="${pay.discrepancy_total ? "ov-bad" : ""}">${rupees(pay.discrepancy_total)}</b><small class="muted">${inr.format(pay.reconciled)} of ${inr.format(pay.cycles)} checked</small></div>
         <div><span class="ov-tile-label">Commission take rate</span><b>${pay.take_rate == null ? "—" : `${pay.take_rate.toFixed(2)}%`}</b><small class="muted">service fee on checked orders</small></div>
       </div>
-      ${pay.issues.length ? `<ul class="payout-issues">${pay.issues.slice(0, 4).map((i) => `<li><a href="#/reconciliation" data-payissue="${i.code}"><b>${inr.format(i.count)}</b> ${esc(i.label)} <span class="muted">show</span></a></li>`).join("")}</ul>` : ""}
     </div>` : ""}
-    </div>
     <div class="card" style="margin-top:12px">
       <div class="card-head"><h3>Outlets at a glance</h3><span class="muted">worst first · click to focus</span></div>
       <div class="cp-scroll"><table class="ov-table"><thead><tr><th>Outlet</th><th class="num">Rating</th><th class="num">To reply</th>
@@ -636,10 +598,6 @@ async function renderOverview(page) {
     e.preventDefault(); e.stopPropagation();
     Object.assign(payoutFilters, { issue: el.dataset.payissue, status: "", q: "" });
     location.hash = "#/reconciliation";
-  }));
-  page.querySelectorAll("[data-fix]").forEach((a) => a.addEventListener("click", () => {
-    const set = shown[Number(a.dataset.fix)].set;
-    if (set) Object.assign(reviewFilters, set);
   }));
   page.querySelectorAll("[data-outlet]").forEach((r) => r.addEventListener("click", () => {
     state.locationId = r.dataset.outlet; showSelectedOutlet(); render();

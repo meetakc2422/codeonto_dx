@@ -1045,3 +1045,13 @@ table.stmt .off { opacity: .35; }
 .comp-cuisine { border: 1px solid #d5dbe6; background: #fff; color: #1d2433; border-radius: 999px; padding: 4px 12px; font-size: 12.5px; cursor: pointer; }
 .comp-cuisine:hover { border-color: #d9480f; color: #d9480f; }
 .comp-cuisine.on { background: #d9480f; border-color: #d9480f; color: #fff; }
+
+/* overview: compact */
+.ov-tiles { gap: 8px; margin-bottom: 8px; }
+.ov-tile { padding: 8px 12px; }
+.ov-tile-value { font-size: 22px; }
+.ov-pay-card { margin: 0 0 8px !important; padding: 10px 14px; }
+.ov-pay-card .card-head { margin-bottom: 4px; }
+.ov-pay { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 6px 14px; }
+.ov-pay b { font-size: 16px; }
+.ov-pay-card ~ .card { margin-top: 0 !important; }
