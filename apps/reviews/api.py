@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from apps.outlets.access import get_brand, in_scope, is_staff, membership, outlet_ids, require_outlet_edit
 
 from .models import Review, ReviewContact, ReviewContactView, ReviewReply
-from .reply_access import mode_for, modes_for
+from .reply_access import modes_for
 from .topics import TOPIC_LABELS, topic_q, topics_of
 
 RATING_BANDS = {"neg": (1, 2), "mid": (3, 3), "pos": (4, 5)}
@@ -33,7 +33,7 @@ def _review_json(r: Review, allowed: bool = False, modes=None) -> dict:
             "body": r.body, "author_name": r.author_name, "reviewed_at": r.reviewed_at, "sentiment": r.sentiment,
             "reply_status": r.reply_status, "platform": r.platform_id, "outlet_id": r.outlet_id,
             "outlet_name": r.outlet.display_name, "latest_reply": latest, "queued": any(x.status == "approved" for x in r.replies.all()),
-            "send_mode": (modes or {}).get(str(r.outlet.zomato_id)) if r.platform_id == "zomato" and r.reply_status != "replied" else None}
+            "send_mode": ((modes or {}).get(str(r.outlet.zomato_id)) or "manual") if r.platform_id == "zomato" and r.reply_status != "replied" else None}
 
 
 @api_view(["GET"])
@@ -125,13 +125,11 @@ def create_reply(request, review_id):
     if not body:
         return Response({"detail": "Reply text is required"}, status=400)
     send = bool(request.data.get("send"))
-    if send:  # queue it for the collector to post to Zomato: only where staff have switched the service on
+    if send:  # queue it for the collector to post to Zomato (anyone who can edit the outlet may; the admin table only controls automatic AI replies)
         if review.platform_id != "zomato":
             return Response({"detail": "Only Zomato replies can be sent from here"}, status=400)
         if review.reply_status == "replied" or review.replies.filter(status__in=["approved", "published"]).exists():
             return Response({"detail": "This review already has a reply"}, status=409)
-        if not mode_for(review.outlet.zomato_id):
-            return Response({"detail": "Replying to Zomato is not switched on for this outlet. Ask Codeonto to enable it."}, status=403)
     reply = ReviewReply.objects.create(review=review, body=body, source=request.data.get("source", "manual"),
                                        status="approved" if send else "draft")
     if review.reply_status == "pending":

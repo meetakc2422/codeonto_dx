@@ -1,10 +1,10 @@
-"""Zomato review replies: posts the replies Codeonto staff have switched on, and writes the automatic ones.
+"""Zomato review replies: posts what people queued with Send to Zomato, and writes the automatic replies for outlets staff switched on.
 
-Nothing is sent for an outlet unless staff gave its Zomato res ID an active row in `reply_service` (the Reply service page).
-Each run, for the outlets that have one:
-  1. posts every reply a person queued with "Send to Zomato" (review_replies.status = 'approved');
-  2. for outlets in AI mode, writes a reply with Gemini for each new unreplied review and posts it, skipping risky reviews
-     (food safety, refunds, legal) when the row says to hold them for a person.
+Each run:
+  1. posts every reply a person queued with "Send to Zomato" (review_replies.status = 'approved'), for any mapped outlet;
+  2. for outlets that staff gave an active AI row in `reply_service` (the Reply service page, by Zomato res ID), writes a reply with
+     Gemini for each new unreplied review and posts it, skipping risky reviews (food safety, refunds, legal) when the row says to
+     hold them for a person. An outlet with no row never gets an automatic reply.
 Posting is POST merchant-gw/web/reviews/post/reply with the account's stored merchant login. Safe to run often: a review gets
 one reply, a failed one is retried only after a pause, and per-run, per-day and Gemini caps apply.
 
@@ -201,16 +201,18 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     with db.transaction() as cur:
         cur.execute("SELECT id, res_id, mode, hold_risky, instructions, max_per_day FROM reply_service WHERE is_active AND platform = 'zomato'")
         rules = cur.fetchall()
-        if not rules:
-            log.info("zomato replies: no outlet has the reply service switched on: nothing to do")
+        cur.execute("SELECT count(*) AS n FROM review_replies rp JOIN reviews r ON r.id = rp.review_id WHERE rp.status = 'approved' AND r.platform = 'zomato'")
+        waiting = cur.fetchone()["n"]
+        if not rules and not waiting:
+            log.info("zomato replies: no queued replies and no outlet in automatic mode: nothing to do")
             return True
         accs = {a: db.get_account(cur, "zomato", a) for a in accounts}
         cur.execute("""SELECT bo.id AS outlet_id, bo.zomato_res_id AS res_id, z.account_id, b.client_id
                        FROM brand_outlets bo JOIN zomato_outlets z ON z.res_id = bo.zomato_res_id JOIN brands b ON b.id = bo.brand_id
                        WHERE bo.is_active AND z.is_active""")
-        stores = {s["outlet_id"]: s for s in cur.fetchall() if _rule_for(rules, s["res_id"])}
+        stores = {s["outlet_id"]: s for s in cur.fetchall()}
     if not stores:
-        log.info("zomato replies: the switched-on clients have no mapped Zomato outlets")
+        log.info("zomato replies: no Zomato outlets are mapped yet")
         return True
     by_id = {a["id"]: a for a in accs.values()}
     default = next(iter(by_id))
@@ -245,23 +247,23 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         time.sleep(PACE_SEC)
         return ok
 
-    # 1. replies a person queued with Send to Zomato (the switch is checked again here: turning the service off stops them)
+    # 1. replies a person queued with Send to Zomato, for any mapped outlet
     with db.transaction() as cur:
         cur.execute("""SELECT rp.id, rp.body, r.id AS review_id, r.external_review_id, r.outlet_id
                        FROM review_replies rp JOIN reviews r ON r.id = rp.review_id
-                       WHERE rp.status = 'approved' AND r.platform = 'zomato' AND r.outlet_id = ANY(%s) ORDER BY rp.created_at LIMIT %s""",
-                    (list(stores), MAX_PER_RUN))
+                       WHERE rp.status = 'approved' AND r.platform = 'zomato' ORDER BY rp.created_at LIMIT %s""",
+                    (MAX_PER_RUN,))
         queued = cur.fetchall()
     for q in queued:
         if posted + failed >= MAX_PER_RUN:
             break
         store = stores.get(q["outlet_id"])
-        if not store:  # no active row for this outlet (e.g. just switched off): leave the reply queued, never send it
+        if not store:  # not a mapped Zomato outlet: leave the reply queued
             continue
         send(q["id"], q["review_id"], store, q["external_review_id"], q["body"])
 
     # 2. automatic replies, only for outlets in AI mode
-    ai_outlets = [oid for oid, s in stores.items() if _rule_for(rules, s["res_id"])["mode"] == "ai"]
+    ai_outlets = [oid for oid, s in stores.items() if (_rule_for(rules, s["res_id"]) or {}).get("mode") == "ai"]
     gemini_stopped = False
     for oid in ai_outlets:
         if posted + failed >= MAX_PER_RUN or gemini_stopped:

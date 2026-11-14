@@ -1705,21 +1705,20 @@ function syncCell(a) {
 // staff only: which Zomato outlets (by res ID) get review replies sent to Zomato. No row = no replies are ever sent.
 async function renderReplyService(page) {
   const d = await api("/staff/reply-service");
-  const MODE = { manual: "Send button only", ai: "Automatic AI replies" };
+  const MODE = { manual: "Manual only (no automatic replies)", ai: "Automatic AI replies" };
   page.innerHTML = `<div class="page-head"><h2>Reply service</h2>
-      <p class="muted">Which Zomato outlets can send review replies to Zomato, by res ID. <b>Nothing is sent for any outlet unless it has a row below that is switched on.</b> The collector on the Windows server does the sending, every 3 hours.</p></div>
-    <div class="card"><div class="card-head"><h3>Give access</h3></div>
+      <p class="muted">The <b>Send to Zomato</b> button on the Reviews page works for everyone who can edit an outlet. This page controls the <b>automatic replies</b>: <b>an outlet is answered automatically only if its res ID is listed below and switched on.</b> The collector on the Windows server sends everything, every 3 hours.</p></div>
+    <div class="card"><div class="card-head"><h3>Switch on automatic replies</h3></div>
       <label class="rs-wide">Zomato res IDs (one per line, or separated by commas)
         <textarea id="rsIds" rows="3" placeholder="12345678&#10;23456789"></textarea></label>
       <div class="rs-form">
-        <label>How<select id="rsMode"><option value="manual">${MODE.manual}</option><option value="ai">${MODE.ai}</option></select></label>
         <label>Most automatic replies a day, per outlet<input id="rsMax" type="number" min="1" max="500" value="60"></label>
         <label class="check" style="align-self:end"><input id="rsHold" type="checkbox" checked> Leave food-safety, refund and legal reviews for a person</label>
       </div>
       <label class="rs-wide">Extra wording rules for the AI (optional), e.g. a contact number or signature
         <textarea id="rsNotes" rows="2" placeholder="Sign off as Team Carvel. For ratings below 3, ask the guest to call 9XXXXXXXXX."></textarea></label>
-      <div class="btn-row"><button class="btn blue" id="rsSave">Save access</button></div>
-      <p class="muted" style="margin:8px 0 0">Every res ID must already be mapped to an outlet on Brands &amp; Outlets. Send button only: a person writes a reply on the Reviews page and sends it. Automatic AI replies: the collector also writes and sends replies for new reviews, and holds the risky ones.</p></div>
+      <div class="btn-row"><button class="btn blue" id="rsSave">Switch on</button></div>
+      <p class="muted" style="margin:8px 0 0">Every res ID must already be mapped to an outlet on Brands &amp; Outlets. The collector writes a reply with Gemini for each new unreplied review (up to 3 days old) at these outlets, and holds the risky ones for a person.</p></div>
     <div class="card" style="margin-top:14px"><div class="card-head"><h3>Who has it <span class="muted">${d.rows.length} outlet${d.rows.length === 1 ? "" : "s"}</span></h3><input id="rsFind" type="search" placeholder="Find a res ID or outlet…" style="max-width:240px"></div>
       <div id="rsTable"></div></div>`;
   const rows = new Map(d.rows.map((r) => [String(r.id), r]));
@@ -1734,7 +1733,7 @@ async function renderReplyService(page) {
         <td>${r.is_active ? '<span class="status replied">On</span>' : '<span class="status pending">Off</span>'}</td>
         <td class="muted">${esc(r.enabled_by || "")}<br>${timeAgo(r.updated_at)}</td>
         <td class="nowrap"><button class="btn light" data-rs-toggle="${r.id}">${r.is_active ? "Turn off" : "Turn on"}</button> <button class="btn light" data-rs-del="${r.id}">Remove</button></td></tr>`).join("")}
-      </tbody></table></div>` : `<p class="muted">${d.rows.length ? "No match." : "No outlets yet, so no replies are being sent for anyone."}</p>`;
+      </tbody></table></div>` : `<p class="muted">${d.rows.length ? "No match." : "No outlets yet, so no automatic replies are being sent for anyone."}</p>`;
     page.querySelectorAll("[data-rs-toggle]").forEach((b) => b.addEventListener("click", () => {
       const r = rows.get(b.dataset.rsToggle);
       save({ res_ids: [r.res_id], mode: r.mode, max_per_day: r.max_per_day, hold_risky: r.hold_risky, instructions: r.instructions, is_active: !r.is_active, allow_unmapped: true },
@@ -1752,10 +1751,9 @@ async function renderReplyService(page) {
   $("#rsSave").addEventListener("click", () => {
     const ids = $("#rsIds").value.split(/[\s,;]+/).filter(Boolean);
     if (!ids.length) return toast("Enter at least one res ID");
-    const ai = $("#rsMode").value === "ai" ? " Automatic replies: it will write and send replies on its own for new reviews." : "";
-    if (!confirm(`Switch on review replies for ${ids.length} outlet${ids.length === 1 ? "" : "s"}?${ai}`)) return;
-    save({ res_ids: ids, mode: $("#rsMode").value, max_per_day: Number($("#rsMax").value) || 60, hold_risky: $("#rsHold").checked, instructions: $("#rsNotes").value, is_active: true },
-      `Access saved for ${ids.length} outlet${ids.length === 1 ? "" : "s"}`);
+    if (!confirm(`Switch on AUTOMATIC replies for ${ids.length} outlet${ids.length === 1 ? "" : "s"}? The collector will write and send replies on its own for their new reviews.`)) return;
+    save({ res_ids: ids, mode: "ai", max_per_day: Number($("#rsMax").value) || 60, hold_risky: $("#rsHold").checked, instructions: $("#rsNotes").value, is_active: true },
+      `Automatic replies on for ${ids.length} outlet${ids.length === 1 ? "" : "s"}`);
   });
   draw();
 }
