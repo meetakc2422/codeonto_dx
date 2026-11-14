@@ -1702,58 +1702,62 @@ function syncCell(a) {
   return `${head}<div><button class="btn light" data-sync="${a.id}" data-label="${esc(`${a.platform} · ${a.label}`)}" title="Ask the collector which outlets this login can see and add the new ones to the catalog">Sync outlets</button></div>${last}`;
 }
 
-// staff only: which clients and outlets get review replies sent to Zomato. No row = no replies are ever sent.
+// staff only: which Zomato outlets (by res ID) get review replies sent to Zomato. No row = no replies are ever sent.
 async function renderReplyService(page) {
   const d = await api("/staff/reply-service");
   const MODE = { manual: "Send button only", ai: "Automatic AI replies" };
-  const clientOpts = d.clients.map((c) => `<option value="${c.id}">${esc(c.name)}</option>`).join("");
   page.innerHTML = `<div class="page-head"><h2>Reply service</h2>
-      <p class="muted">Which clients and outlets can send review replies to Zomato. <b>Nothing is sent for anyone unless a row below is switched on.</b> The collector on the Windows server does the sending, every 3 hours.</p></div>
+      <p class="muted">Which Zomato outlets can send review replies to Zomato, by res ID. <b>Nothing is sent for any outlet unless it has a row below that is switched on.</b> The collector on the Windows server does the sending, every 3 hours.</p></div>
     <div class="card"><div class="card-head"><h3>Give access</h3></div>
+      <label class="rs-wide">Zomato res IDs (one per line, or separated by commas)
+        <textarea id="rsIds" rows="3" placeholder="22860943&#10;22394547"></textarea></label>
       <div class="rs-form">
-        <label>Client<select id="rsClient"><option value="">Choose…</option>${clientOpts}</select></label>
-        <label>Outlets<select id="rsOutlet"><option value="">All Zomato outlets of the client</option></select></label>
         <label>How<select id="rsMode"><option value="manual">${MODE.manual}</option><option value="ai">${MODE.ai}</option></select></label>
-        <label>Most automatic replies a day<input id="rsMax" type="number" min="1" max="500" value="60"></label>
+        <label>Most automatic replies a day, per outlet<input id="rsMax" type="number" min="1" max="500" value="60"></label>
         <label class="check" style="align-self:end"><input id="rsHold" type="checkbox" checked> Leave food-safety, refund and legal reviews for a person</label>
       </div>
       <label class="rs-wide">Extra wording rules for the AI (optional), e.g. a contact number or signature
         <textarea id="rsNotes" rows="2" placeholder="Sign off as Team Carvel. For ratings below 3, ask the guest to call 9XXXXXXXXX."></textarea></label>
       <div class="btn-row"><button class="btn blue" id="rsSave">Save access</button></div>
-      <p class="muted" style="margin:8px 0 0">Send button only: a person writes a reply on the Reviews page and sends it. Automatic AI replies: the collector also writes and sends replies for new reviews, and holds the risky ones.</p></div>
-    <div class="card" style="margin-top:14px"><div class="card-head"><h3>Who has it <span class="muted">${d.rows.length} row${d.rows.length === 1 ? "" : "s"}</span></h3></div>
-      ${d.rows.length ? `<div class="table-wrap"><table class="ov-table"><thead><tr><th>Client</th><th>Outlets</th><th>How</th><th class="num">Daily cap</th><th>Risky reviews</th><th>Status</th><th>Set by</th><th></th></tr></thead><tbody>
-        ${d.rows.map((r) => `<tr class="${r.is_active ? "" : "muted"}"><td><b>${esc(r.client)}</b></td><td>${esc(r.outlet)}</td><td>${esc(MODE[r.mode] || r.mode)}</td>
-          <td class="num">${r.mode === "ai" ? r.max_per_day : "—"}</td><td>${r.mode === "ai" ? (r.hold_risky ? "held for a person" : "answered") : "—"}</td>
-          <td>${r.is_active ? '<span class="status replied">On</span>' : '<span class="status pending">Off</span>'}</td>
-          <td class="muted">${esc(r.enabled_by || "")}<br>${timeAgo(r.updated_at)}</td>
-          <td class="nowrap"><button class="btn light" data-rs-toggle="${r.id}">${r.is_active ? "Turn off" : "Turn on"}</button> <button class="btn light" data-rs-del="${r.id}">Remove</button></td></tr>`).join("")}
-      </tbody></table></div>` : '<p class="muted">No rows yet, so no replies are being sent for anyone.</p>'}</div>`;
-  const byClient = new Map(d.clients.map((c) => [String(c.id), c]));
-  $("#rsClient").addEventListener("change", (e) => {
-    const c = byClient.get(e.target.value);
-    $("#rsOutlet").innerHTML = '<option value="">All Zomato outlets of the client</option>' + (c ? c.outlets.map((o) => `<option value="${esc(o.res_id)}">${esc(o.name)} (${esc(o.res_id)})</option>`).join("") : "");
-  });
+      <p class="muted" style="margin:8px 0 0">Every res ID must already be mapped to an outlet on Brands &amp; Outlets. Send button only: a person writes a reply on the Reviews page and sends it. Automatic AI replies: the collector also writes and sends replies for new reviews, and holds the risky ones.</p></div>
+    <div class="card" style="margin-top:14px"><div class="card-head"><h3>Who has it <span class="muted">${d.rows.length} outlet${d.rows.length === 1 ? "" : "s"}</span></h3><input id="rsFind" type="search" placeholder="Find a res ID or outlet…" style="max-width:240px"></div>
+      <div id="rsTable"></div></div>`;
+  const rows = new Map(d.rows.map((r) => [String(r.id), r]));
+  const draw = () => {
+    const q = ($("#rsFind").value || "").toLowerCase();
+    const list = d.rows.filter((r) => !q || [r.res_id, r.outlet, r.client, r.city].some((v) => (v || "").toLowerCase().includes(q)));
+    $("#rsTable").innerHTML = list.length ? `<div class="table-wrap"><table class="ov-table"><thead><tr><th>Res ID</th><th>Outlet</th><th>How</th><th class="num">Daily cap</th><th>Risky reviews</th><th>Status</th><th>Set by</th><th></th></tr></thead><tbody>
+      ${list.map((r) => `<tr class="${r.is_active ? "" : "muted"}"><td class="nowrap"><b>${esc(r.res_id)}</b></td>
+        <td>${r.mapped ? `${esc(r.outlet)}<br><span class="muted">${esc(r.client)}${r.city ? ` · ${esc(r.city)}` : ""}</span>` : '<span class="ov-bad">Not mapped to an outlet</span>'}</td>
+        <td>${esc(MODE[r.mode] || r.mode)}</td><td class="num">${r.mode === "ai" ? r.max_per_day : "—"}</td>
+        <td>${r.mode === "ai" ? (r.hold_risky ? "held for a person" : "answered") : "—"}</td>
+        <td>${r.is_active ? '<span class="status replied">On</span>' : '<span class="status pending">Off</span>'}</td>
+        <td class="muted">${esc(r.enabled_by || "")}<br>${timeAgo(r.updated_at)}</td>
+        <td class="nowrap"><button class="btn light" data-rs-toggle="${r.id}">${r.is_active ? "Turn off" : "Turn on"}</button> <button class="btn light" data-rs-del="${r.id}">Remove</button></td></tr>`).join("")}
+      </tbody></table></div>` : `<p class="muted">${d.rows.length ? "No match." : "No outlets yet, so no replies are being sent for anyone."}</p>`;
+    page.querySelectorAll("[data-rs-toggle]").forEach((b) => b.addEventListener("click", () => {
+      const r = rows.get(b.dataset.rsToggle);
+      save({ res_ids: [r.res_id], mode: r.mode, max_per_day: r.max_per_day, hold_risky: r.hold_risky, instructions: r.instructions, is_active: !r.is_active, allow_unmapped: true },
+        r.is_active ? "Turned off: nothing more will be sent" : "Turned on");
+    }));
+    page.querySelectorAll("[data-rs-del]").forEach((b) => b.addEventListener("click", async () => {
+      if (!confirm("Remove this outlet? Nothing more will be sent for it.")) return;
+      try { await apiJSON(`/staff/reply-service/${b.dataset.rsDel}`, "DELETE", {}); toast("Removed"); renderReplyService(page); } catch (err) { toast(err.message); }
+    }));
+  };
   const save = async (body, done) => {
     try { await apiJSON("/staff/reply-service", "POST", body); toast(done); renderReplyService(page); } catch (err) { toast(err.message); }
   };
+  $("#rsFind").addEventListener("input", draw);
   $("#rsSave").addEventListener("click", () => {
-    if (!$("#rsClient").value) return toast("Choose a client first");
-    const aiNote = $("#rsMode").value === "ai" ? " It will write and send replies on its own for new reviews." : "";
-    if (!confirm(`Switch on review replies for ${byClient.get($("#rsClient").value).name}, ${$("#rsOutlet").selectedOptions[0].textContent.toLowerCase()}?${aiNote}`)) return;
-    save({ client_id: Number($("#rsClient").value), res_id: $("#rsOutlet").value, mode: $("#rsMode").value, max_per_day: Number($("#rsMax").value) || 60,
-      hold_risky: $("#rsHold").checked, instructions: $("#rsNotes").value, is_active: true }, "Access saved");
+    const ids = $("#rsIds").value.split(/[\s,;]+/).filter(Boolean);
+    if (!ids.length) return toast("Enter at least one res ID");
+    const ai = $("#rsMode").value === "ai" ? " Automatic replies: it will write and send replies on its own for new reviews." : "";
+    if (!confirm(`Switch on review replies for ${ids.length} outlet${ids.length === 1 ? "" : "s"}?${ai}`)) return;
+    save({ res_ids: ids, mode: $("#rsMode").value, max_per_day: Number($("#rsMax").value) || 60, hold_risky: $("#rsHold").checked, instructions: $("#rsNotes").value, is_active: true },
+      `Access saved for ${ids.length} outlet${ids.length === 1 ? "" : "s"}`);
   });
-  const rows = new Map(d.rows.map((r) => [String(r.id), r]));
-  page.querySelectorAll("[data-rs-toggle]").forEach((b) => b.addEventListener("click", () => {
-    const r = rows.get(b.dataset.rsToggle);
-    save({ client_id: r.client_id, res_id: r.res_id, mode: r.mode, max_per_day: r.max_per_day, hold_risky: r.hold_risky, instructions: r.instructions, is_active: !r.is_active },
-      r.is_active ? "Turned off: nothing more will be sent" : "Turned on");
-  }));
-  page.querySelectorAll("[data-rs-del]").forEach((b) => b.addEventListener("click", async () => {
-    if (!confirm("Remove this row? Nothing more will be sent for it.")) return;
-    try { await apiJSON(`/staff/reply-service/${b.dataset.rsDel}`, "DELETE", {}); toast("Removed"); renderReplyService(page); } catch (err) { toast(err.message); }
-  }));
+  draw();
 }
 
 let sessionsPoll = null;

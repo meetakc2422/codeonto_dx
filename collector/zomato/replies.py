@@ -1,6 +1,6 @@
 """Zomato review replies: posts the replies Codeonto staff have switched on, and writes the automatic ones.
 
-Nothing is sent for a client or outlet unless staff gave it an active row in `reply_service` (the Reply service page).
+Nothing is sent for an outlet unless staff gave its Zomato res ID an active row in `reply_service` (the Reply service page).
 Each run, for the outlets that have one:
   1. posts every reply a person queued with "Send to Zomato" (review_replies.status = 'approved');
   2. for outlets in AI mode, writes a reply with Gemini for each new unreplied review and posts it, skipping risky reviews
@@ -179,10 +179,9 @@ def post_reply(session, res_id: str, review_id: str, text: str) -> tuple[bool, s
     return False, f"Zomato answered {resp.status_code}: {resp.text[:160]}"
 
 
-def _rule_for(rules: list[dict], client_id, res_id) -> dict | None:
-    """An outlet's own row beats the client-wide one; no row = no replies."""
-    own = next((r for r in rules if r["client_id"] == client_id and r["res_id"] == str(res_id)), None)
-    return own or next((r for r in rules if r["client_id"] == client_id and not r["res_id"]), None)
+def _rule_for(rules: list[dict], res_id) -> dict | None:
+    """The outlet's row, by Zomato res ID. No row = no replies."""
+    return next((r for r in rules if r["res_id"] == str(res_id)), None)
 
 
 def _mark(cur, reply_id: int, review_id: int, ok: bool, error: str) -> None:
@@ -200,7 +199,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         log.error("zomato replies: %s", e)
         return False
     with db.transaction() as cur:
-        cur.execute("SELECT id, client_id, res_id, mode, hold_risky, instructions, max_per_day FROM reply_service WHERE is_active AND platform = 'zomato'")
+        cur.execute("SELECT id, res_id, mode, hold_risky, instructions, max_per_day FROM reply_service WHERE is_active AND platform = 'zomato'")
         rules = cur.fetchall()
         if not rules:
             log.info("zomato replies: no outlet has the reply service switched on: nothing to do")
@@ -209,7 +208,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         cur.execute("""SELECT bo.id AS outlet_id, bo.zomato_res_id AS res_id, z.account_id, b.client_id
                        FROM brand_outlets bo JOIN zomato_outlets z ON z.res_id = bo.zomato_res_id JOIN brands b ON b.id = bo.brand_id
                        WHERE bo.is_active AND z.is_active""")
-        stores = {s["outlet_id"]: s for s in cur.fetchall() if _rule_for(rules, s["client_id"], s["res_id"])}
+        stores = {s["outlet_id"]: s for s in cur.fetchall() if _rule_for(rules, s["res_id"])}
     if not stores:
         log.info("zomato replies: the switched-on clients have no mapped Zomato outlets")
         return True
@@ -256,16 +255,19 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     for q in queued:
         if posted + failed >= MAX_PER_RUN:
             break
-        send(q["id"], q["review_id"], stores[q["outlet_id"]], q["external_review_id"], q["body"])
+        store = stores.get(q["outlet_id"])
+        if not store:  # no active row for this outlet (e.g. just switched off): leave the reply queued, never send it
+            continue
+        send(q["id"], q["review_id"], store, q["external_review_id"], q["body"])
 
     # 2. automatic replies, only for outlets in AI mode
-    ai_outlets = [oid for oid, s in stores.items() if _rule_for(rules, s["client_id"], s["res_id"])["mode"] == "ai"]
+    ai_outlets = [oid for oid, s in stores.items() if _rule_for(rules, s["res_id"])["mode"] == "ai"]
     gemini_stopped = False
     for oid in ai_outlets:
         if posted + failed >= MAX_PER_RUN or gemini_stopped:
             break
         store = stores[oid]
-        rule = _rule_for(rules, store["client_id"], store["res_id"])
+        rule = _rule_for(rules, store["res_id"])
         with db.transaction() as cur:
             cur.execute("SELECT count(*) AS n FROM review_replies rp JOIN reviews r ON r.id = rp.review_id WHERE r.outlet_id = %s AND rp.source = 'ai' "
                         "AND rp.created_at > date_trunc('day', now() at time zone 'Asia/Kolkata') at time zone 'Asia/Kolkata'", (oid,))

@@ -9,7 +9,7 @@ from rest_framework.response import Response
 from apps.outlets.access import get_brand, in_scope, is_staff, membership, outlet_ids, require_outlet_edit
 
 from .models import Review, ReviewContact, ReviewContactView, ReviewReply
-from .reply_access import mode_for, rules_for_client
+from .reply_access import mode_for, modes_for
 from .topics import TOPIC_LABELS, topic_q, topics_of
 
 RATING_BANDS = {"neg": (1, 2), "mid": (3, 3), "pos": (4, 5)}
@@ -26,14 +26,14 @@ def _contact_hint(r: Review, allowed: bool) -> dict | None:
     return {"hint": c.hint} if c and c.shared and c.hint else None
 
 
-def _review_json(r: Review, allowed: bool = False, rules=None) -> dict:
+def _review_json(r: Review, allowed: bool = False, modes=None) -> dict:
     latest = r.replies.all()[0].body if r.replies.all() else None
     return {"contact": _contact_hint(r, allowed), "order_id": (r.raw or {}).get("order_id") if allowed and isinstance(r.raw, dict) else None,
             "id": r.id, "rating": float(r.rating) if r.rating is not None else None, "title": r.title,
             "body": r.body, "author_name": r.author_name, "reviewed_at": r.reviewed_at, "sentiment": r.sentiment,
             "reply_status": r.reply_status, "platform": r.platform_id, "outlet_id": r.outlet_id,
             "outlet_name": r.outlet.display_name, "latest_reply": latest, "queued": any(x.status == "approved" for x in r.replies.all()),
-            "send_mode": mode_for(rules, r.outlet.zomato_id) if rules and r.platform_id == "zomato" and r.reply_status != "replied" else None}
+            "send_mode": (modes or {}).get(str(r.outlet.zomato_id)) if r.platform_id == "zomato" and r.reply_status != "replied" else None}
 
 
 @api_view(["GET"])
@@ -59,8 +59,9 @@ def brand_reviews(request, brand_id):
     if qp.get("contact") == "shared":
         qs = qs.filter(contact__shared=True)
     allowed = can_contact(request.user)
-    rules = rules_for_client(get_brand(request.user, brand_id).client_id)
-    return Response([_review_json(r, allowed, rules) for r in qs[offset:offset + limit]])
+    page = list(qs[offset:offset + limit])
+    modes = modes_for({r.outlet.zomato_id for r in page if r.platform_id == "zomato"})
+    return Response([_review_json(r, allowed, modes) for r in page])
 
 
 def _by_topic(qs) -> dict:
@@ -129,7 +130,7 @@ def create_reply(request, review_id):
             return Response({"detail": "Only Zomato replies can be sent from here"}, status=400)
         if review.reply_status == "replied" or review.replies.filter(status__in=["approved", "published"]).exists():
             return Response({"detail": "This review already has a reply"}, status=409)
-        if not mode_for(rules_for_client(review.outlet.brand.client_id), review.outlet.zomato_id):
+        if not mode_for(review.outlet.zomato_id):
             return Response({"detail": "Replying to Zomato is not switched on for this outlet. Ask Codeonto to enable it."}, status=403)
     reply = ReviewReply.objects.create(review=review, body=body, source=request.data.get("source", "manual"),
                                        status="approved" if send else "draft")
