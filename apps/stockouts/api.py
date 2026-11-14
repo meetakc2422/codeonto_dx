@@ -164,24 +164,41 @@ def brand_stock_outs(request, brand_id):
     return Response([{**_json(s, losses[s.id][1], start, losses[s.id][0]), "range_meals": sorted(_meal_hits(s, lo, hi, now))} for s in rows])
 
 
+ORDER_LOSS_CACHE_SEC = 120  # the loss figures move slowly; a short cache keeps repeat views fast and the database calm
+
+
 def _order_based_loss(request, brand_id, qp, qs, start: date, end: date) -> dict:
-    """Best sellers out now with their estimated loss today, and orders rejected for stock in the period (both from order history).
-    Never raises: when there is no order history yet, or anything goes wrong, the page just doesn't get these."""
+    """Best sellers out now with their estimated loss today, the estimate for the whole period, and orders rejected for stock
+    in the period (all from order history, for Zomato and Swiggy). Never raises: when there is no order history yet, or anything
+    goes wrong, the page just doesn't get these."""
     try:
+        import hashlib
+
+        from django.core.cache import cache
+
         from apps.outlets.models import BrandOutlet
 
         from .loss import period_loss, rejected_for_stock, top_sellers_out
 
-        if qp.get("platform") not in (None, "", "zomato"):
+        plats = [qp["platform"]] if qp.get("platform") in ("zomato", "swiggy") else ["zomato", "swiggy"] if not qp.get("platform") else []
+        if not plats:
             return {"top_sellers_out": None, "stock_rejections": None}
         outlets = in_scope(BrandOutlet.objects.filter(brand_id=brand_id), request.user, field="id")
         if outlet_ids(qp.get("outlet_id")):
             outlets = outlets.filter(id__in=outlet_ids(qp.get("outlet_id")))
         ids = list(outlets.values_list("id", flat=True))
-        active = list(qs.filter(is_active=True, platform_id="zomato").exclude(first_detected_at__lt=_long_cutoff()))
+        active = list(qs.filter(is_active=True, platform_id__in=plats).exclude(first_detected_at__lt=_long_cutoff()))
+        # what the answer depends on: the outlets, platforms and dates, and which stock-outs are open right now
+        sig = f"{sorted(ids)}|{plats}|{start}|{end}|{len(active)}|{max((x.id for x in active), default=0)}"
+        key = "ob_loss:" + hashlib.md5(sig.encode()).hexdigest()
+        hit = cache.get(key)
+        if hit is not None:
+            return hit
         now = datetime.now(IST)
-        period = period_loss(list(qs.filter(platform_id="zomato")), start, end, now, _long_cutoff())
-        return {"top_sellers_out": top_sellers_out(active, now), "period_loss": period, "stock_rejections": rejected_for_stock(ids, start, end)}
+        period = period_loss(list(qs.filter(platform_id__in=plats)), start, end, now, _long_cutoff())
+        out = {"top_sellers_out": top_sellers_out(active, now), "period_loss": period, "stock_rejections": rejected_for_stock(ids, start, end)}
+        cache.set(key, out, ORDER_LOSS_CACHE_SEC)
+        return out
     except Exception:  # noqa: BLE001
         import logging
 

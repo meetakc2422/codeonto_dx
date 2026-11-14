@@ -53,12 +53,12 @@ def expected_loss(rate: dict[str, float], out_since: datetime, now: datetime, pr
             "low": round(high * LOW_FACTOR) if high is not None else None}
 
 
-def best_sellers(outlet_ids, today: date) -> dict[int, set[str]]:
-    """{outlet: item names}: the items making up most of the outlet's units over the window."""
+def best_sellers(outlet_ids, today: date, platform=None) -> dict[int, set[str]]:
+    """{outlet: item names}: the items making up most of the outlet's units over the window (on one platform when given)."""
     since = today - timedelta(days=WINDOW_DAYS)
     by_outlet = defaultdict(list)
-    rows = (OrderLine.objects.filter(outlet_id__in=outlet_ids, status__in=SOLD, order_date__gte=since, order_date__lt=today)
-            .values("outlet_id", "item_name").annotate(u=Sum("quantity")))
+    qs = OrderLine.objects.filter(outlet_id__in=outlet_ids, status__in=SOLD, order_date__gte=since, order_date__lt=today)
+    rows = (qs.filter(platform_id=platform) if platform else qs).values("outlet_id", "item_name").annotate(u=Sum("quantity"))
     for r in rows:
         by_outlet[r["outlet_id"]].append((r["item_name"], r["u"]))
     top = {}
@@ -74,39 +74,39 @@ def best_sellers(outlet_ids, today: date) -> dict[int, set[str]]:
     return top
 
 
-def meal_rates(outlet_id: int, item: str, today: date, out_days: set[date]) -> tuple[dict[str, float], int]:
+def meal_rates(outlet_id: int, item: str, today: date, out_days: set[date], platform=None) -> tuple[dict[str, float], int]:
     """({meal: units per in-stock day}, number of in-stock days) for one item, ignoring days it was out of stock."""
     since = today - timedelta(days=WINDOW_DAYS)
     days = {since + timedelta(days=i) for i in range((today - since).days)} - out_days
     if not days:
         return {}, 0
     units = defaultdict(float)
-    for r in (OrderLine.objects.filter(outlet_id=outlet_id, item_name=item, status__in=SOLD, order_date__in=days)
-              .values("mealtime").annotate(u=Sum("quantity"))):
+    lines = OrderLine.objects.filter(outlet_id=outlet_id, item_name=item, status__in=SOLD, order_date__in=days)
+    for r in (lines.filter(platform_id=platform) if platform else lines).values("mealtime").annotate(u=Sum("quantity")):
         units[r["mealtime"]] += float(r["u"])
     return {m: u / len(days) for m, u in units.items()}, len(days)
 
 
-def price_of(outlet_id: int, item: str) -> float | None:
-    """What the item sells for: the latest price in the item sales report, else the latest single-item order."""
-    p = (ItemSalesDaily.objects.filter(outlet_id=outlet_id, item_name=item, unit_price__gt=0).order_by("-day")
-         .values_list("unit_price", flat=True).first())
+def price_of(outlet_id: int, item: str, platform=None) -> float | None:
+    """What the item sells for: the latest price in the item sales report, else the latest single-item order (on one platform when given)."""
+    sales = ItemSalesDaily.objects.filter(outlet_id=outlet_id, item_name=item, unit_price__gt=0)
+    p = (sales.filter(platform_id=platform) if platform else sales).order_by("-day").values_list("unit_price", flat=True).first()
     if p is None:
-        p = (OrderLine.objects.filter(outlet_id=outlet_id, item_name=item, unit_price__gt=0).order_by("-placed_at")
-             .values_list("unit_price", flat=True).first())
+        lines = OrderLine.objects.filter(outlet_id=outlet_id, item_name=item, unit_price__gt=0)
+        p = (lines.filter(platform_id=platform) if platform else lines).order_by("-placed_at").values_list("unit_price", flat=True).first()
     return float(p) if p is not None else None
 
 
-def top_sellers_out(active: list[StockOut], now: datetime) -> dict:
+def _top_sellers_out_one(active: list[StockOut], now: datetime, platform) -> dict:
     """The currently out items that are best sellers, with what they have cost so far today.
     -> {"items": [{item_name, outlets, since, units, low, high, price, enough_history}], "low": ₹, "high": ₹}"""
     if not active:
         return {"items": [], "low": 0, "high": 0}
     today = service_day(now)
-    top = best_sellers({s.outlet_id for s in active}, today)
+    top = best_sellers({s.outlet_id for s in active}, today, platform)
     since = today - timedelta(days=WINDOW_DAYS)
     episodes = defaultdict(set)  # (outlet, item) -> days it was out
-    for e in StockOut.objects.filter(outlet_id__in=list(top), log_date__gte=since - timedelta(days=60)):
+    for e in StockOut.objects.filter(outlet_id__in=list(top), platform_id=platform, log_date__gte=since - timedelta(days=60)):
         end = (e.restored_at or now).astimezone(IST).date()
         d = max(e.log_date, since)
         while d <= end:
@@ -116,8 +116,8 @@ def top_sellers_out(active: list[StockOut], now: datetime) -> dict:
     for s in active:
         if s.item_name not in top.get(s.outlet_id, ()):
             continue
-        rate, n = meal_rates(s.outlet_id, s.item_name, today, episodes.get((s.outlet_id, s.item_name), set()))
-        price = price_of(s.outlet_id, s.item_name)
+        rate, n = meal_rates(s.outlet_id, s.item_name, today, episodes.get((s.outlet_id, s.item_name), set()), platform)
+        price = price_of(s.outlet_id, s.item_name, platform)
         enough = n >= MIN_DAYS
         loss = expected_loss(rate, s.first_detected_at, now, price) if enough else {"units": None, "high": None, "low": None}
         m = merged.setdefault(s.item_name, {"item_name": s.item_name, "outlets": 0, "since": s.first_detected_at, "units": 0.0, "low": 0, "high": 0,
@@ -133,9 +133,33 @@ def top_sellers_out(active: list[StockOut], now: datetime) -> dict:
     return {"items": items, "low": sum(i["low"] for i in items), "high": sum(i["high"] for i in items)}
 
 
+def top_sellers_out(active: list[StockOut], now: datetime) -> dict:
+    """Same, for stock-outs on several platforms: each is valued with its own platform's orders, then the dishes are added up by name."""
+    by_platform = defaultdict(list)
+    for s in active:
+        by_platform[s.platform_id].append(s)
+    parts = [_top_sellers_out_one(rows, now, plat) for plat, rows in by_platform.items()]
+    merged: dict[str, dict] = {}
+    for part in parts:
+        for it in part["items"]:
+            m = merged.get(it["item_name"])
+            if not m:
+                merged[it["item_name"]] = dict(it)
+                continue
+            m["outlets"] += it["outlets"]
+            m["since"] = min(m["since"], it["since"])
+            m["units"] += it["units"]
+            m["low"] += it["low"]
+            m["high"] += it["high"]
+            m["enough_history"] = m["enough_history"] and it["enough_history"]
+            m["price"] = m["price"] or it["price"]
+    items = sorted(merged.values(), key=lambda x: -x["high"])
+    return {"items": items, "low": sum(i["low"] for i in items), "high": sum(i["high"] for i in items)}
+
+
 def rejected_for_stock(outlet_ids, start: date, end: date) -> dict:
-    """Orders the restaurant rejected because an item was out of stock, in the period: a measured loss, not an estimate."""
-    rows = (OrderLine.objects.filter(outlet_id__in=outlet_ids, rejection_reason__iexact="Items out of stock", order_date__range=(start, end))
+    """Orders rejected or cancelled because an item was out of stock (Zomato's and Swiggy's reason mentions it), in the period: a measured loss, not an estimate."""
+    rows = (OrderLine.objects.filter(outlet_id__in=outlet_ids, rejection_reason__icontains="out of stock", order_date__range=(start, end))
             .values("order_id", "order_subtotal").distinct())
     value = sum(float(r["order_subtotal"] or 0) for r in rows)
     return {"orders": len(rows), "value": round(value)}
@@ -167,7 +191,7 @@ def _units_by_meal(rate: dict[str, float], a: datetime, b: datetime) -> dict[str
     return units
 
 
-def period_loss(episodes: list[StockOut], start: date, end: date, now: datetime, long_cutoff: datetime) -> dict:
+def _period_loss_one(platform, episodes: list[StockOut], start: date, end: date, now: datetime, long_cutoff: datetime) -> dict:
     """What best sellers cost over the period: every stock-out of a best seller, valued for the hours it was out
     (expected units for those hours x price), as a low-high range. Each stock-out counts for at most CAP_DAYS, and items
     still out past long_cutoff are left out: beyond that they are most likely delisted, not lost sales.
@@ -177,7 +201,7 @@ def period_loss(episodes: list[StockOut], start: date, end: date, now: datetime,
     if not eps:
         return {"items": [], "low": 0, "high": 0}
     today = service_day(now)
-    top = best_sellers({e.outlet_id for e in eps}, today)
+    top = best_sellers({e.outlet_id for e in eps}, today, platform)
     eps = [e for e in eps if e.item_name in top.get(e.outlet_id, ())]
     if not eps:
         return {"items": [], "low": 0, "high": 0}
@@ -187,24 +211,24 @@ def period_loss(episodes: list[StockOut], start: date, end: date, now: datetime,
     window = {since + timedelta(days=i) for i in range((today - since).days)}
 
     out_days = defaultdict(set)  # days each item was out in the learning window: not normal demand
-    for e in StockOut.objects.filter(outlet_id__in=outlets, log_date__gte=since - timedelta(days=60)):
+    for e in StockOut.objects.filter(outlet_id__in=outlets, platform_id=platform, log_date__gte=since - timedelta(days=60)):
         if (e.outlet_id, e.item_name) in pairs:
             d, last = max(e.log_date, since), (e.restored_at or now).astimezone(IST).date()
             while d <= last:
                 out_days[(e.outlet_id, e.item_name)].add(d)
                 d += timedelta(days=1)
     sold = defaultdict(list)  # (outlet, item) -> [(meal, day, units)]
-    for r in (OrderLine.objects.filter(outlet_id__in=outlets, status__in=SOLD, order_date__gte=since, order_date__lt=today)
+    for r in (OrderLine.objects.filter(outlet_id__in=outlets, platform_id=platform, status__in=SOLD, order_date__gte=since, order_date__lt=today)
               .values("outlet_id", "item_name", "mealtime", "order_date").annotate(u=Sum("quantity"))):
         if (r["outlet_id"], r["item_name"]) in pairs:
             sold[(r["outlet_id"], r["item_name"])].append((r["mealtime"], r["order_date"], float(r["u"])))
     price = {}
-    for o, i, p in (OrderLine.objects.filter(outlet_id__in=outlets, unit_price__gt=0, order_date__gte=since).order_by("-placed_at")
+    for o, i, p in (OrderLine.objects.filter(outlet_id__in=outlets, platform_id=platform, unit_price__gt=0, order_date__gte=since).order_by("-placed_at")
                     .values_list("outlet_id", "item_name", "unit_price")):
         if (o, i) in pairs and (o, i) not in price:
             price[(o, i)] = float(p)
     for o, i in pairs - set(price):  # no priced order lately: the item sales report has it
-        p = price_of(o, i)
+        p = price_of(o, i, platform)
         if p is not None:
             price[(o, i)] = p
 
@@ -243,7 +267,35 @@ def period_loss(episodes: list[StockOut], start: date, end: date, now: datetime,
                      "low": round(m["high"] * LOW_FACTOR), "episode_count": len(m["episodes"]),
                      "episodes": sorted((x for x in m["episodes"] if x["high"] >= 1), key=lambda x: -x["high"])[:EPISODES_SHOWN]}
                     for m in merged.values() if m["high"] >= 1), key=lambda x: -x["high"])
-    for it in items[ITEMS_WITH_EPISODES:]:
-        it["episodes"] = []
     return {"items": items, "low": sum(i["low"] for i in items), "high": sum(i["high"] for i in items),
             "by_meal": {k: {"low": round(v * LOW_FACTOR), "high": round(v)} for k, v in by_meal.items()}}
+
+
+def period_loss(episodes: list[StockOut], start: date, end: date, now: datetime, long_cutoff: datetime) -> dict:
+    """The same across platforms: each platform's stock-outs are valued with that platform's own orders (a Zomato stock-out
+    never borrows Swiggy's sales), then dishes, mealtimes and totals are added up."""
+    by_platform = defaultdict(list)
+    for e in episodes:
+        by_platform[e.platform_id].append(e)
+    merged: dict[str, dict] = {}
+    by_meal = defaultdict(lambda: {"low": 0, "high": 0})
+    for plat, rows in by_platform.items():
+        part = _period_loss_one(plat, rows, start, end, now, long_cutoff)
+        for meal, v in part["by_meal"].items():
+            by_meal[meal]["low"] += v["low"]
+            by_meal[meal]["high"] += v["high"]
+        for it in part["items"]:
+            m = merged.get(it["item_name"])
+            if not m:
+                merged[it["item_name"]] = {**it, "episodes": list(it["episodes"])}
+                continue
+            m["outlets"] += it["outlets"]
+            m["high"] += it["high"]
+            m["low"] += it["low"]
+            m["episode_count"] += it["episode_count"]
+            m["episodes"] += it["episodes"]
+            m["price"] = m["price"] or it["price"]
+    items = sorted(merged.values(), key=lambda x: -x["high"])
+    for i, it in enumerate(items):
+        it["episodes"] = sorted(it["episodes"], key=lambda x: -x["high"])[:EPISODES_SHOWN] if i < ITEMS_WITH_EPISODES else []
+    return {"items": items, "low": sum(i["low"] for i in items), "high": sum(i["high"] for i in items), "by_meal": dict(by_meal)}

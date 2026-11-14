@@ -129,6 +129,36 @@ class TopSellers(OutletsBase):
         self.assertEqual(flags(episode(19, 10)), [True])    # ten minutes of Dinner: under 5% of a normal day (3 sold at dinner)
         self.assertEqual(flags(episode(19, 240)), [False])  # all of Dinner: the whole day's sales
 
+    def test_each_platform_is_valued_with_its_own_orders(self):
+        from apps.masters.models import Platform
+
+        swiggy = Platform.objects.get(code="swiggy")
+        today = loss.service_day(timezone.now())
+        lines = []
+        for i in range(1, 21):  # Swiggy sells the same dish too, 3 at dinner a day
+            d = today - timedelta(days=i)
+            placed = datetime.combine(d, datetime.min.time(), tzinfo=IST) + timedelta(hours=20)
+            lines.append(OrderLine(outlet=self.mine, platform=swiggy, order_id=f"s{i}", placed_at=placed, order_date=d, mealtime="Dinner",
+                                   status="Delivered", item_name="Hit Burger", quantity=3, unit_price=Decimal("400")))
+        OrderLine.objects.bulk_create(lines)
+        rate_z, _ = loss.meal_rates(self.mine.pk, "Hit Burger", today, set(), "zomato")
+        rate_s, _ = loss.meal_rates(self.mine.pk, "Hit Burger", today, set(), "swiggy")
+        rate_all, _ = loss.meal_rates(self.mine.pk, "Hit Burger", today, set())
+        self.assertEqual(round(rate_z["Dinner"], 3), 2.0)   # Zomato alone: 20 days x 3 over 30
+        self.assertEqual(round(rate_s["Dinner"], 3), 2.0)   # Swiggy alone
+        self.assertEqual(round(rate_all["Dinner"], 3), 4.0)  # mixing them would double the loss
+
+    def test_swiggy_cancellations_for_stock_are_counted(self):
+        from apps.masters.models import Platform
+
+        swiggy = Platform.objects.get(code="swiggy")
+        today = loss.service_day(timezone.now())
+        OrderLine.objects.create(outlet=self.mine, platform=swiggy, order_id="sw1", placed_at=timezone.now(), order_date=today - timedelta(days=1),
+                                 mealtime="Dinner", status="Cancelled", rejection_reason="Item out of stock", item_name="Hit Burger",
+                                 quantity=1, order_subtotal=Decimal("300"))
+        res = loss.rejected_for_stock([self.mine.pk], today - timedelta(days=30), today)
+        self.assertEqual(res, {"orders": 2, "value": 750})  # the Zomato one (450) and this one (300)
+
     def test_summary_has_the_period_loss(self):
         owner = self.as_user(self.owner).get(f"/api/brands/{self.brand_a.pk}/stock-outs/summary").json()
         self.assertIn("period_loss", owner)
