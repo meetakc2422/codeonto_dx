@@ -82,13 +82,13 @@ def parse_orders(objects: list[dict], outlet_id: int) -> list[dict]:
     return rows
 
 
-CHUNK_DAYS = cfg.integer("SWIGGY_ORDERS_CHUNK_DAYS", 8)  # Swiggy accepts at most 10 days per request; one more day is added before each window
+CHUNK_DAYS = cfg.integer("SWIGGY_ORDERS_CHUNK_DAYS", 1)  # the partner site asks for one day at a time (a wider range returned only the newest 50 orders)
 
 
 def fetch_history(token: str, swiggy_id: str, start, end) -> list[dict]:
     """Every order of one store between two dates (inclusive), fetched in windows of CHUNK_DAYS because Swiggy limits the span.
     Raises PermissionError when the login is dead."""
-    out, a = [], start
+    out, a = [], start - timedelta(days=1)  # one extra day before, so the late-night orders of the day before the first service day are not cut off
     while a <= end:
         b = min(end, a + timedelta(days=CHUNK_DAYS - 1))
         out.extend(_fetch_window(token, swiggy_id, a, b))
@@ -112,13 +112,12 @@ def _fetch_window(token: str, swiggy_id: str, start, end) -> list[dict]:
         raise PermissionError("Swiggy login has no access token; run `run.py swiggy session` for this account")
     headers = {"accept": "*/*", "accesstoken": token, "access_token": token, "content-type": "application/json",
                "origin": ORIGIN, "referer": ORIGIN + "/", "user-agent": cfg.user_agent()}
-    # one extra day before, so the late-night orders of the day before the first service day are not cut off
-    a, b = (start - timedelta(days=1)).isoformat(), end.isoformat()
+    a, b = start.isoformat(), end.isoformat()
     out, offset = [], 0
     for _ in range(MAX_PAGES):
         resp = requests.get(BASE, headers=headers, timeout=cfg.http_timeout(),
                             params={"limit": PAGE, "offset": offset, "ordered_time__gte": a, "ordered_time__lte": b,
-                                    "restaurant_id": str(swiggy_id), "from_date": a, "to_date": b})
+                                    "restaurant_id": str(swiggy_id)})
         if resp.status_code in (401, 403):
             raise PermissionError(f"Swiggy session expired ({resp.status_code}); run `run.py swiggy session` for this account")
         resp.raise_for_status()
