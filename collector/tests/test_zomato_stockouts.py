@@ -33,6 +33,10 @@ class OutItems(unittest.TestCase):
         addon = {"catalogue": {"name": "Cheese Sauce", "catalogueId": 99, "autoTurnOnTime": "No time set"}, "variantWrappers": []}
         self.assertEqual(self.names(addon), [])
 
+    def test_a_menu_with_no_categories_mapped_keeps_every_item(self):
+        out = out_items({"categoryWrappers": [], "catalogueWrappers": [wrap("Burger", autoTurnOnTime="x")]})
+        self.assertEqual([i["item_name"] for i in out], ["Burger"])
+
     def test_an_item_with_no_variants_and_no_switch_is_in_stock(self):
         self.assertEqual(self.names(wrap("Burger", [])), [])
 

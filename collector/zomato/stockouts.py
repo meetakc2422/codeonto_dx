@@ -86,8 +86,9 @@ def out_items(menu: dict) -> list[dict]:
         cat = w.get("catalogue") or {}
         name = (cat.get("name") or "").strip()
         category = category_of.get(str(cat.get("catalogueId")), "")
-        if not name or not category:
-            continue  # add-ons and modifiers (cheese sauce, a drink with a combo) sit on the menu with no category: not dishes
+        if not name or (category_of and not category):
+            continue  # add-ons and modifiers (cheese sauce, a drink with a combo) sit on the menu with no category: not dishes.
+            # (a menu with no categories mapped at all means the layout changed: keep every item rather than see no stock-outs)
         out, back = "autoTurnOnTime" in cat, cat.get("autoTurnOnTime")
         if not out:
             variants = [vw.get("variant") or {} for vw in w.get("variantWrappers") or []]
