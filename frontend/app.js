@@ -184,7 +184,7 @@ function lineChart(canvas, labels, datasets, unit) {
       labels,
       datasets: datasets.map((d, i) => ({
         borderColor: d.color || SERIES[i], backgroundColor: (d.color || SERIES[i]) + "1f",
-        fill: datasets.length === 1, tension: 0.35, pointRadius: 0, pointHoverRadius: 4, borderWidth: 2, ...d,
+        fill: datasets.length === 1, tension: 0.35, pointRadius: labels.length <= 2 ? 6 : 0, pointHoverRadius: 6, pointBackgroundColor: d.color || SERIES[i], borderWidth: 2, ...d,
       })),
     },
     options: {
