@@ -128,8 +128,9 @@ def _fetch_window(token: str, swiggy_id: str, start, end) -> list[dict]:
         data = ((body.get("data") or [{}])[0].get("data")) or {}
         objects = data.get("objects") or []
         out.extend(objects)
-        offset += PAGE
-        if not objects or offset >= int((data.get("meta") or {}).get("total_count") or 0):
+        offset += len(objects)  # Swiggy may return fewer than PAGE rows per page, so move on by what came back
+        total = int((data.get("meta") or {}).get("total_count") or 0)
+        if not objects or (total and offset >= total):  # total_count may be missing or 0: then only an empty page ends it
             break
         time.sleep(random.uniform(*PACE_SEC))
     return out
