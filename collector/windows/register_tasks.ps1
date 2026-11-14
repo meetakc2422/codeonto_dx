@@ -22,6 +22,7 @@ $Jobs = @(
     @{ Name = "Zomato stock-outs";      Args = "run.py zomato stockouts --headless"; When = "logon" },
     @{ Name = "Alerts";                 Args = "run.py alerts send --every 15";    When = "logon" },
     @{ Name = "Zomato reviews";         Args = "run.py zomato reviews --headless --every 120"; When = "logon" },
+    @{ Name = "Zomato review replies";  Args = "run.py zomato replies --every 180"; When = "logon" },
     @{ Name = "Swiggy reviews";         Args = "run.py swiggy reviews --headless --every 120"; When = "logon" },
     @{ Name = "All complaints";         Args = "run.py all complaints --headless --every 120"; When = "logon" },
     @{ Name = "All logins (daily)";     Args = "run.py all session";               When = "05:30" },

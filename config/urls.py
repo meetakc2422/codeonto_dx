@@ -19,6 +19,7 @@ from apps.alerts import recipients_api
 from apps.integrations import sessions_api
 from apps.outlets import auth_api, staff_api, team_api
 from apps.reviews import api as reviews
+from apps.reviews import service_api as reply_service
 from apps.stockouts import api as stockouts
 from apps.complaints import api as complaints
 from apps.insights import api as insights
@@ -41,6 +42,8 @@ api = [
     path("auth/me", auth_api.me),
     path("staff/sessions", sessions_api.platform_sessions),
     path("staff/sessions/alerts", sessions_api.session_alerts),
+    path("staff/reply-service", reply_service.reply_service),
+    path("staff/reply-service/<int:row_id>", reply_service.reply_service_delete),
     path("staff/sessions/<int:account_id>/refresh", sessions_api.refresh_session),
     path("staff/sessions/<int:account_id>/sync-outlets", sessions_api.sync_outlets),
     path("auth/login", auth_api.login_view),
