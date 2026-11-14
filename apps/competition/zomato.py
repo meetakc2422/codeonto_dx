@@ -383,7 +383,7 @@ def _menu_offers(promo) -> list[dict]:
     """[{text, code}]: each full offer line, with the 'Use code X' that follows it."""
     out = []
     for t in dict.fromkeys(_texts(promo)):
-        if re.match(r"(Flat ₹[\d,]+ OFF above|\d+% OFF up to|Items starting at)", t):
+        if re.match(r"(Flat ₹[\d,]+ OFF above|\d+% OFF up to|Items starting (?:at|@))", t):
             out.append({"text": t, "code": ""})
         elif (m := re.match(r"Use code (\w+)", t)) and out and not out[-1]["code"]:
             out[-1]["code"] = m.group(1)
@@ -410,6 +410,12 @@ def menu(place: dict, res_id: str, tries: int = MENU_TRIES, min_items: int = MEN
             time.sleep(2 * attempt)
     best["tries"] = attempt
     return best
+
+
+def _offer_price(it: dict):
+    """What the dish really costs while its offer runs (e.g. 'Get for ₹179'), when that is below the list price."""
+    d, p = it.get("discounted_price"), it.get("display_price", it.get("price"))
+    return d if d and p and d < p else None
 
 
 def menu_once(place: dict, res_id: str) -> dict:
@@ -441,7 +447,7 @@ def menu_once(place: dict, res_id: str) -> dict:
                     continue
                 rt = it.get("rating") or {}
                 items[it["id"]] = {"id": it["id"], "name": it.get("name", ""), "section": section, "category": cat.get("name") or section,
-                    "price": it.get("display_price", it.get("price")), "min_price": it.get("min_price"), "max_price": it.get("max_price"),
+                    "price": it.get("display_price", it.get("price")), "offer_price": _offer_price(it), "offer_text": _text((it.get("offer") or {}).get("offer_title")), "min_price": it.get("min_price"), "max_price": it.get("max_price"),
                     "veg": "veg" in (it.get("dietary_slugs") or []), "tags": [tag_names[t] for t in it.get("tag_slugs", []) if tag_names.get(t)]
                     + (["High repeat"] if "high-repeat" in it.get("tag_slugs", []) else []),
                     "reorder_score": rt.get("progress_value") if rt.get("rating_identifier") == "highly_reordered" else None,
@@ -474,4 +480,4 @@ def menu_insights(mn: dict) -> dict:
             "desc_pct": round(100 * sum(len((i.get("desc") or "").strip()) >= 15 for i in items) / n),
             "out_of_stock": [i["name"] for i in items if not i["in_stock"]],
             "bestsellers": [i["name"] for i in items if "Bestseller" in i["tags"] or "Most Ordered" in i["tags"]],
-            "top_sellers": [{"name": i["name"], "price": i["price"], "reorder": i["reorder_score"], "popularity": i["popularity"]} for i in top]}
+            "top_sellers": [{"name": i["name"], "price": i["price"], "offer_price": i.get("offer_price"), "reorder": i["reorder_score"], "popularity": i["popularity"]} for i in top]}

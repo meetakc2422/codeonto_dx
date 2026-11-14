@@ -320,10 +320,15 @@ def _menu_items(cards):
                 yield section, sub.get("title") or section, (ic.get("card") or {}).get("info") or {}
 
 
+def menu_raw(place: dict, res_id: str) -> dict:
+    """The restaurant page as the app loads it, untouched."""
+    return call("POST", f"https://disc.swiggy.com/api/v2/menu/{res_id}", place["lat"], place["lng"], place.get("city_id", ""), place.get("city", ""),
+                params={"complete-menu": "true", "lat": place["lat"], "lng": place["lng"]},
+                body={"source": "SEARCH", "submitAction": "DEEPLINK", "takeaway": 0, "isSld": 0, "qrEnabled": "false", "request_contexts": []})
+
+
 def menu_once(place: dict, res_id: str) -> dict:
-    r = call("POST", f"https://disc.swiggy.com/api/v2/menu/{res_id}", place["lat"], place["lng"], place.get("city_id", ""), place.get("city", ""),
-             params={"complete-menu": "true", "lat": place["lat"], "lng": place["lng"]},
-             body={"source": "SEARCH", "submitAction": "DEEPLINK", "takeaway": 0, "isSld": 0, "qrEnabled": "false", "request_contexts": []})
+    r = menu_raw(place, res_id)
     cards = (r.get("success") or {}).get("cards") or []
     header = next(((c.get("card") or {}).get("card") or {} for c in cards
                    if ((c.get("card") or {}).get("card") or {}).get("@type", "").endswith("CompactMenuHeader")), {})
@@ -341,11 +346,13 @@ def menu_once(place: dict, res_id: str) -> dict:
             continue
         rupees = lambda p: round(p / 100) if p else None
         price = rupees(it.get("price") or it.get("defaultPrice") or it.get("finalPrice"))
+        final = rupees(it.get("finalPrice"))
+        offer_price = final if final and price and final < price else None
         variant_prices = [rupees(v.get("price")) for g in ((it.get("variantsV2") or {}).get("pricingModels") or []) for v in [g] if v.get("price")]
         agg = ((it.get("ratings") or {}).get("aggregatedRating")) or {}
         tags = [t for t in [(it.get("ribbon") or {}).get("text"), "Bestseller" if it.get("isBestseller") else None] if t]
         items[it["id"]] = {"id": it["id"], "name": it.get("name", ""), "section": section, "category": it.get("category") or category,
-                           "price": price, "min_price": min([price, *variant_prices]) if price else None, "max_price": max([price, *variant_prices]) if price else None,
+                           "price": price, "offer_price": offer_price, "offer_text": "", "min_price": min([price, *variant_prices]) if price else None, "max_price": max([price, *variant_prices]) if price else None,
                            "veg": (it.get("itemAttribute") or {}).get("vegClassifier") == "VEG" or it.get("isVeg") == 1,
                            "tags": list(dict.fromkeys(tags)), "reorder_score": None,
                            "item_rating": float(agg["rating"]) if agg.get("rating") else None, "popularity": _count(agg.get("ratingCount")),

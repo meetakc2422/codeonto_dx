@@ -509,6 +509,9 @@ function kpiCards(kpis, moduleIcon, sparks = {}) {
     </div>`).join("")}</div>`;
 }
 
+// a menu price: the offer price first when a deal is running, with the list price struck through
+const menuPrice = (i) => i.offer_price ? `<b title="${esc(i.offer_text || "Offer price")}">₹${i.offer_price}</b> <small class="muted"><s>₹${i.price}</s></small>` : `₹${i.price ?? "—"}`;
+
 // ---------- overview ----------
 // the overview answers one question: what needs fixing right now across ratings, reviews, offline outlets and stock-outs
 async function renderOverview(page) {
@@ -3169,7 +3172,7 @@ async function showMarketRestaurant(outletId, resId, track, refresh = false) {
       <div><h4 class="comp-h">Offers running now</h4>${(r.offers || []).length ? r.offers.map((o) => `<div class="comp-line">${esc(o.text)}${o.code ? ` <code>${esc(o.code)}</code>` : ""}</div>`).join("") : '<p class="muted">No offers.</p>'}
         ${(r.combos || []).length ? `<h4 class="comp-h">Combos customers order</h4>${r.combos.map((c) => `<div class="comp-line">${esc(c.name)} <b>${esc(c.price)}</b> <small class="muted">${esc(c.ordered_by)}</small></div>`).join("")}` : ""}</div>
       <div><h4 class="comp-h">Best sellers</h4><table class="ov-table"><tbody>${(ins.top_sellers || []).map((t, i) => `<tr><td><span class="rank ${i < 3 ? "top" : ""}">${i + 1}</span></td><td>${esc(t.name)}</td>
-          <td class="num">₹${t.price}</td><td class="num">${t.reorder != null ? `<small class="muted">reordered</small> ${Math.round(t.reorder * 100)}%`
+          <td class="num">${menuPrice(t)}</td><td class="num">${t.reorder != null ? `<small class="muted">reordered</small> ${Math.round(t.reorder * 100)}%`
             : state.compTab === "swiggy" && t.popularity ? `${inr.format(t.popularity)} <small class="muted">ratings</small>` : ""}</td></tr>`).join("")}</tbody></table></div>
     </div>
     <h4 class="comp-h">Categories</h4>
@@ -3199,7 +3202,7 @@ async function showMarketRestaurant(outletId, resId, track, refresh = false) {
         <p class="login-error" id="phError"></p></form>` : ""}
       <table class="ov-table"><thead><tr><th></th><th>Item</th><th>Category</th><th class="num">Price</th><th>Tags</th></tr></thead><tbody>
       ${(r.items || []).map((i) => `<tr class="${i.in_stock ? "" : "comp-oos"}"><td>${i.image ? `<input type="checkbox" class="ph-pick" value="${esc(String(i.id))}">` : ""}</td><td>${i.image ? `<img class="comp-thumb" src="${esc(i.image)}" alt="" loading="lazy">` : '<span class="comp-thumb"></span>'}<span class="comp-diet ${i.veg ? "veg" : "nonveg"}"></span>${esc(i.name)}</td><td class="muted">${esc(i.category)}</td>
-        <td class="num">₹${i.price ?? "—"}</td><td>${[...i.tags, i.in_stock ? "" : "Out of stock"].filter(Boolean).map((t) => `<span class="comp-svc">${esc(t)}</span>`).join("")}</td></tr>`).join("")}</tbody></table></details>
+        <td class="num">${menuPrice(i)}</td><td>${[...i.tags, i.in_stock ? "" : "Out of stock"].filter(Boolean).map((t) => `<span class="comp-svc">${esc(t)}</span>`).join("")}</td></tr>`).join("")}</tbody></table></details>
   </div>`;
   $("#zRefresh").addEventListener("click", () => showMarketRestaurant(outletId, resId, track, true));
   photoEditor(outletId, r);
