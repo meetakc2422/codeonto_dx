@@ -101,7 +101,7 @@ def _top_sellers_out_one(active: list[StockOut], now: datetime, platform) -> dic
     """The currently out items that are best sellers, with what they have cost so far today.
     -> {"items": [{item_name, outlets, since, units, low, high, price, enough_history}], "low": ₹, "high": ₹}"""
     if not active:
-        return {"items": [], "low": 0, "high": 0}
+        return {"items": [], "low": 0, "high": 0, "by_meal": {}}
     today = service_day(now)
     top = best_sellers({s.outlet_id for s in active}, today, platform)
     since = today - timedelta(days=WINDOW_DAYS)
@@ -199,12 +199,12 @@ def _period_loss_one(platform, episodes: list[StockOut], start: date, end: date,
     lo_t, hi_t = _period_bounds(start, end, now)
     eps = [e for e in episodes if not (e.is_active and e.first_detected_at < long_cutoff)]
     if not eps:
-        return {"items": [], "low": 0, "high": 0}
+        return {"items": [], "low": 0, "high": 0, "by_meal": {}}
     today = service_day(now)
     top = best_sellers({e.outlet_id for e in eps}, today, platform)
     eps = [e for e in eps if e.item_name in top.get(e.outlet_id, ())]
     if not eps:
-        return {"items": [], "low": 0, "high": 0}
+        return {"items": [], "low": 0, "high": 0, "by_meal": {}}
     pairs = {(e.outlet_id, e.item_name) for e in eps}
     outlets = {o for o, _ in pairs}
     since = today - timedelta(days=WINDOW_DAYS)
