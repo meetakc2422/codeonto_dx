@@ -1,4 +1,4 @@
-"""Zomato review replies: posts the replies SocialSpork staff have switched on, and writes the automatic ones.
+"""Zomato review replies: posts the replies Codeonto staff have switched on, and writes the automatic ones.
 
 Nothing is sent for a client or outlet unless staff gave it an active row in `reply_service` (the Reply service page).
 Each run, for the outlets that have one:
@@ -57,7 +57,7 @@ BANNED = ("glad you enjoyed, glad to hear, wonderful to hear, so happy to read, 
 
 
 def config(account: str) -> dict:
-    return require_env("SOCIALSPORK_DATABASE_URL")
+    return require_env("CODEONTO_DATABASE_URL")
 
 
 def is_risky(text: str | None) -> bool:

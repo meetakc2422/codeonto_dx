@@ -77,7 +77,7 @@ class ReviewContactView(models.Model):
 
 
 class ReplyService(models.Model):
-    """Who gets review replies sent to Zomato for them, set by SocialSpork staff only. NO ROW = NO REPLIES: nothing is ever
+    """Who gets review replies sent to Zomato for them, set by Codeonto staff only. NO ROW = NO REPLIES: nothing is ever
     sent for a client or outlet that has no active row. A row with an empty res_id covers every Zomato outlet of the client;
     a row with a res_id covers just that outlet and wins over the client-wide row.
 

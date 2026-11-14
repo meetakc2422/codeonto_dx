@@ -11,7 +11,7 @@ from .models import ReplyService
 
 def _staff(request):
     if not is_staff(request.user):
-        raise PermissionDenied("Only SocialSpork staff can manage the reply service.")
+        raise PermissionDenied("Only Codeonto staff can manage the reply service.")
 
 
 def _row(r: ReplyService, names: dict) -> dict:

@@ -130,7 +130,7 @@ def create_reply(request, review_id):
         if review.reply_status == "replied" or review.replies.filter(status__in=["approved", "published"]).exists():
             return Response({"detail": "This review already has a reply"}, status=409)
         if not mode_for(rules_for_client(review.outlet.brand.client_id), review.outlet.zomato_id):
-            return Response({"detail": "Replying to Zomato is not switched on for this outlet. Ask SocialSpork to enable it."}, status=403)
+            return Response({"detail": "Replying to Zomato is not switched on for this outlet. Ask Codeonto to enable it."}, status=403)
     reply = ReviewReply.objects.create(review=review, body=body, source=request.data.get("source", "manual"),
                                        status="approved" if send else "draft")
     if review.reply_status == "pending":
