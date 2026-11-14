@@ -339,6 +339,7 @@ function showPageSkeleton(page) {
   }, 300);
 }
 
+let pageSeq = 0;
 async function render() {
   if (!state.me) return;
   ensureAssistant();
@@ -346,7 +347,13 @@ async function render() {
   destroyCharts();
   closePicker();
   const route = currentRoute();
-  const page = $("#page");
+  // a slow page (Overview makes 8 requests) must not paint over the page opened after it: once a newer render starts,
+  // this render's writes go to a throwaway element instead of the screen
+  const mine = ++pageSeq, real = $("#page"), sink = document.createElement("div");
+  const page = new Proxy(real, {
+    get(t, k) { const o = pageSeq === mine ? t : sink, v = o[k]; return typeof v === "function" ? v.bind(o) : v; },
+    set(t, k, v) { (pageSeq === mine ? t : sink)[k] = v; return true; },
+  });
   showPageSkeleton(page);
   document.body.classList.remove("nav-open");
 
@@ -1924,7 +1931,8 @@ async function checkOffline() {
     changes = await api("/uptime/changes", state.me.is_staff && state.brandId ? { brand_id: state.brandId } : {});
   } catch { return; }  // try again next minute; a popup is never worth an error message
 
-  const offline = unseenChanges("offline", changes.offline);
+  // only stores that just went down are news: ones offline for days are on Store Uptime, not a popup
+  const offline = unseenChanges("offline", changes.offline.filter((r) => Date.now() - new Date(r.since) < 3 * 36e5));
   if (offline.firstVisit) {  // first visit on this browser: these aren't news, so one summary instead of a popup each
     if (changes.offline.length) showOfflineNotice({ title: `${manyOutlets(changes.offline.length)} offline right now`, detail: "Open Store Uptime to see which", open: () => openOfflineOutlet() });
   } else {
@@ -2052,7 +2060,7 @@ function topSellerStrip(summary, periodWord = "in this period") {
   const t = summary.top_sellers_out, rej = summary.stock_rejections, per = summary.period_loss;
   const hasPer = !!(per && per.high);
   const items = hasPer ? per.items : (t?.items || []);
-  if (!items.length && !(rej && rej.orders)) return "";
+  if (!items.length && !(rej && rej.orders)) return `<div class="so-loss"><div class="so-loss-main"><span class="so-loss-label">Best sellers lost to stock-outs</span><small>none ${esc(periodWord)}, or not enough order history to value them</small></div></div>`;
   const range = (lo, hi) => (hi ? `${rupeesShort(lo)} – ${rupeesShort(hi)}` : "");
   const since = (ts) => new Date(ts).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
   return `<div class="so-loss">
