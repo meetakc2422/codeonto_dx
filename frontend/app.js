@@ -2321,7 +2321,7 @@ const PICK_PLATFORMS = [
   { code: "swiggy", label: "Swiggy" },
   { code: "google", label: "Google" },
 ];
-const setup = { rows: [], deleted: [], filter: "", dirty: false, bulkPlatform: "zomato", bulkSelected: new Map() };
+const setup = { rows: [], deleted: [], filter: "", dirty: false, bulkPlatform: "zomato", bulkSelected: new Map(), pairs: [] };
 
 async function renderSetup(page, { creating = false } = {}) {
   const [industries, clients, data] = await Promise.all([
@@ -2330,7 +2330,9 @@ async function renderSetup(page, { creating = false } = {}) {
   const brand = creating ? null : state.config.brand;
   const staff = state.me.is_staff;
   const first = creating && !state.brands.length;
-  setup.rows = creating ? [] : data.outlets.map((o) => ({ ...o, labels: { ...o.labels } }));
+  setup.rows = creating ? [] : data.outlets.map((o) => ({ ...o, labels: { ...o.labels } }))
+    .sort((a, b) => (a.area || "").toLowerCase().localeCompare((b.area || "").toLowerCase()) || (a.city || "").localeCompare(b.city || ""));  // same-area rows sit together
+  setup.pairs = [];
   setup.deleted = []; setup.filter = ""; setup.dirty = false; setup.bulkSelected.clear();
 
   page.innerHTML = `
@@ -2438,9 +2440,12 @@ async function renderSetup(page, { creating = false } = {}) {
       row[clear.dataset.clear] = ""; delete row.labels[clear.dataset.clear];
       setup.dirty = true; return renderOutletRows();
     }
+    const link = e.target.closest("[data-link]");
+    if (link) return linkPair(Number(link.dataset.link));
     const pick = e.target.closest("[data-pick]");
     if (pick) openPicker(pick, Number(pick.dataset.idx), pick.dataset.pick);
   });
+  if (!creating) loadLinkPairs();
 
   // bulk add from catalog
   $("#mergeRows").addEventListener("click", mergeSameArea);
@@ -2661,6 +2666,34 @@ async function loadAllBulk() {
   while (!bulkList.exhausted && bulkList.offset < bulkList.total) await loadBulk(false, 500);
 }
 
+// the likeliest same-kitchen row on the other platform, offered right in the empty cell (one click links them)
+function suggestionFor(r, platform) {
+  if (!r.id || (platform !== "zomato" && platform !== "swiggy")) return "";
+  const other = platform === "swiggy" ? "swiggy" : "zomato", mine = platform === "swiggy" ? "zomato" : "swiggy";
+  const idx = setup.pairs.findIndex((p) => p[mine].id === r.id);
+  if (idx < 0) return "";
+  const o = setup.pairs[idx][other];
+  return `<button class="pick-btn suggest-link" data-link="${idx}" title="${esc(`${o.outlet_name} · ${o.area || ""} · ${o.city || ""} (${o[other + "_id"]}). Click to link, then Save outlets.`)}">&#8596; ${esc(o.area || o.outlet_name)} · ${esc(o[other + "_id"])}<small>${Math.round(setup.pairs[idx].score * 100)}%${setup.pairs[idx].sure ? "" : " check"}</small></button>`;
+}
+
+async function loadLinkPairs() {
+  try { setup.pairs = (await api(`/brands/${state.brandId}/outlets/link-suggestions`)).pairs || []; } catch { setup.pairs = []; }
+  renderOutletRows();
+}
+
+function linkPair(idx) {
+  const p = setup.pairs[idx];
+  const keep = setup.rows.find((r) => r.id === p.zomato.id), drop = setup.rows.find((r) => r.id === p.swiggy.id);
+  if (!keep || !drop || keep.swiggy) return;
+  keep.swiggy = drop.swiggy; keep.labels.swiggy = drop.labels.swiggy;
+  setup.rows.splice(setup.rows.indexOf(drop), 1);
+  setup.deleted.push(drop.id);
+  setup.pairs.splice(idx, 1);
+  setup.dirty = true;
+  renderOutletRows();
+  toast("Linked. Click Save outlets to keep it.");
+}
+
 function renderOutletRows() {
   const match = (r) => !setup.filter || [r.outlet_name, r.area, r.city, r.zomato, r.swiggy, r.google]
     .some((v) => (v || "").toLowerCase().includes(setup.filter));
@@ -2668,7 +2701,7 @@ function renderOutletRows() {
   $("#outletCount").textContent = `· ${setup.rows.length}${setup.deleted.length ? ` (${setup.deleted.length} to delete)` : ""}`;
   const cell = (r, i, p) => r[p]
     ? `<div class="id-chip" title="${esc(r.labels[p] || r[p])}"><button class="chip-pick" data-pick="${p}" data-idx="${i}">${esc(r[p])}</button><button class="chip-x" data-clear="${p}" data-idx="${i}" title="Unmap">×</button></div>`
-    : `<button class="pick-btn" data-pick="${p}" data-idx="${i}">+ Pick</button>`;
+    : `${suggestionFor(r, p)}<button class="pick-btn" data-pick="${p}" data-idx="${i}">+ Pick</button>`;
   $("#outletRows").innerHTML = visible.length ? visible.map(([r, i]) => `<tr>
       <td><input data-idx="${i}" data-field="outlet_name" value="${esc(r.outlet_name)}" placeholder="e.g. Sector 29"></td>
       <td><input data-idx="${i}" data-field="area" value="${esc(r.area)}" placeholder="Area"></td>
