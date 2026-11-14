@@ -106,6 +106,7 @@ def _filtered(request, brand_id):
     # started by the end date, and still out or came back on/after the start date
     in_range = Q(log_date__lte=end) & (Q(is_active=True) | Q(restored_at__date__gte=start))
     qs = in_scope(StockOut.objects.filter(in_range, outlet__brand_id=brand_id), request.user).select_related("outlet__brand")
+    qs = qs.exclude(platform_id="zomato", category="")  # Zomato add-ons and modifiers carry no category: they are not dishes
     if outlet_ids(qp.get("outlet_id")):
         qs = qs.filter(outlet_id__in=outlet_ids(qp.get("outlet_id")))
     if qp.get("platform"):

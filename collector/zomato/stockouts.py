@@ -73,7 +73,7 @@ def out_items(menu: dict) -> list[dict]:
     """The items customers cannot order, from the menu editor's answer. An item is out when it is switched off as a whole
     (it has an auto turn-on time) or when every one of its variants is out. One variant being out (a combo with a drink
     that is off, say) leaves the item orderable, so it does not count. A name listed twice is out only when every
-    listing of it is."""
+    listing of it is. Add-ons and modifiers (entries with no category) are not dishes and never count."""
     category_of = {}
     for cw in menu.get("categoryWrappers") or []:
         name = (cw.get("category") or {}).get("name", "")
@@ -85,14 +85,15 @@ def out_items(menu: dict) -> list[dict]:
     for w in menu.get("catalogueWrappers") or []:
         cat = w.get("catalogue") or {}
         name = (cat.get("name") or "").strip()
-        if not name:
-            continue
+        category = category_of.get(str(cat.get("catalogueId")), "")
+        if not name or not category:
+            continue  # add-ons and modifiers (cheese sauce, a drink with a combo) sit on the menu with no category: not dishes
         out, back = "autoTurnOnTime" in cat, cat.get("autoTurnOnTime")
         if not out:
             variants = [vw.get("variant") or {} for vw in w.get("variantWrappers") or []]
             if variants and all(v.get("inStock") is False for v in variants):
                 out, back = True, next((v.get("turnOnTime") for v in variants if v.get("turnOnTime")), None)
-        listings.setdefault(name, []).append({"out": out, "back": back, "category": category_of.get(str(cat.get("catalogueId")), "")})
+        listings.setdefault(name, []).append({"out": out, "back": back, "category": category})
     items = []
     for name, ls in listings.items():
         if all(x["out"] for x in ls):

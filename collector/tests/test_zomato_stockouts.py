@@ -11,8 +11,10 @@ def wrap(name, variants=None, **cat):
 
 
 class OutItems(unittest.TestCase):
+    CATEGORIES = [{"category": {"name": "Burgers"}, "subCategoryWrappers": [{"subCategoryEntities": [{"entityId": 1}]}]}]
+
     def names(self, *wrappers):
-        return sorted(i["item_name"] for i in out_items({"catalogueWrappers": list(wrappers)}))
+        return sorted(i["item_name"] for i in out_items({"categoryWrappers": self.CATEGORIES, "catalogueWrappers": list(wrappers)}))
 
     def test_switched_off_as_a_whole_is_out(self):
         self.assertEqual(self.names(wrap("Burger", autoTurnOnTime="2026-11-13")), ["Burger"])
@@ -26,6 +28,10 @@ class OutItems(unittest.TestCase):
     def test_a_name_listed_twice_is_out_only_when_both_are(self):
         self.assertEqual(self.names(wrap("Burger", [False]), wrap("Burger", [True])), [])
         self.assertEqual(self.names(wrap("Burger", [False]), wrap("Burger", [False])), ["Burger"])
+
+    def test_add_ons_with_no_category_never_count(self):
+        addon = {"catalogue": {"name": "Cheese Sauce", "catalogueId": 99, "autoTurnOnTime": "No time set"}, "variantWrappers": []}
+        self.assertEqual(self.names(addon), [])
 
     def test_an_item_with_no_variants_and_no_switch_is_in_stock(self):
         self.assertEqual(self.names(wrap("Burger", [])), [])

@@ -60,9 +60,9 @@ class TopSellers(OutletsBase):
         ItemSalesDaily.objects.create(outlet=o, platform=cls.platform, item_name="Hit Burger", day=today - timedelta(days=1), quantity=3,
                                       unit_price=Decimal("400"))
         now = timezone.now()
-        cls.out = StockOut.objects.create(outlet=o, platform=cls.platform, item_name="Hit Burger", log_date=today,
+        cls.out = StockOut.objects.create(category="Burgers", outlet=o, platform=cls.platform, item_name="Hit Burger", log_date=today,
                                           first_detected_at=now - timedelta(hours=2), last_detected_at=now)
-        cls.rare = StockOut.objects.create(outlet=o, platform=cls.platform, item_name="Rare Dish", log_date=today,
+        cls.rare = StockOut.objects.create(category="Burgers", outlet=o, platform=cls.platform, item_name="Rare Dish", log_date=today,
                                            first_detected_at=now - timedelta(hours=2), last_detected_at=now)
 
     def test_only_best_sellers_are_valued(self):
@@ -91,7 +91,7 @@ class TopSellers(OutletsBase):
         now = timezone.now()
         today = loss.service_day(now)
         dinner = datetime.combine(today - timedelta(days=2), datetime.min.time(), tzinfo=IST) + timedelta(hours=19)  # all of Dinner, 2 days ago
-        old = StockOut.objects.create(outlet=self.mine, platform=self.platform, item_name="Hit Burger", log_date=today - timedelta(days=2),
+        old = StockOut.objects.create(category="Burgers", outlet=self.mine, platform=self.platform, item_name="Hit Burger", log_date=today - timedelta(days=2),
                                       first_detected_at=dinner, last_detected_at=dinner, restored_at=dinner + timedelta(hours=4), is_active=False)
         res = loss.period_loss([old, self.out, self.rare], today - timedelta(days=29), today, now, now - timedelta(days=3))
         self.assertEqual([i["item_name"] for i in res["items"]], ["Hit Burger"])  # the rare dish gets no figure
@@ -104,7 +104,7 @@ class TopSellers(OutletsBase):
         now = timezone.now()
         today = loss.service_day(now)
         start = datetime.combine(today - timedelta(days=15), datetime.min.time(), tzinfo=IST) + timedelta(hours=5)
-        long_ep = StockOut.objects.create(outlet=self.mine, platform=self.platform, item_name="Hit Burger", log_date=today - timedelta(days=15),
+        long_ep = StockOut.objects.create(category="Burgers", outlet=self.mine, platform=self.platform, item_name="Hit Burger", log_date=today - timedelta(days=15),
                                           first_detected_at=start, last_detected_at=start, restored_at=start + timedelta(days=12), is_active=False)
         three = StockOut(outlet=self.mine, platform=self.platform, item_name="Hit Burger", log_date=today - timedelta(days=15),
                          first_detected_at=start, last_detected_at=start, restored_at=start + timedelta(days=3), is_active=False)
