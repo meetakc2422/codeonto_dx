@@ -42,6 +42,7 @@ api = [
     path("staff/sessions", sessions_api.platform_sessions),
     path("staff/sessions/alerts", sessions_api.session_alerts),
     path("staff/sessions/<int:account_id>/refresh", sessions_api.refresh_session),
+    path("staff/sessions/<int:account_id>/sync-outlets", sessions_api.sync_outlets),
     path("auth/login", auth_api.login_view),
     path("auth/otp/request", auth_api.otp_request),
     path("auth/otp/verify", auth_api.otp_verify),

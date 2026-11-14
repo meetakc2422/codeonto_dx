@@ -1638,6 +1638,22 @@ function loginButton(a) {
   return `<button class="btn blue" data-login="${a.id}" data-label="${esc(`${a.platform} · ${a.label}`)}">Log in again</button>${last}`;
 }
 
+// the outlets a login can see, and a staff button to ask the collector to re-read them from Zomato / Swiggy
+function syncCell(a) {
+  const isActive = (x) => x && ["queued", "running"].includes(x.status);
+  const active = [a.outlet_sync, a.refresh].find(isActive);
+  const r = a.outlet_sync;
+  const head = `<b>${inr.format(a.outlets || 0)}</b> outlet${a.outlets === 1 ? "" : "s"}${a.last_synced_at ? ` <span class="muted">· synced ${timeAgo(a.last_synced_at)}</span>` : ""}`;
+  if (active) {
+    const what = active.kind === "outlets" ? (active.status === "queued" ? "Waiting for the collector…" : "Reading outlets…") : "A login is in progress…";
+    return `${head}<div><button class="btn light" disabled title="${esc(what)}">⏳ ${active.kind === "outlets" ? "Syncing…" : "Busy"}</button></div><div class="sess-note">${esc(what)}</div>`;
+  }
+  const last = !r ? "" : r.status === "done"
+    ? `<div class="sess-note ok">✓ ${esc(r.result || "synced")} · ${timeAgo(r.finished_at)}</div>`
+    : `<div class="sess-note bad">✕ Last sync failed ${timeAgo(r.finished_at)}: ${esc(r.error || "unknown error")}</div>`;
+  return `${head}<div><button class="btn light" data-sync="${a.id}" data-label="${esc(`${a.platform} · ${a.label}`)}" title="Ask the collector which outlets this login can see and add the new ones to the catalog">Sync outlets</button></div>${last}`;
+}
+
 let sessionsPoll = null;
 async function renderSessions(page) {
   clearTimeout(sessionsPoll);
@@ -1646,10 +1662,10 @@ async function renderSessions(page) {
   const btn = (platform, kind, id, label) => `<button class="btn light" data-sess="${platform}|${kind}|${id ?? ""}|${esc(label)}">Paste session</button>`;
   page.innerHTML = `<div class="page-head"><h2>Platform sessions</h2><p class="muted">Zomato and Swiggy logins, stored encrypted in the database. The Windows collector and this site read them from here, so a refresh here reaches every machine on its next run.</p></div>
     <div class="card"><div class="card-head"><h3>Collector accounts</h3></div>
-      <div class="table-wrap"><table class="ov-table"><thead><tr><th>Account</th><th>Client</th><th>Status</th><th>Merchant dashboard</th><th>Automatic login</th><th></th><th>Merchant app (ratings)</th><th></th></tr></thead><tbody>
+      <div class="table-wrap"><table class="ov-table"><thead><tr><th>Account</th><th>Client</th><th>Status</th><th>Merchant dashboard</th><th>Automatic login</th><th>Outlets</th><th></th><th>Merchant app (ratings)</th><th></th></tr></thead><tbody>
       ${d.accounts.map((a) => `<tr class="${a.is_active ? "" : "muted"}"><td><b>${a.platform === "swiggy" ? "Swiggy" : "Zomato"} · ${esc(a.label)}</b>${a.is_active ? "" : " (inactive)"}</td>
         <td>${esc(a.client)}</td><td>${sessionHealth(a)}<div class="sess-note">reads from ${esc(a.reads_from)}</div></td>
-        <td>${when(a.merchant)}</td><td class="sess-login">${loginButton(a)}</td><td>${btn(a.platform, "merchant", a.id, `${a.platform} · ${a.label}`)}</td>
+        <td>${when(a.merchant)}</td><td class="sess-login">${loginButton(a)}</td><td class="sess-login">${syncCell(a)}</td><td>${btn(a.platform, "merchant", a.id, `${a.platform} · ${a.label}`)}</td>
         <td>${a.platform === "zomato" ? when(a.merchant_app) : '<span class="muted">—</span>'}</td><td>${a.platform === "zomato" ? btn(a.platform, "merchant_app", a.id, `${a.platform} · ${a.label} (merchant app)`) : ""}</td></tr>`).join("")}
       </tbody></table></div>
       <p class="muted" style="margin:10px 0 0">Saving a merchant session switches that account to read from the database. Collector logins (<code>run.py zomato session</code>) on any machine save here too once an account reads from the database.</p></div>
@@ -1669,8 +1685,19 @@ async function renderSessions(page) {
     renderSessions(page);
     checkSessionAlerts();
   }));
-  // while a login is queued or running, keep the page current so everyone sees the same state
-  if (d.accounts.some((a) => a.refresh && ["queued", "running"].includes(a.refresh.status))) {
+  page.querySelectorAll("[data-sync]").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true;
+    b.textContent = "⏳ Queuing…";
+    try {
+      await apiJSON(`/staff/sessions/${b.dataset.sync}/sync-outlets`, "POST", {});
+      toast(`Reading the outlets of ${b.dataset.label}. This takes a minute or two.`);
+    } catch (err) {
+      toast(err.status === 409 ? "A request for this login is already in progress" : `Couldn't start: ${err.message}`);
+    }
+    renderSessions(page);
+  }));
+  // while a login or an outlet sync is queued or running, keep the page current so everyone sees the same state
+  if (d.accounts.some((a) => [a.refresh, a.outlet_sync].some((x) => x && ["queued", "running"].includes(x.status)))) {
     sessionsPoll = setTimeout(() => { if (currentRoute() === "sessions" && page.isConnected) renderSessions(page).catch(() => {}); }, 5000);
   } else checkSessionAlerts();
   page.querySelectorAll("[data-sess]").forEach((b) => b.addEventListener("click", () => {

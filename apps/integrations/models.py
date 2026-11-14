@@ -66,6 +66,11 @@ class SessionRefresh(models.Model):
 
     account = models.ForeignKey("outlets.PlatformAccount", on_delete=models.CASCADE, related_name="refreshes")
     status = models.CharField(max_length=10, choices=STATUSES, default=QUEUED)
+    LOGIN, OUTLETS = "login", "outlets"
+    KINDS = [(LOGIN, "Log in again"), (OUTLETS, "Sync outlets")]
+
+    kind = models.CharField(max_length=10, choices=KINDS, default=LOGIN, help_text="what the worker should do for this account")
+    result = models.CharField(max_length=300, blank=True, help_text="what a finished outlet sync found, e.g. '24 outlets, 3 new'")
     requested_by = models.CharField(max_length=150)
     requested_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(null=True, blank=True)
@@ -92,5 +97,5 @@ class SessionRefresh(models.Model):
         n = cls.objects.filter(status=cls.QUEUED, requested_at__lt=cutoff).update(
             status=cls.FAILED, finished_at=now, error="No collector picked this up in 15 minutes. Is the Windows worker running?")
         n += cls.objects.filter(status=cls.RUNNING, started_at__lt=cutoff).update(
-            status=cls.FAILED, finished_at=now, error="The login didn't finish in 15 minutes; the worker may have stopped.")
+            status=cls.FAILED, finished_at=now, error="The request didn't finish in 15 minutes; the worker may have stopped.")
         return n

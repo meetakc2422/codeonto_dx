@@ -1,4 +1,5 @@
-"""Login refresh worker: does the logins staff ask for with the Refresh button on the site's Sessions page.
+"""Login refresh worker: does what staff ask for on the site's Sessions page: log an account in again, or sync the outlets
+that account can see (adds new ones to the catalog; it never deactivates any).
 
     python run.py worker              # keep running, check for requests every 30 seconds
     python run.py worker --once       # handle what is queued now, then exit
@@ -35,7 +36,7 @@ def claim() -> dict | None:
         cur.execute(f"""UPDATE session_refreshes SET status = 'failed', finished_at = now(),
                           error = 'The login didn''t finish in {STALE_MINUTES} minutes; the worker may have stopped.'
                         WHERE status = 'running' AND started_at < now() - interval '{STALE_MINUTES} minutes'""")
-        cur.execute("""SELECT r.id, r.requested_by, a.label, a.platform_id AS platform
+        cur.execute("""SELECT r.id, r.requested_by, r.kind, a.label, a.platform_id AS platform
                          FROM session_refreshes r JOIN platform_accounts a ON a.id = r.account_id
                         WHERE r.status = 'queued' AND a.platform_id = ANY(%s)
                         ORDER BY r.requested_at LIMIT 1
@@ -47,10 +48,10 @@ def claim() -> dict | None:
         return row
 
 
-def finish(request_id: int, ok: bool, error: str = "") -> None:
+def finish(request_id: int, ok: bool, error: str = "", result: str = "") -> None:
     with db.transaction() as cur:
-        cur.execute("UPDATE session_refreshes SET status = %s, finished_at = now(), error = %s WHERE id = %s",
-                    ("done" if ok else "failed", error[:2000], request_id))
+        cur.execute("UPDATE session_refreshes SET status = %s, finished_at = now(), error = %s, result = %s WHERE id = %s",
+                    ("done" if ok else "failed", error[:2000], result[:300], request_id))
 
 
 class _LastError(logging.Handler):
@@ -64,7 +65,34 @@ class _LastError(logging.Handler):
         self.message = record.getMessage()
 
 
+def run_outlet_sync(req: dict, headless: bool) -> None:
+    """Ask the platform which outlets this login can access and update the catalog (add and refresh only: other logins
+    weren't read, so nothing is deactivated). Reports what it found on the site, e.g. '24 outlets, 3 new'."""
+    from . import outlets as shared
+
+    name = f"{req['platform']}/{req['label']}"
+    log.info("Outlet sync %s requested by %s", name, req["requested_by"])
+    catcher = _LastError()
+    log.addHandler(catcher)
+    result = ""
+    try:
+        ok = importlib.import_module(f"{req['platform']}.outlets").run_all([req["label"]], headless=headless)
+        stats = shared.LAST.get(req["label"])
+        if ok and stats:
+            result = f"{stats.get('outlets', 0)} outlets, {stats.get('new', 0)} new"
+        error = "" if ok else (catcher.message or f"Outlet sync failed; see the collector log on {_host.node()}")
+    except Exception as e:  # noqa: BLE001
+        log.exception("Outlet sync %s crashed: %s", name, e)
+        ok, error = False, str(e) or e.__class__.__name__
+    finally:
+        log.removeHandler(catcher)
+    finish(req["id"], ok, error, result)
+    log.info("Outlet sync %s %s%s", name, "done" if ok else "failed", f": {error or result}")
+
+
 def run_one(req: dict, headless: bool) -> None:
+    if req.get("kind") == "outlets":
+        return run_outlet_sync(req, headless)
     name = f"{req['platform']}/{req['label']}"
     log.info("Refresh %s requested by %s: logging in", name, req["requested_by"])
     catcher = _LastError()
@@ -86,7 +114,7 @@ def release_own() -> int:
     after the 15-minute timeout) so the button on the site unlocks."""
     with db.transaction() as cur:
         cur.execute("""UPDATE session_refreshes SET status = 'failed', finished_at = now(),
-                          error = 'The worker was restarted during this login. Click Log in again.'
+                          error = 'The worker was restarted while running this. Click the button again.'
                         WHERE status = 'running' AND worker = %s""", (worker_name(),))
         return cur.rowcount
 

@@ -7,6 +7,8 @@ from .common import ConfigError, log, require_env
 
 Fetch = Callable[[dict], list[catalog.Outlet]]  # credentials -> outlets
 
+LAST: dict[str, dict] = {}  # account label -> what the latest sync found ({"outlets": n, "new": n, ...}), for the login worker to report
+
 
 def config(account: str) -> dict:
     return require_env("CODEONTO_DATABASE_URL")
@@ -23,6 +25,7 @@ def sync(platform: str, accounts: list[str], fetch: Fetch, force: bool = False) 
         log.error("%s outlets: %s", platform, e)
         return False
 
+    LAST.clear()
     seen: set[str] = set()
     synced_ids, failed = set(), []
     for label in accounts:
@@ -37,6 +40,7 @@ def sync(platform: str, accounts: list[str], fetch: Fetch, force: bool = False) 
                 db.mark_account_synced(cur, account["id"])
             seen |= {o.external_id for o in outlets}
             synced_ids.add(account["id"])
+            LAST[label] = stats
             log.info("%s outlets %s: %s", platform, label, stats)
         except (ConfigError, PermissionError) as e:
             log.error("%s outlets %s: %s", platform, label, e)
