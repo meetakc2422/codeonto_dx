@@ -71,6 +71,7 @@ api = [
     path("brands/<int:brand_id>/outlets/link-suggestions", outlets.link_suggestions),
     path("catalog/<slug:platform>", outlets.catalog),
     path("brands/<int:brand_id>/kpis", metrics.brand_kpis),
+    path("brands/<int:brand_id>/kpi-drops", metrics.brand_drops),
     path("brands/<int:brand_id>/kpis/<slug:kpi_code>/trend", metrics.kpi_trend),
     path("brands/<int:brand_id>/leaderboard/<slug:kpi_code>", metrics.leaderboard),
     path("brands/<int:brand_id>/rollups/reviews", metrics.run_review_rollup),

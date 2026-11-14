@@ -15,7 +15,7 @@ from .rollups import rollup_review_metrics
 # set, so a plain average; listing_rating carries its number of ratings so the brand rating is a weighted average).
 _AGG_SQL = """
 WITH base AS (
-  SELECT k.code, k.name, k.unit, k.aggregation, k.higher_is_better, m.code AS module, k.sort_order,
+  SELECT k.code, k.name, k.unit, k.aggregation, k.higher_is_better, m.code AS module, k.sort_order, md.outlet_id,
          md.metric_date, md.value, COALESCE(md.weight, 1) AS w,
          ROW_NUMBER() OVER (PARTITION BY k.id, md.outlet_id, md.platform {date_part}
                             ORDER BY md.metric_date DESC) AS rn
@@ -31,7 +31,7 @@ WITH base AS (
     AND (%(module)s::text IS NULL OR m.code = %(module)s)
     AND (%(kpi)s::text IS NULL OR k.code = %(kpi)s)
 )
-SELECT code, name, unit, higher_is_better, module {date_select},
+SELECT code, name, unit, higher_is_better, module {date_select}{outlet_select},
   CASE aggregation
     WHEN 'sum'          THEN SUM(value)
     WHEN 'avg'          THEN AVG(value)
@@ -42,14 +42,14 @@ SELECT code, name, unit, higher_is_better, module {date_select},
                                   ELSE SUM(value * w) FILTER (WHERE rn = 1) / NULLIF(SUM(w) FILTER (WHERE rn = 1), 0) END
   END AS value
 FROM base
-GROUP BY code, name, unit, aggregation, higher_is_better, module, sort_order {date_select}
-ORDER BY module, sort_order {date_select}
+GROUP BY code, name, unit, aggregation, higher_is_better, module, sort_order {date_select}{outlet_select}
+ORDER BY module, sort_order {date_select}{outlet_select}
 """
 
 
-def _aggregate(by_date: bool, **params) -> list[dict]:
+def _aggregate(by_date: bool, by_outlet: bool = False, **params) -> list[dict]:
     sql = _AGG_SQL.format(date_part=", md.metric_date" if by_date else "",
-                          date_select=", metric_date" if by_date else "")
+                          date_select=", metric_date" if by_date else "", outlet_select=", outlet_id" if by_outlet else "")
     params = {"outlet_id": None, "platform": None, "module": None, "kpi": None, "allowed": None, **params}
     if isinstance(params["outlet_id"], int):  # one outlet passed directly (leaderboard): the SQL takes a list
         params["outlet_id"] = [params["outlet_id"]]
@@ -104,6 +104,53 @@ def brand_kpis(request, brand_id):
         r["change_pct"] = (round((r["value"] - prev) / abs(prev) * 100, 2)
                            if prev not in (None, 0) and r["value"] is not None else None)
     return Response({"start": start, "end": end, "kpis": current})
+
+
+# how far a KPI must move the wrong way before it counts as a drop, by unit: points for percentages, stars for ratings,
+# a share of the earlier value for everything else (and a floor on that value, so 2 orders -> 1 isn't an alert)
+_MIN_MOVE = {"percent": 5.0, "rating": 0.3}
+_MIN_PCT = 20.0
+_MIN_BASE = {"count": 20, "currency": 2000, "seconds": 60, "minutes": 2, "ratio": 0.0}
+
+
+@api_view(["GET"])
+def brand_drops(request, brand_id):
+    """The biggest wrong-way moves of each outlet's KPIs against the previous period of the same length, worst first:
+    [{outlet_id, outlet, city, code, name, module, unit, value, previous, change_pct, severity}]."""
+    brand = get_brand(request.user, brand_id)
+    start, end = _range(request)
+    span = end - start + timedelta(days=1)
+    f = _filters(request)
+    cur = _aggregate(False, True, brand_id=brand_id, start=start, end=end, **f)
+    prev = {(r["outlet_id"], r["code"]): r["value"] for r in
+            _aggregate(False, True, brand_id=brand_id, start=start - span, end=start - timedelta(days=1), **f)}
+    outlets = {o.id: o for o in in_scope(brand.outlets.filter(is_active=True), request.user, "id")}
+    out = []
+    for r in cur:
+        o, v, p = outlets.get(r["outlet_id"]), r["value"], prev.get((r["outlet_id"], r["code"]))
+        if o is None or v is None or p is None:
+            continue
+        move = (v - p) if r["higher_is_better"] else (p - v)  # negative = got worse
+        if move >= 0:
+            continue
+        unit = r["unit"]
+        if unit in _MIN_MOVE:
+            if -move < _MIN_MOVE[unit]:
+                continue
+            pct = round(move / abs(p) * 100, 1) if p else None
+            size = -move / _MIN_MOVE[unit]
+        else:
+            if not p or abs(p) < _MIN_BASE.get(unit, 0) or -move / abs(p) * 100 < _MIN_PCT:
+                continue
+            pct = round(move / abs(p) * 100, 1)
+            size = -move / abs(p) * 100 / _MIN_PCT
+        out.append({"outlet_id": o.id, "outlet": o.display_name.split(" · ", 1)[-1], "city": o.city, "code": r["code"], "name": r["name"],
+                    "module": r["module"], "unit": unit, "higher_is_better": r["higher_is_better"], "value": v, "previous": p, "change_pct": pct,
+                    "severity": "critical" if size >= 2.5 else "warning", "_size": size})
+    out.sort(key=lambda x: -x["_size"])
+    for x in out:
+        del x["_size"]
+    return Response({"start": start, "end": end, "drops": out[:200]})
 
 
 @api_view(["GET"])

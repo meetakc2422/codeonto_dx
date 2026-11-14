@@ -525,13 +525,16 @@ const menuPrice = (i) => i.offer_price ? `<b title="${esc(i.offer_text || "Offer
 async function renderOverview(page) {
   const has = (code) => state.config.modules.some((m) => m.code === code);
   const opt = (p) => p.catch(() => null);
-  const [kpiRes, summary, uptime, stock, pay, payIssues] = await Promise.all([
+  const HEAD_KPIS = ["gross_revenue", "delivered_orders"].filter((c) => kpiMeta(c));  // the two tiles with a trend line
+  const [kpiRes, summary, uptime, stock, pay, payIssues, dropsRes, ...headTrends] = await Promise.all([
     api(`/brands/${state.brandId}/kpis`, filterParams()),
     api(`/brands/${state.brandId}/reviews/summary`, filterParams()),
     has("store_uptime") ? opt(api(`/brands/${state.brandId}/uptime/summary`, filterParams())) : null,
     has("stock_outs") ? opt(api(`/brands/${state.brandId}/stock-outs/summary`, filterParams())) : null,
     has("reconciliation") ? opt(api(`/brands/${state.brandId}/payouts/summary`, filterParams())) : null,
     has("reconciliation") ? opt(api(`/brands/${state.brandId}/payouts/cycles`, filterParams({ status: "issues", limit: 500 }))) : null,
+    opt(api(`/brands/${state.brandId}/kpi-drops`, filterParams())),
+    ...HEAD_KPIS.map((c) => opt(api(`/brands/${state.brandId}/kpis/${c}/trend`, filterParams()))),
   ]);
   if (!kpiRes.kpis.length && !summary.total && !uptime && !stock && !pay?.cycles) return renderNoData(page);
   const payByOutlet = new Map();
@@ -542,33 +545,38 @@ async function renderOverview(page) {
   const rating = kpiRes.kpis.find((k) => k.code === "avg_rating");
   const offline = (uptime?.outlets || []).filter((o) => o.offline_since);
 
-  // ---- 1. four status tiles ----
-  const tile = (tone, href, label, value, sub, extra = "") => `<a class="ov-tile ${tone}" href="${href}">
-      <span class="ov-tile-label">${label}</span><div class="ov-tile-value">${value}${extra}</div><span class="ov-tile-sub">${sub}</span></a>`;
-  const tiles = [
-    platformRating
-      ? tile(platformRating.change_pct <= -2 ? "amber" : "ok", "#/reviews", "Platform rating", `${fmt(platformRating.value, "rating")}<small>★</small>`,
-          [ratingCount ? `${compactCount(ratingCount.value)} ratings, weighted` : "weighted by number of ratings",
-           weekRating ? `<span class="${weekRating.value < platformRating.value - 0.2 ? "ov-bad" : ""}">this week ${fmt(weekRating.value, "rating")}★</span>` : "",
-           summary.avg_rating != null ? `reviews ${fmt(summary.avg_rating, "rating")}★` : ""].filter(Boolean).join(" · "), changeChip(platformRating))
-      : tile(rating?.change_pct <= -2 ? "amber" : "ok", "#/reviews", "Rating",
-          rating?.value != null ? `${fmt(rating.value, "rating")}<small>★</small>` : summary.avg_rating != null ? `${fmt(summary.avg_rating, "rating")}<small>★</small>` : "—",
-          `${inr.format(summary.total)} reviews · ${periodLabel()}`, rating ? changeChip(rating) : ""),
-    tile(summary.pending ? (summary.negative ? "red" : "amber") : "ok", "#/reviews", "Reviews to reply",
-      inr.format(summary.pending), summary.pending ? `${inr.format(summary.negative)} negative in this period` : "All replied"),
-  ];
-  if (uptime) tiles.push(tile(offline.length ? "red" : "ok", "#/store_uptime", "Outlets offline", inr.format(offline.length),
-    offline.length ? "Not taking orders right now" : `All online · ${uptime.uptime_pct != null ? fmt(uptime.uptime_pct, "percent") : "—"} uptime`));
-  if (stock) tiles.push(tile(stock.active ? "red" : "ok", "#/stock_outs", "Items out of stock", inr.format(stock.active),
-    stock.active ? `across ${plural(stock.outlets_affected, "outlet")}` : "Full menu live"));
+  // ---- the eight tiles: the numbers that matter, each linking to its page ----
   const PAY_SHORT = { payout_mismatch: "don't match orders", order_count_mismatch: "order count off", unsettled_orders: "orders unsettled",
     order_payout_math: "order payout off", order_fee_math: "order fee off", fee_rate_changed: "fee % changed", paid_without_utr: "no UTR", overdue: "overdue", deductions_carried: "deductions carried over" };
   const PAY_MONEY = new Set(["payout_mismatch", "overdue", "fee_rate_changed", "order_payout_math", "order_fee_math"]);
-  if (pay?.cycles) tiles.push(tile(pay.with_issues ? "red" : "ok", "#/reconciliation", "Payouts to check", inr.format(pay.with_issues),
-    pay.with_issues
-      ? `<span class="ov-issues">${pay.issues.slice(0, 4).map((i) => `<span class="ov-issue ${PAY_MONEY.has(i.code) ? "money" : ""}" data-payissue="${i.code}" title="Show these payouts">${inr.format(i.count)} ${PAY_SHORT[i.code] || esc(i.label)}</span>`).join("")}</span>
-         <span>${pay.discrepancy_total ? `${rupees(pay.discrepancy_total)} unexplained` : "money matches orders"}</span>`
-      : `All ${inr.format(pay.reconciled)} checked payouts match`));
+  const kpi = (code) => kpiRes.kpis.find((k) => k.code === code && k.value != null);
+  const sparkOf = (code) => ((headTrends[HEAD_KPIS.indexOf(code)] || []).length > 1 ? sparkline(headTrends[HEAD_KPIS.indexOf(code)]) : "");
+  const T = (tone, href, label, value, sub, chip = "", foot = "") => `<a class="ov-t ${tone}" href="${href}">
+      <span class="ov-t-label">${label}</span><div class="ov-t-value">${value}${chip}</div><span class="ov-t-sub">${sub}</span>${foot ? `<div class="ov-t-foot">${foot}</div>` : ""}</a>`;
+  const vs = `vs previous ${state.days === 1 ? "day" : state.days + " days"}`;
+  const tiles = [];
+  const shownRating = platformRating || rating;
+  if (shownRating || summary.avg_rating != null) {
+    tiles.push(T((shownRating?.change_pct ?? 0) <= -2 ? "amber" : "ok", "#/reviews", "Rating",
+      `${shownRating?.value != null ? fmt(shownRating.value, "rating") : fmt(summary.avg_rating, "rating")}<small>★</small>`,
+      [ratingCount ? `${compactCount(ratingCount.value)} ratings` : "", weekRating ? `this week ${fmt(weekRating.value, "rating")}★` : ""].filter(Boolean).join(" · ") || `${inr.format(summary.total)} reviews`,
+      shownRating ? changeChip(shownRating) : ""));
+  }
+  const revK = kpi("gross_revenue"), ordK = kpi("delivered_orders");
+  if (revK) tiles.push(T((revK.change_pct ?? 0) <= -10 ? "amber" : "ok", "#/marketplace_sales", "Revenue", fmt(revK.value, revK.unit), vs, changeChip(revK), sparkOf("gross_revenue")));
+  if (ordK) tiles.push(T((ordK.change_pct ?? 0) <= -10 ? "amber" : "ok", "#/marketplace_sales", "Orders", fmt(ordK.value, ordK.unit), vs, changeChip(ordK), sparkOf("delivered_orders")));
+  if (stock) {
+    const loss = stock.period_loss;
+    tiles.push(T(loss?.high ? "red" : stock.active ? "amber" : "ok", "#/stock_outs", "Sales lost to stock-outs",
+      loss?.high ? `${rupeesShort(loss.low)}<small> – ${rupeesShort(loss.high)}</small>` : "—", loss?.high ? `estimated, best sellers, ${periodLabel()}` : "not enough order history to estimate"));
+    tiles.push(T(stock.active ? "amber" : "ok", "#/stock_outs", "Items out of stock", inr.format(stock.active), stock.active ? `across ${plural(stock.outlets_affected, "outlet")}` : "Full menu live"));
+  }
+  if (uptime) tiles.push(T(offline.length ? "red" : "ok", "#/store_uptime", "Outlets offline", inr.format(offline.length),
+    offline.length ? "Not taking orders right now" : `All online${uptime.uptime_pct != null ? ` · ${fmt(uptime.uptime_pct, "percent")} uptime` : ""}`));
+  tiles.push(T(summary.pending ? (summary.negative ? "red" : "amber") : "ok", "#/reviews", "Reviews to reply", inr.format(summary.pending),
+    summary.pending ? `${inr.format(summary.negative)} negative in this period` : "All replied"));
+  if (pay?.cycles) tiles.push(T(pay.with_issues ? "red" : "ok", "#/reconciliation", "Payouts to check", inr.format(pay.with_issues),
+    pay.with_issues ? (pay.discrepancy_total ? `${rupees(pay.discrepancy_total)} unexplained` : "mismatches to review") : `All ${inr.format(pay.reconciled)} checked payouts match`));
 
   // ---- alerts: everything that got worse or needs action, worst first, in one list ----
   const nameOf = new Map(platformLocations().map((l) => [l.id, l.name]));
@@ -601,39 +609,50 @@ async function renderOverview(page) {
   })).sort((a, b) => b.offline - a.offline || b.pay - a.pay || b.out - a.out || b.pending - a.pending || (a.rating ?? 9) - (b.rating ?? 9));
   const bad = (cond, html) => `<td class="num ${cond ? "ov-bad" : ""}">${html}</td>`;
 
+  const ALERTS_SHOWN = 6, ROWS_SHOWN = 10;
   page.innerHTML = `
-    <div class="ov-tiles">${tiles.join("")}</div>
-    ${pay?.cycles ? `<div class="card ov-pay-card">
-      <div class="card-head"><h3>Payouts</h3><a class="muted" href="#/reconciliation">Open reconciliation →</a></div>
-      <div class="ov-pay">
-        <div><span class="ov-tile-label">Paid</span><b>${rupees(pay.paid_total)}</b><small class="muted">${periodLabel()}</small></div>
-        <div><span class="ov-tile-label">To be paid</span><b>${rupees(pay.to_be_paid_total)}</b><small class="muted">${plural(pay.to_be_paid_cycles, "payout")}</small></div>
-        <div><span class="ov-tile-label">Unexplained difference</span><b class="${pay.discrepancy_total ? "ov-bad" : ""}">${rupees(pay.discrepancy_total)}</b><small class="muted">${inr.format(pay.reconciled)} of ${inr.format(pay.cycles)} checked</small></div>
-        <div><span class="ov-tile-label">Commission take rate</span><b>${pay.take_rate == null ? "—" : `${pay.take_rate.toFixed(2)}%`}</b><small class="muted">service fee on checked orders</small></div>
-      </div>
-    </div>` : ""}
-    <div class="card" style="margin-top:12px">
+    <div class="ov-tgrid">${tiles.join("")}</div>
+    <div class="card ov-alerts">
+      <div class="card-head"><h3>${alerts.length ? "Needs attention" : "All clear"}</h3>${critical ? `<span class="ov-crit">${critical} critical</span>` : '<span class="muted">nothing needs fixing right now</span>'}</div>
+      <div id="ovAlertList"></div>
+    </div>
+    <div class="card" style="margin-top:14px">
       <div class="card-head"><h3>Outlets at a glance</h3><span class="muted">worst first · click to focus</span></div>
       <div class="cp-scroll"><table class="ov-table"><thead><tr><th>Outlet</th><th class="num">Rating</th><th class="num">To reply</th>
-        ${uptime ? '<th class="num">Status</th>' : ""}${stock ? '<th class="num">Items out</th>' : ""}${pay?.cycles ? '<th class="num">Payouts to check</th>' : ""}</tr></thead><tbody>
-        ${rows.map((r) => `<tr class="cp-click" data-outlet="${r.id}">
-          <td><strong>${esc(r.name)}</strong><small class="muted">${esc(r.city || "")}</small></td>
-          ${bad(r.rating != null && r.rating < 3.5, r.rating != null ? `${fmt(r.rating, "rating")} ★` : '<span class="muted">—</span>')}
-          ${bad(r.pending > 0, r.pending || '<span class="muted">0</span>')}
-          ${uptime ? bad(r.offline, r.offline ? "Offline" : r.uptime != null ? `<span class="muted">${fmt(r.uptime, "percent")}</span>` : '<span class="muted">—</span>') : ""}
-          ${stock ? bad(r.out > 0, r.out || '<span class="muted">0</span>') : ""}
-          ${pay?.cycles ? bad(r.pay > 0, r.pay || '<span class="muted">0</span>') : ""}</tr>`).join("")}
-      </tbody></table></div>
+        ${uptime ? '<th class="num">Status</th>' : ""}${stock ? '<th class="num">Items out</th>' : ""}${pay?.cycles ? '<th class="num">Payouts to check</th>' : ""}</tr></thead><tbody id="ovRows"></tbody></table></div>
+      <div id="ovRowsMore"></div>
     </div>`;
 
-  page.querySelectorAll("[data-payissue]").forEach((el) => el.addEventListener("click", (e) => {
-    e.preventDefault(); e.stopPropagation();
-    Object.assign(payoutFilters, { issue: el.dataset.payissue, status: "", q: "" });
-    location.hash = "#/reconciliation";
-  }));
-  page.querySelectorAll("[data-outlet]").forEach((r) => r.addEventListener("click", () => {
-    state.locationId = r.dataset.outlet; showSelectedOutlet(); render();
-  }));
+  let allAlerts = false, allRows = false;
+  const drawAlerts = () => {
+    const list = allAlerts ? alerts : alerts.slice(0, ALERTS_SHOWN);
+    $("#ovAlertList").innerHTML = list.map((a) => `<a class="ov-alert ${a.sev}" href="${a.href}" data-ai="${alerts.indexOf(a)}">
+        <i class="ov-dot"></i><span class="ov-alert-text"><strong>${esc(a.title)}</strong><small>${esc(a.sub)}</small></span><span class="ov-alert-cat">${esc(a.cat)}</span></a>`).join("")
+      + (alerts.length > ALERTS_SHOWN ? `<button type="button" class="ov-more" id="ovAlertsMore">${allAlerts ? "Show fewer" : `Show all ${alerts.length}`}</button>` : "");
+    $("#ovAlertsMore")?.addEventListener("click", () => { allAlerts = !allAlerts; drawAlerts(); });
+  };
+  const drawRows = () => {
+    const list = allRows ? rows : rows.slice(0, ROWS_SHOWN);
+    $("#ovRows").innerHTML = list.map((r) => `<tr class="cp-click" data-outlet="${r.id}">
+          <td><strong>${esc(r.name)}</strong><small class="muted">${esc(r.city || "")}</small></td>
+          <td class="num ${r.rating != null && r.rating < 3.5 ? "ov-bad" : ""}">${r.rating != null ? `<span class="ov-rbar"><i style="width:${Math.max(4, (r.rating / 5) * 100)}%" class="${r.rating < 3.5 ? "low" : r.rating < 4 ? "mid" : ""}"></i></span>${fmt(r.rating, "rating")} ★` : '<span class="muted">—</span>'}</td>
+          ${bad(r.pending > 0, r.pending || '<span class="muted">0</span>')}
+          ${uptime ? `<td class="num">${r.offline ? '<span class="ov-pill red">Offline</span>' : r.uptime != null ? `<span class="ov-pill ${r.uptime < 95 ? "amber" : "ok"}">${fmt(r.uptime, "percent")}</span>` : '<span class="muted">—</span>'}</td>` : ""}
+          ${stock ? bad(r.out > 0, r.out || '<span class="muted">0</span>') : ""}
+          ${pay?.cycles ? bad(r.pay > 0, r.pay || '<span class="muted">0</span>') : ""}</tr>`).join("");
+    $("#ovRowsMore").innerHTML = rows.length > ROWS_SHOWN ? `<button type="button" class="ov-more" id="ovRowsBtn">${allRows ? "Show fewer" : `Show all ${rows.length} outlets`}</button>` : "";
+    $("#ovRowsBtn")?.addEventListener("click", () => { allRows = !allRows; drawRows(); });
+  };
+  drawAlerts();
+  drawRows();
+  $("#ovAlertList").addEventListener("click", (e) => {
+    const a = e.target.closest("[data-ai]");
+    if (a && alerts[Number(a.dataset.ai)].set) Object.assign(reviewFilters, alerts[Number(a.dataset.ai)].set);
+  });
+  $("#ovRows").addEventListener("click", (e) => {
+    const r = e.target.closest("[data-outlet]");
+    if (r) { state.locationId = r.dataset.outlet; showSelectedOutlet(); render(); }
+  });
 }
 
 function leaderboardTable(rows, unit) {
