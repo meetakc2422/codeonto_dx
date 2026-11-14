@@ -2090,7 +2090,7 @@ function showLossDetail(name) {
       <button class="btn light" data-closeloss>Close</button></div>
     <table class="cp-table"><thead><tr><th>Outlet</th><th>Went out</th><th>Back</th><th>Out for</th><th class="num">Sales lost</th><th>By mealtime</th></tr></thead><tbody>
       ${it.episodes.map((e) => `<tr><td>${esc(e.outlet)}</td><td>${esc(at(e.from))}</td><td>${e.back ? esc(at(e.back)) : '<b class="bad">still out</b>'}</td><td>${hrs(e.hours)}${e.counted_hours < e.hours - 0.5 ? `<small class="muted"> · counted ${hrs(e.counted_hours)}</small>` : ""}</td>
-        <td class="num"><b>${rupees(e.low)} – ${rupees(e.high)}</b></td><td class="muted">${meals(e.meals)}</td></tr>`).join("")}</tbody></table>
+        <td class="num">${e.negligible ? `<span class="muted" title="Under 5% of a normal day's sales of this dish here (about ${e.daily_units} a day). Estimated ${rupees(e.low)} – ${rupees(e.high)}">Negligible</span>` : `<b>${rupees(e.low)} – ${rupees(e.high)}</b>`}</td><td class="muted">${meals(e.meals)}</td></tr>`).join("")}</tbody></table>
     ${it.episode_count > it.episodes.length ? `<p class="muted">Showing the ${it.episodes.length} biggest of ${it.episode_count} stock-outs.</p>` : ""}
     <p class="muted">Estimate: what this dish normally sells in each mealtime at that outlet, for the hours it was out, at its latest price. The low end assumes 6 in 10 of those customers order something else. Each stock-out counts for at most its first 3 days, and times before the period start are cut off.</p>`;
   box.hidden = false;

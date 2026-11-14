@@ -24,6 +24,7 @@ TOP_MAX = 20            # ...but never more than this many
 MIN_UNITS = 8           # an item needs this many sales in the window to count as a best seller
 EPISODES_SHOWN = 40     # stock-outs listed per dish in the breakdown panel
 ITEMS_WITH_EPISODES = 12  # dishes that carry that list (the rest are totals only)
+NEGLIGIBLE_PCT = 5      # a stock-out that loses under this % of a normal day's sales of the dish at that outlet is shown as negligible
 CAP_DAYS = 3            # a stock-out counts for at most its first 3 days: beyond that the dish is more likely delisted than lost sales (same rule as the 'off 3+ days' group)
 MIN_DAYS = 7            # and this many in-stock days before we put a rupee figure on it
 LOW_FACTOR = 0.4        # low end of the range: share of the loss that is real if some customers choose something else
@@ -225,15 +226,18 @@ def period_loss(episodes: list[StockOut], start: date, end: date, now: datetime,
         b = min(real_end, first + timedelta(days=CAP_DAYS))
         if key not in rates or key not in price or b <= a:
             continue
-        per_meal = {m: u * price[key] for m, u in _units_by_meal(rates[key], a, b).items()}  # ₹ (high end) per meal
+        by_meal_units = _units_by_meal(rates[key], a, b)
+        per_meal = {m: u * price[key] for m, u in by_meal_units.items()}  # ₹ (high end) per meal
         high = sum(per_meal.values())
+        daily = sum(rates[key].values())  # what the dish normally sells here on a day
         m = merged.setdefault(e.item_name, {"item_name": e.item_name, "outlet_set": set(), "high": 0.0, "price": price[key], "episodes": []})
         m["outlet_set"].add(e.outlet_id)
         m["high"] += high
         for meal, v in per_meal.items():
             by_meal[meal] += v
         m["episodes"].append({"outlet": _outlet_label(e.outlet), "from": first.isoformat(), "back": e.restored_at.isoformat() if e.restored_at else None,
-                              "hours": round((real_end - a).total_seconds() / 3600, 1), "counted_hours": round((b - a).total_seconds() / 3600, 1), "high": round(high), "low": round(high * LOW_FACTOR),
+                              "hours": round((real_end - a).total_seconds() / 3600, 1), "counted_hours": round((b - a).total_seconds() / 3600, 1),
+                              "negligible": sum(by_meal_units.values()) < daily * NEGLIGIBLE_PCT / 100, "daily_units": round(daily, 1), "high": round(high), "low": round(high * LOW_FACTOR),
                               "meals": {k: [round(v * LOW_FACTOR), round(v)] for k, v in per_meal.items() if v >= 1}})
     items = sorted(({"item_name": m["item_name"], "outlets": len(m["outlet_set"]), "price": m["price"], "high": round(m["high"]),
                      "low": round(m["high"] * LOW_FACTOR), "episode_count": len(m["episodes"]),

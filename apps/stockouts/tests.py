@@ -112,6 +112,23 @@ class TopSellers(OutletsBase):
         b = loss.period_loss([three], today - timedelta(days=29), today, now, now - timedelta(days=3))
         self.assertEqual(a["high"], b["high"])  # 12 days out is valued the same as 3
 
+    def test_a_tiny_loss_is_marked_negligible(self):
+        now = timezone.now()
+        today = loss.service_day(now)
+        day = datetime.combine(today - timedelta(days=2), datetime.min.time(), tzinfo=IST)
+
+        def episode(start_h, minutes):
+            s = day + timedelta(hours=start_h)
+            return StockOut(outlet=self.mine, platform=self.platform, item_name="Hit Burger", log_date=day.date(), category="Burgers",
+                            first_detected_at=s, last_detected_at=s, restored_at=s + timedelta(minutes=minutes), is_active=False)
+
+        def flags(ep):
+            res = loss.period_loss([ep], today - timedelta(days=29), today, now, now - timedelta(days=3))
+            return [e["negligible"] for it in res["items"] for e in it["episodes"]]
+
+        self.assertEqual(flags(episode(19, 10)), [True])    # ten minutes of Dinner: under 5% of a normal day (3 sold at dinner)
+        self.assertEqual(flags(episode(19, 240)), [False])  # all of Dinner: the whole day's sales
+
     def test_summary_has_the_period_loss(self):
         owner = self.as_user(self.owner).get(f"/api/brands/{self.brand_a.pk}/stock-outs/summary").json()
         self.assertIn("period_loss", owner)
