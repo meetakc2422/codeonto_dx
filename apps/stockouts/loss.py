@@ -232,7 +232,7 @@ def period_loss(episodes: list[StockOut], start: date, end: date, now: datetime,
         m["high"] += high
         for meal, v in per_meal.items():
             by_meal[meal] += v
-        m["episodes"].append({"outlet": _outlet_label(e.outlet), "from": a.isoformat(), "back": e.restored_at.isoformat() if e.restored_at else None,
+        m["episodes"].append({"outlet": _outlet_label(e.outlet), "from": first.isoformat(), "back": e.restored_at.isoformat() if e.restored_at else None,
                               "hours": round((real_end - a).total_seconds() / 3600, 1), "counted_hours": round((b - a).total_seconds() / 3600, 1), "high": round(high), "low": round(high * LOW_FACTOR),
                               "meals": {k: [round(v * LOW_FACTOR), round(v)] for k, v in per_meal.items() if v >= 1}})
     items = sorted(({"item_name": m["item_name"], "outlets": len(m["outlet_set"]), "price": m["price"], "high": round(m["high"]),

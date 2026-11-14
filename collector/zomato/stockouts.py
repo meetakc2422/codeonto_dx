@@ -66,7 +66,14 @@ def _fetch(cookies: dict, res_id: str) -> list[dict]:
     if not body.get("success", True) and "login" in (body.get("message") or "").lower():
         raise PermissionError("Zomato session expired; run `run.py zomato session` for this account")
 
-    menu = (body.get("data") or {}).get("menuResponse") or {}
+    return out_items((body.get("data") or {}).get("menuResponse") or {})
+
+
+def out_items(menu: dict) -> list[dict]:
+    """The items customers cannot order, from the menu editor's answer. An item is out when it is switched off as a whole
+    (it has an auto turn-on time) or when every one of its variants is out. One variant being out (a combo with a drink
+    that is off, say) leaves the item orderable, so it does not count. A name listed twice is out only when every
+    listing of it is."""
     category_of = {}
     for cw in menu.get("categoryWrappers") or []:
         name = (cw.get("category") or {}).get("name", "")
@@ -74,20 +81,24 @@ def _fetch(cookies: dict, res_id: str) -> list[dict]:
             for ent in sub.get("subCategoryEntities") or []:
                 category_of[str(ent.get("entityId"))] = name
 
-    items: dict[str, dict] = {}
+    listings: dict[str, list[dict]] = {}
     for w in menu.get("catalogueWrappers") or []:
         cat = w.get("catalogue") or {}
+        name = (cat.get("name") or "").strip()
+        if not name:
+            continue
         out, back = "autoTurnOnTime" in cat, cat.get("autoTurnOnTime")
         if not out:
-            for vw in w.get("variantWrappers") or []:
-                v = vw.get("variant") or {}
-                if v.get("inStock") is False:
-                    out, back = True, v.get("turnOnTime")
-                    break
-        name = (cat.get("name") or "").strip()
-        if out and name and (name not in items or (back and not items[name]["back_at"])):
-            items[name] = {"item_name": name, "category": category_of.get(str(cat.get("catalogueId")), ""), "back_at": back or ""}
-    return list(items.values())
+            variants = [vw.get("variant") or {} for vw in w.get("variantWrappers") or []]
+            if variants and all(v.get("inStock") is False for v in variants):
+                out, back = True, next((v.get("turnOnTime") for v in variants if v.get("turnOnTime")), None)
+        listings.setdefault(name, []).append({"out": out, "back": back, "category": category_of.get(str(cat.get("catalogueId")), "")})
+    items = []
+    for name, ls in listings.items():
+        if all(x["out"] for x in ls):
+            back = next((x["back"] for x in ls if x["back"]), "")
+            items.append({"item_name": name, "category": ls[0]["category"], "back_at": back or ""})
+    return items
 
 
 def _sync(cur, outlet_id: int, items: list[dict], now: datetime, slots=None, platform: str = "zomato") -> tuple[list[dict], list[dict]]:
