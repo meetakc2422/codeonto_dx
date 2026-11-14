@@ -82,8 +82,30 @@ def parse_orders(objects: list[dict], outlet_id: int) -> list[dict]:
     return rows
 
 
+CHUNK_DAYS = cfg.integer("SWIGGY_ORDERS_CHUNK_DAYS", 8)  # Swiggy accepts at most 10 days per request; one more day is added before each window
+
+
 def fetch_history(token: str, swiggy_id: str, start, end) -> list[dict]:
-    """Every order of one store between two dates (inclusive), newest first, page by page. Raises PermissionError when the login is dead."""
+    """Every order of one store between two dates (inclusive), fetched in windows of CHUNK_DAYS because Swiggy limits the span.
+    Raises PermissionError when the login is dead."""
+    out, a = [], start
+    while a <= end:
+        b = min(end, a + timedelta(days=CHUNK_DAYS - 1))
+        out.extend(_fetch_window(token, swiggy_id, a, b))
+        a = b + timedelta(days=1)
+        if a <= end:
+            time.sleep(random.uniform(*PACE_SEC))
+    seen, unique = set(), []  # windows overlap by a day, so an order can come back twice
+    for o in out:
+        k = str(o.get("order_id") or id(o))
+        if k not in seen:
+            seen.add(k)
+            unique.append(o)
+    return unique
+
+
+def _fetch_window(token: str, swiggy_id: str, start, end) -> list[dict]:
+    """One window of orders (inclusive dates), newest first, page by page."""
     import requests
 
     if not token:
