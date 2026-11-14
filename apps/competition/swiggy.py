@@ -352,7 +352,7 @@ def menu_once(place: dict, res_id: str) -> dict:
         agg = ((it.get("ratings") or {}).get("aggregatedRating")) or {}
         tags = [t for t in [(it.get("ribbon") or {}).get("text"), "Bestseller" if it.get("isBestseller") else None] if t]
         items[it["id"]] = {"id": it["id"], "name": it.get("name", ""), "section": section, "category": it.get("category") or category,
-                           "price": price, "offer_price": offer_price, "offer_text": "", "min_price": min([price, *variant_prices]) if price else None, "max_price": max([price, *variant_prices]) if price else None,
+                           "price": price, "offer_price": offer_price, "offer_text": " · ".join(t["title"] for t in it.get("offerTags") or [] if t.get("title")), "min_price": min([price, *variant_prices]) if price else None, "max_price": max([price, *variant_prices]) if price else None,
                            "veg": (it.get("itemAttribute") or {}).get("vegClassifier") == "VEG" or it.get("isVeg") == 1,
                            "tags": list(dict.fromkeys(tags)), "reorder_score": None,
                            "item_rating": float(agg["rating"]) if agg.get("rating") else None, "popularity": _count(agg.get("ratingCount")),
