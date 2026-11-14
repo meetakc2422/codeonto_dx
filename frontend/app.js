@@ -1710,7 +1710,7 @@ async function renderReplyService(page) {
       <p class="muted">Which Zomato outlets can send review replies to Zomato, by res ID. <b>Nothing is sent for any outlet unless it has a row below that is switched on.</b> The collector on the Windows server does the sending, every 3 hours.</p></div>
     <div class="card"><div class="card-head"><h3>Give access</h3></div>
       <label class="rs-wide">Zomato res IDs (one per line, or separated by commas)
-        <textarea id="rsIds" rows="3" placeholder="22860943&#10;22394547"></textarea></label>
+        <textarea id="rsIds" rows="3" placeholder="12345678&#10;23456789"></textarea></label>
       <div class="rs-form">
         <label>How<select id="rsMode"><option value="manual">${MODE.manual}</option><option value="ai">${MODE.ai}</option></select></label>
         <label>Most automatic replies a day, per outlet<input id="rsMax" type="number" min="1" max="500" value="60"></label>
