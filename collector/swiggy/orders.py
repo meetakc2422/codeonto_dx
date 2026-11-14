@@ -28,7 +28,7 @@ PACE_SEC = cfg.numbers("SWIGGY_ORDERS_PACE_SEC", "0.2,0.6")  # between pages and
 
 
 def config(account: str) -> dict:
-    return require_env("SOCIALSPORK_DATABASE_URL")
+    return require_env("CODEONTO_DATABASE_URL")
 
 
 def money(value) -> Decimal | None:

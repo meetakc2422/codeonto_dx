@@ -1,6 +1,6 @@
 """Show what Zomato's menu editor returns for one item at one store, to see why it counts as out of stock.
 
-    .venv\\Scripts\\python inspect_menu_item.py <res_id> "Nashville Style Chicken Burger" [login]
+    .venv\\Scripts\\python inspect_menu_item.py <res_id> "Paneer Wrap" [login]
 
 Prints the item's catalogue entry as Zomato sends it (only that item, nothing else from the menu), and says whether the
 stock-out rule treats it as out. Read only: nothing is saved."""

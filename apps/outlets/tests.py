@@ -62,7 +62,7 @@ class Base(TestCase):
         now = timezone.now()
         Review.objects.create(outlet=o, platform=cls.platform, external_review_id=f"r{o.pk}", body=o.outlet_name, rating=4, reviewed_at=now)
         MetricDaily.objects.create(outlet=o, platform=cls.platform, kpi=cls.kpi, metric_date=cls.today, value=value)
-        StockOut.objects.create(outlet=o, platform=cls.platform, item_name=f"Item {o.outlet_name}", log_date=cls.today,
+        StockOut.objects.create(outlet=o, platform=cls.platform, item_name=f"Item {o.outlet_name}", category="Mains", log_date=cls.today,
                                 first_detected_at=now, last_detected_at=now)
         Alert.objects.create(outlet=o, kind="test", title=o.outlet_name)
         ListingProfile.objects.create(outlet=o, platform=cls.platform, title=o.outlet_name, fetched_at=now)

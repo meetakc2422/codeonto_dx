@@ -24,7 +24,7 @@ def item(name, qty, total, addons=None):
 
 OBJECTS = [
     order(1001, "2026-11-12 20:15:00", [item("Classic Chicken Burger", 2, 490), item("Hot Sauce", 1, 69)], bill=640),
-    order(1002, "2026-11-13 01:30:00", [item("Smash Buff Cheese Burger", 1, 464, addons=[{"name": "Extra Patty"}])], bill=520),
+    order(1002, "2026-11-13 01:30:00", [item("Double Cheese Burger", 1, 464, addons=[{"name": "Extra Patty"}])], bill=520),
     order(1003, "2026-11-12 13:05:00", [item("Fries", 1, 99), item("Fries", 2, 198)], status="cancelled", reason="Item out of stock", bill=300),
     {"order_id": 1004, "status": {"ordered_time": "bad", "order_status": "delivered"}, "cart": {"items": [item("X", 1, 10)]}},
 ]
@@ -46,10 +46,10 @@ class Parse(unittest.TestCase):
         self.assertEqual((r["subtotal"], r["total"]), (D("559.00"), D("640.00")))
 
     def test_a_line_with_add_ons_has_no_unit_price(self):
-        self.assertIsNone(self.by("1002", "Smash Buff Cheese Burger")["unit_price"])
+        self.assertIsNone(self.by("1002", "Double Cheese Burger")["unit_price"])
 
     def test_after_midnight_belongs_to_the_previous_service_day(self):
-        self.assertEqual(self.by("1002", "Smash Buff Cheese Burger")["order_date"], date(2026, 11, 12))
+        self.assertEqual(self.by("1002", "Double Cheese Burger")["order_date"], date(2026, 11, 12))
 
     def test_the_same_item_twice_is_added_up(self):
         r = self.by("1003", "Fries")
