@@ -1829,6 +1829,21 @@ function offlineStack() {
   return stack;
 }
 
+// with two or more popups open, a "Close all" button sits above them
+function syncCloseAll() {
+  const stack = offlineStack(), n = stack.querySelectorAll(".offline-notice").length;
+  let btn = stack.querySelector(".offline-closeall");
+  if (n < 2) { btn?.remove(); return; }
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "offline-closeall";
+    btn.addEventListener("click", () => { stack.querySelectorAll(".offline-notice").forEach((x) => x.dispatchEvent(new Event("dismiss"))); stack.innerHTML = ""; });
+  }
+  stack.prepend(btn);  // always on top, above the newest popup
+  btn.textContent = `Close all (${n})`;
+}
+
 function showOfflineNotice({ title, detail, when = "", open, online = false }) {
   const el = document.createElement("div");
   el.className = `offline-notice ${online ? "online" : ""}`;
@@ -1837,13 +1852,15 @@ function showOfflineNotice({ title, detail, when = "", open, online = false }) {
       <button class="offline-view" type="button">View</button></div>
     <button class="offline-close" type="button" aria-label="Dismiss">×</button>`;
   let timer;
-  const close = () => { clearTimeout(timer); el.remove(); };
+  const close = () => { clearTimeout(timer); el.remove(); syncCloseAll(); };
+  el.addEventListener("dismiss", () => clearTimeout(timer));
   const arm = () => { clearTimeout(timer); timer = setTimeout(close, OFFLINE_NOTICE_MS); };
   el.querySelector(".offline-close").addEventListener("click", close);
   el.querySelector(".offline-view").addEventListener("click", () => { close(); open(); });
   el.addEventListener("mouseenter", () => clearTimeout(timer));  // stays while being read
   el.addEventListener("mouseleave", arm);
   offlineStack().prepend(el);
+  syncCloseAll();
   arm();
 }
 
