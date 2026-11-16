@@ -1139,3 +1139,19 @@ table.stmt .off { opacity: .35; }
 .ov-t-sub { font-size: 12.5px; color: var(--muted); line-height: 1.35; }
 .ov-t-foot { margin-top: auto; padding-top: 6px; } .ov-t-foot .spark { width: 100%; height: 30px; display: block; }
 .ov-alerts { margin: 0; }
+
+/* overview: compact */
+.ov-tgrid { gap: 8px; margin-bottom: 8px; }
+.ov-t { min-height: 0; gap: 2px; padding: 9px 12px; border-radius: 10px; box-shadow: inset 3px 0 0 var(--tone), 0 1px 2px rgba(15,23,42,.04); }
+.ov-t:hover { transform: none; box-shadow: inset 3px 0 0 var(--tone), 0 2px 8px rgba(15,23,42,.08); }
+.ov-t-label { font-size: 10.5px; }
+.ov-t-value { font-size: 22px; gap: 2px 8px; }
+.ov-t-value small { font-size: 13px; }
+.ov-t-value .chip { font-size: 11px; }
+.ov-t-sub { font-size: 11.5px; line-height: 1.3; }
+.ov-t-foot { padding-top: 2px; } .ov-t-foot .spark { height: 18px; }
+.ov-alerts { padding: 8px 12px; }
+.ov-alert { padding: 5px 4px; gap: 8px; }
+.ov-alert-text strong { font-size: 12.5px; } .ov-alert-text small { font-size: 11.5px; }
+.ov-table th, .ov-table td { padding-top: 5px; padding-bottom: 5px; font-size: 12.5px; }
+@media (min-width: 1100px) { .ov-tgrid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }

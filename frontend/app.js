@@ -71,7 +71,7 @@ function csrfToken() {
 function apiFetch(url, opts = {}) {
   const method = (opts.method || "GET").toUpperCase();
   const headers = { ...(opts.headers || {}), ...(method === "GET" ? {} : { "X-CSRFToken": csrfToken() }) };
-  return fetch(url, { ...opts, headers, credentials: "same-origin" });
+  return fetch(url, { cache: "no-store", ...opts, headers, credentials: "same-origin" });
 }
 
 async function api(path, params = {}, opts = {}) {
