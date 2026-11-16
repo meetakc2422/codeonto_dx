@@ -1,8 +1,6 @@
 import React from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
-import { Colors } from '../constants/Colors';
-
-const C = Colors.dark;
+import { Theme } from '../constants/Colors';
 
 export const inr = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
 export const rupees = (v: number | null | undefined) => (v == null ? '—' : `${v < 0 ? '-' : ''}₹${inr.format(Math.abs(Math.round(v)))}`);
@@ -30,13 +28,27 @@ export function ago(ts?: string | null) {
 export const shortDate = (d?: string | null) =>
   d ? new Date(d.length === 10 ? `${d}T00:00:00` : d).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' }) : '';
 
-export function Card({ children, style }: { children: React.ReactNode; style?: ViewStyle }) {
-  return <View style={[s.card, style]}>{children}</View>;
+/** A white card on the black page. `tint` makes it a pastel one (the insight cards). */
+export function Card({ children, style, tint }: { children: React.ReactNode; style?: ViewStyle; tint?: string }) {
+  return <View style={[s.card, tint ? { backgroundColor: tint } : null, style]}>{children}</View>;
 }
 
+export function CardTitle({ label, title, right }: { label?: string; title: string; right?: React.ReactNode }) {
+  return (
+    <View style={s.cardHead}>
+      <View style={{ flex: 1 }}>
+        {label ? <Text style={s.cardLabel}>{label}</Text> : null}
+        <Text style={s.cardTitle}>{title}</Text>
+      </View>
+      {right}
+    </View>
+  );
+}
+
+/** The big number at the top of a screen, on a pastel card. */
 export function Hero({ big, label, sub, tone = 'normal' }: { big: string; label: string; sub?: string; tone?: 'normal' | 'bad' }) {
   return (
-    <View style={[s.hero, tone === 'bad' && { borderColor: 'rgba(239,68,68,0.5)' }]}>
+    <View style={[s.card, { backgroundColor: tone === 'bad' ? Theme.rose : Theme.mint, borderRadius: 26, padding: 20 }]}>
       <Text style={s.heroBig}>{big}</Text>
       <Text style={s.heroLabel}>{label}</Text>
       {sub ? <Text style={s.heroSub}>{sub}</Text> : null}
@@ -45,7 +57,7 @@ export function Hero({ big, label, sub, tone = 'normal' }: { big: string; label:
 }
 
 export function Stat({ label, value, sub, tone }: { label: string; value: string; sub?: string; tone?: 'bad' | 'warn' | 'ok' }) {
-  const color = tone === 'bad' ? Colors.danger : tone === 'warn' ? Colors.warning : tone === 'ok' ? Colors.success : C.text;
+  const color = tone === 'bad' ? Theme.bad : tone === 'warn' ? Theme.warn : tone === 'ok' ? Theme.good : Theme.ink;
   return (
     <View style={s.stat}>
       <Text style={s.statLabel}>{label}</Text>
@@ -57,12 +69,14 @@ export function Stat({ label, value, sub, tone }: { label: string; value: string
 
 export const Row = ({ children }: { children: React.ReactNode }) => <View style={s.row}>{children}</View>;
 
-export function Pill({ text, tone = 'grey', onPress, active }: { text: string; tone?: 'grey' | 'red' | 'amber' | 'green' | 'blue'; onPress?: () => void; active?: boolean }) {
-  const map = { grey: ['#1f2937', C.textSecondary], red: ['rgba(239,68,68,0.15)', '#F87171'], amber: ['rgba(245,158,11,0.15)', '#FBBF24'], green: ['rgba(16,185,129,0.15)', '#34D399'], blue: ['rgba(59,130,246,0.15)', '#60A5FA'] } as const;
-  const [bg, fg] = map[tone];
+type Tone = 'grey' | 'red' | 'amber' | 'green' | 'blue';
+/** A small label. On a white card it is pastel; `dark` is for use on the black page, where the active one is lime. */
+export function Pill({ text, tone = 'grey', onPress, active, dark }: { text: string; tone?: Tone; onPress?: () => void; active?: boolean; dark?: boolean }) {
+  const light = { grey: ['#F1F2F4', Theme.inkMuted], red: [Theme.badSoft, Theme.bad], amber: [Theme.warnSoft, Theme.warn], green: [Theme.goodSoft, Theme.good], blue: ['#DCEBFF', '#2563EB'] } as const;
+  const [bg, fg] = dark ? (active ? [Theme.lime, Theme.ink] : [Theme.chip, Theme.whiteMuted]) : light[tone];
   const body = (
-    <View style={[s.pill, { backgroundColor: active ? Colors.primary : bg }]}>
-      <Text style={[s.pillText, { color: active ? '#fff' : fg }]}>{text}</Text>
+    <View style={[s.pill, { backgroundColor: bg }]}>
+      <Text style={[s.pillText, { color: fg }]}>{text}</Text>
     </View>
   );
   return onPress ? <Pressable onPress={onPress}>{body}</Pressable> : body;
@@ -70,37 +84,43 @@ export function Pill({ text, tone = 'grey', onPress, active }: { text: string; t
 
 export function SectionTitle({ title, hint }: { title: string; hint?: string }) {
   return (
-    <View style={{ marginTop: 18, marginBottom: 8 }}>
+    <View style={{ marginTop: 20, marginBottom: 10 }}>
       <Text style={s.sectionTitle}>{title}</Text>
       {hint ? <Text style={s.hint}>{hint}</Text> : null}
     </View>
   );
 }
 
-export const Loading = () => <ActivityIndicator color={Colors.primary} style={{ marginTop: 40 }} />;
+export const Loading = () => <ActivityIndicator color={Theme.lime} style={{ marginTop: 40 }} />;
 export const Empty = ({ text }: { text: string }) => <Text style={s.empty}>{text}</Text>;
 export const ErrorBox = ({ text, onRetry }: { text: string; onRetry?: () => void }) => (
   <Card>
-    <Text style={{ color: Colors.danger, fontWeight: '600' }}>Couldn't load this</Text>
-    <Text style={s.hint}>{text}</Text>
-    {onRetry ? <Pressable onPress={onRetry}><Text style={{ color: Colors.primary, marginTop: 8, fontWeight: '600' }}>Try again</Text></Pressable> : null}
+    <Text style={{ color: Theme.bad, fontWeight: '700' }}>Couldn't load this</Text>
+    <Text style={s.cardHint}>{text}</Text>
+    {onRetry ? <Pressable onPress={onRetry}><Text style={{ color: Theme.ink, marginTop: 8, fontWeight: '700' }}>Try again</Text></Pressable> : null}
   </Card>
 );
 
+export const ink = { color: Theme.ink } as const;
+export const muted = { color: Theme.inkMuted } as const;
+
 const s = StyleSheet.create({
-  card: { backgroundColor: C.card, borderRadius: 14, padding: 14, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 10 },
-  hero: { backgroundColor: C.surface, borderRadius: 18, padding: 18, borderWidth: 1, borderColor: C.cardBorder, marginBottom: 12 },
-  heroBig: { color: C.text, fontSize: 40, fontWeight: '800' },
-  heroLabel: { color: C.textSecondary, fontSize: 14, marginTop: 2 },
-  heroSub: { color: C.textMuted, fontSize: 12, marginTop: 8, lineHeight: 17 },
-  stat: { flex: 1, backgroundColor: C.card, borderRadius: 14, padding: 12, borderWidth: 1, borderColor: C.cardBorder },
-  statLabel: { color: C.textMuted, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
-  statValue: { fontSize: 22, fontWeight: '700', marginTop: 4 },
-  statSub: { color: C.textMuted, fontSize: 11, marginTop: 2 },
+  card: { backgroundColor: Theme.paper, borderRadius: 24, padding: 16, marginBottom: 12 },
+  cardHead: { flexDirection: 'row', alignItems: 'flex-start', marginBottom: 10 },
+  cardLabel: { color: Theme.inkMuted, fontSize: 12 },
+  cardTitle: { color: Theme.ink, fontSize: 18, fontWeight: '800', marginTop: 2 },
+  cardHint: { color: Theme.inkMuted, fontSize: 12, marginTop: 3, lineHeight: 17 },
+  heroBig: { color: Theme.ink, fontSize: 44, fontWeight: '800' },
+  heroLabel: { color: Theme.ink, fontSize: 15, fontWeight: '600', marginTop: 2 },
+  heroSub: { color: Theme.inkMuted, fontSize: 12, marginTop: 8, lineHeight: 17 },
+  stat: { flex: 1, backgroundColor: Theme.paper, borderRadius: 20, padding: 14 },
+  statLabel: { color: Theme.inkMuted, fontSize: 11 },
+  statValue: { fontSize: 22, fontWeight: '800', marginTop: 4 },
+  statSub: { color: Theme.inkMuted, fontSize: 11, marginTop: 2 },
   row: { flexDirection: 'row', gap: 10, marginBottom: 10 },
-  pill: { paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, marginRight: 6, marginBottom: 6 },
-  pillText: { fontSize: 12, fontWeight: '600' },
-  sectionTitle: { color: C.text, fontSize: 16, fontWeight: '700' },
-  hint: { color: C.textMuted, fontSize: 12, marginTop: 2 },
-  empty: { color: C.textMuted, textAlign: 'center', marginTop: 30 },
+  pill: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, marginRight: 6, marginBottom: 6 },
+  pillText: { fontSize: 12, fontWeight: '700' },
+  sectionTitle: { color: Theme.white, fontSize: 18, fontWeight: '800' },
+  hint: { color: Theme.whiteMuted, fontSize: 12, marginTop: 2 },
+  empty: { color: Theme.whiteMuted, textAlign: 'center', marginTop: 30 },
 });

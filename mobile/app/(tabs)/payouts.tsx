@@ -2,12 +2,11 @@ import React, { useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { useQuery } from '@tanstack/react-query';
 import Screen from '../../components/Screen';
-import { Card, Empty, ErrorBox, Loading, Pill, Row, SectionTitle, Stat, inr, rupees, rupeesShort, shortDate } from '../../components/ui';
+import { Card, CardTitle, Empty, ErrorBox, Loading, Pill, Row, SectionTitle, Stat, inr, rupees, rupeesShort, shortDate } from '../../components/ui';
 import { useFilters } from '../../context/FilterContext';
 import { apiClient, errorText } from '../../services/api';
-import { Colors } from '../../constants/Colors';
+import { Theme } from '../../constants/Colors';
 
-const C = Colors.dark;
 type Status = '' | 'issues' | 'paid' | 'to_be_paid';
 
 function Detail({ brandId, cycleId }: { brandId: number; cycleId: number }) {
@@ -20,7 +19,7 @@ function Detail({ brandId, cycleId }: { brandId: number; cycleId: number }) {
   const d = q.data;
   const base = (d.breakdown || []).find((x: any) => /^net order value/i.test(x.label || ''));
   return (
-    <View style={{ marginTop: 10 }}>
+    <View style={{ marginTop: 12 }}>
       {d.issues?.length ? d.issues.map((c: string) => <Text key={c} style={s.issue}>• {d.issue_labels?.[c] || c}</Text>) : null}
       {(d.breakdown || []).map((sec: any) => (
         <View key={sec.id || sec.label} style={s.line}>
@@ -28,14 +27,14 @@ function Detail({ brandId, cycleId }: { brandId: number; cycleId: number }) {
           <Text style={s.lineValue}>{rupees(sec.value)}{base && base.value ? `  ${(100 * Math.abs(sec.value) / Math.abs(base.value)).toFixed(1)}%` : ''}</Text>
         </View>
       ))}
-      <View style={[s.line, { borderTopWidth: 1, borderTopColor: C.cardBorder, marginTop: 6, paddingTop: 6 }]}>
-        <Text style={[s.lineLabel, { fontWeight: '700' }]}>Net payout</Text>
-        <Text style={[s.lineValue, { fontWeight: '700' }]}>{rupees(d.net_payout)}</Text>
+      <View style={[s.line, { borderTopWidth: 1, borderTopColor: Theme.line, marginTop: 6, paddingTop: 8 }]}>
+        <Text style={[s.lineLabel, { fontWeight: '800' }]}>Net payout</Text>
+        <Text style={[s.lineValue, { fontWeight: '800' }]}>{rupees(d.net_payout)}</Text>
       </View>
       {d.reconciled ? (
         <View style={{ marginTop: 10 }}>
           <View style={s.line}><Text style={s.lineLabel}>Our check: expected payout</Text><Text style={s.lineValue}>{rupees(d.expected_payout)}</Text></View>
-          <View style={s.line}><Text style={s.lineLabel}>Difference</Text><Text style={[s.lineValue, { color: d.issues?.includes('payout_mismatch') ? Colors.danger : Colors.success }]}>{rupees(d.discrepancy)}</Text></View>
+          <View style={s.line}><Text style={s.lineLabel}>Difference</Text><Text style={[s.lineValue, { color: d.issues?.includes('payout_mismatch') ? Theme.bad : Theme.good }]}>{rupees(d.discrepancy)}</Text></View>
         </View>
       ) : <Text style={[s.sub, { marginTop: 8 }]}>Orders are checked once this payout is paid.</Text>}
     </View>
@@ -63,7 +62,7 @@ export default function Payouts() {
   const rows: any[] = list.data?.results || [];
 
   return (
-    <Screen onRefresh={refetch} refreshing={list.isRefetching}>
+    <Screen title="Payouts" onRefresh={refetch} refreshing={list.isRefetching}>
       {summary.isLoading ? <Loading /> : summary.error ? <ErrorBox text={errorText(summary.error)} onRetry={refetch} /> : d ? (
         <>
           <Row>
@@ -75,27 +74,26 @@ export default function Payouts() {
             <Stat label="To be paid" value={rupeesShort(d.to_be_paid_total)} sub={`${d.to_be_paid_cycles} cycles`} />
           </Row>
           {d.discrepancy_total ? (
-            <Card style={{ borderColor: 'rgba(239,68,68,0.4)' }}>
-              <Text style={s.label}>Unexplained difference</Text>
-              <Text style={[s.big, { color: Colors.danger }]}>{rupeesShort(Math.abs(d.discrepancy_total))}</Text>
+            <Card tint={Theme.rose}>
+              <CardTitle label="Unexplained difference" title={rupeesShort(Math.abs(d.discrepancy_total))} />
               <Text style={s.sub}>between what Zomato or Swiggy paid and what the orders say they should have paid</Text>
             </Card>
           ) : null}
           {d.issues?.length ? (
-            <>
-              <SectionTitle title="What needs checking" />
+            <Card>
+              <CardTitle title="What needs checking" />
               {d.issues.map((i: any) => <Text key={i.code} style={s.issue}>• {i.count} · {i.label}</Text>)}
-            </>
+            </Card>
           ) : null}
         </>
       ) : null}
 
       <SectionTitle title="Payouts" />
       <View style={s.chips}>
-        {([['', 'All'], ['issues', 'To check'], ['paid', 'Paid'], ['to_be_paid', 'To be paid']] as [Status, string][]).map(([v, l]) => <Pill key={v || 'all'} text={l} active={status === v} onPress={() => setStatus(v)} />)}
+        {([['', 'All'], ['issues', 'To check'], ['paid', 'Paid'], ['to_be_paid', 'To be paid']] as [Status, string][]).map(([v, l]) => <Pill key={v || 'all'} dark text={l} active={status === v} onPress={() => setStatus(v)} />)}
       </View>
       {list.isLoading ? <Loading /> : list.error ? <ErrorBox text={errorText(list.error)} onRetry={refetch} /> : rows.length === 0 ? <Empty text="No payouts for these dates." /> : rows.map((c) => (
-        <Card key={c.id}>
+        <Card key={c.id} style={{ borderRadius: 20, marginBottom: 8 }}>
           <Pressable onPress={() => setOpen(open === c.id ? null : c.id)}>
             <View style={s.top}>
               <Text style={s.name} numberOfLines={1}>{c.outlet} <Text style={s.city}>{c.city}</Text></Text>
@@ -111,7 +109,7 @@ export default function Payouts() {
           {open === c.id && id ? <Detail brandId={id} cycleId={c.id} /> : null}
         </Card>
       ))}
-      {list.data && list.data.total > rows.length ? <Text style={s.sub}>Showing {rows.length} of {inr.format(list.data.total)}. Choose a shorter period to see the rest.</Text> : null}
+      {list.data && list.data.total > rows.length ? <Text style={[s.sub, { color: Theme.whiteMuted }]}>Showing {rows.length} of {inr.format(list.data.total)}. Choose a shorter period to see the rest.</Text> : null}
     </Screen>
   );
 }
@@ -119,15 +117,13 @@ export default function Payouts() {
 const s = StyleSheet.create({
   chips: { flexDirection: 'row', flexWrap: 'wrap', marginBottom: 8 },
   top: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  name: { color: C.text, fontSize: 15, fontWeight: '600', flexShrink: 1 },
-  city: { color: C.textMuted, fontSize: 12, fontWeight: '400' },
-  amount: { color: C.text, fontSize: 16, fontWeight: '700' },
-  sub: { color: C.textMuted, fontSize: 12, marginTop: 3, lineHeight: 17 },
+  name: { color: Theme.ink, fontSize: 15, fontWeight: '700', flexShrink: 1 },
+  city: { color: Theme.inkMuted, fontSize: 12, fontWeight: '400' },
+  amount: { color: Theme.ink, fontSize: 16, fontWeight: '800' },
+  sub: { color: Theme.inkMuted, fontSize: 12, marginTop: 3, lineHeight: 17 },
   tags: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 8 },
-  label: { color: C.textMuted, fontSize: 11, textTransform: 'uppercase', letterSpacing: 0.5 },
-  big: { fontSize: 24, fontWeight: '800', marginTop: 4 },
-  issue: { color: C.textSecondary, fontSize: 13, marginBottom: 4 },
+  issue: { color: Theme.ink, fontSize: 13, marginBottom: 4 },
   line: { flexDirection: 'row', justifyContent: 'space-between', paddingVertical: 3 },
-  lineLabel: { color: C.textSecondary, fontSize: 13, flex: 1, paddingRight: 8 },
-  lineValue: { color: C.text, fontSize: 13 },
+  lineLabel: { color: Theme.inkMuted, fontSize: 13, flex: 1, paddingRight: 8 },
+  lineValue: { color: Theme.ink, fontSize: 13 },
 });

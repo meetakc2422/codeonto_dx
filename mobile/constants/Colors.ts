@@ -34,3 +34,22 @@ export const Colors = {
 };
 
 export default Colors;
+
+/** The phone app's look: black page, white cards, pastel insight cards, a lime accent for whatever is active. */
+export const Theme = {
+  page: '#000000',
+  paper: '#FFFFFF',
+  ink: '#0B0B0F',
+  inkMuted: '#6B7280',
+  line: '#E5E7EB',
+  white: '#FFFFFF',
+  whiteMuted: '#9CA3AF',
+  chip: '#1C1C21',
+  lime: '#E4FF5C',
+  mint: '#DDFBE8', mintLine: '#22A55A',
+  cream: '#FEF3D3', creamLine: '#F59E0B',
+  sky: '#CFE3FF', skyLine: '#3B82F6',
+  rose: '#FADADD', roseLine: '#E5484D',
+  good: '#16A34A', warn: '#D97706', bad: '#DC2626',
+  goodSoft: '#D7F7E3', warnSoft: '#FDEBC8', badSoft: '#F9D4D4',
+};
