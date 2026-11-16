@@ -526,7 +526,7 @@ async function renderOverview(page) {
   const has = (code) => state.config.modules.some((m) => m.code === code);
   const opt = (p) => p.catch(() => null);
   const HEAD_KPIS = ["gross_revenue", "delivered_orders"].filter((c) => kpiMeta(c));  // the two tiles with a trend line
-  const [kpiRes, summary, uptime, stock, pay, payIssues, dropsRes, ...headTrends] = await Promise.all([
+  const [kpiRes, summary, uptime, stock, pay, payIssues, dropsRes, fresh, ...headTrends] = await Promise.all([
     api(`/brands/${state.brandId}/kpis`, filterParams()),
     api(`/brands/${state.brandId}/reviews/summary`, filterParams()),
     has("store_uptime") ? opt(api(`/brands/${state.brandId}/uptime/summary`, filterParams())) : null,
@@ -534,6 +534,7 @@ async function renderOverview(page) {
     has("reconciliation") ? opt(api(`/brands/${state.brandId}/payouts/summary`, filterParams())) : null,
     has("reconciliation") ? opt(api(`/brands/${state.brandId}/payouts/cycles`, filterParams({ status: "issues", limit: 500 }))) : null,
     opt(api(`/brands/${state.brandId}/kpi-drops`, filterParams())),
+    opt(api(`/brands/${state.brandId}/freshness`)),
     ...HEAD_KPIS.map((c) => opt(api(`/brands/${state.brandId}/kpis/${c}/trend`, filterParams()))),
   ]);
   if (!kpiRes.kpis.length && !summary.total && !uptime && !stock && !pay?.cycles) return renderNoData(page);
@@ -582,6 +583,10 @@ async function renderOverview(page) {
   const nameOf = new Map(platformLocations().map((l) => [l.id, l.name]));
   const modName = new Map(state.config.modules.map((m) => [m.code, m.name]));
   const alerts = [];
+  // data that used to arrive and has gone quiet: said plainly, so nobody trusts old numbers
+  const ageWords = (h) => (h < 48 ? `${Math.round(h)} hours` : `${Math.round(h / 24)} days`);
+  (fresh?.sources || []).filter((f) => f.status === "late")
+    .forEach((f) => alerts.push({ sev: f.age_hours > f.limit_hours * 3 ? "critical" : "warning", cat: "Data", title: `${f.label} (${f.platform}) not updated for ${ageWords(f.age_hours)}`, sub: "numbers on this page may be out of date", href: "#/overview", rank: 0.5 }));
   offline.forEach((o) => alerts.push({ sev: "critical", cat: "Uptime", title: `${o.name} is offline`, sub: `since ${timeAgo(o.offline_since).replace(" ago", "")}`, href: "#/store_uptime", rank: 0 }));
   const foodSafety = (summary.by_topic?.topics || []).find((t) => t.slug === "food_safety");
   if (foodSafety?.negative) alerts.push({ sev: "critical", cat: "Reviews", title: `${plural(foodSafety.negative, "negative review")} about food safety`, sub: "stomach issues, hair, insects, spoiled food", href: "#/reviews", set: { topic: "food_safety", rating: "neg", status: "" }, rank: 1 });

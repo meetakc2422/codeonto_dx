@@ -56,6 +56,14 @@ def setup_logging() -> logging.Logger:
 
 log = logging.getLogger("collector")
 
+# Outlets a job deliberately left out (e.g. a report that looks wrong). They were already reported by email, so the
+# run counts as partly done (exit code 2) instead of failed (1): a real failure then stands out in Task Scheduler.
+SKIPPED: list[str] = []
+
+
+def note_skipped(job: str, outlet: str, reason: str) -> None:
+    SKIPPED.append(f"{job}: {outlet} ({reason})")
+
 
 def require_env(*names: str) -> dict[str, str]:
     """Read required settings; fail with one message listing everything missing."""

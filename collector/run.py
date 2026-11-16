@@ -9,6 +9,7 @@
     python run.py all session --check              # validate .env only, no external calls
     python run.py worker                           # keep running: do login refreshes staff ask for on the Sessions page
     python run.py alerts send --every 15           # WhatsApp/email: low reviews, payout problems, ad spikes
+    python run.py alerts health                    # daily: email ops the outlets whose data stopped arriving
     python run.py swiggy payouts --start 2026-10-01 --end 2026-11-09   # one-off: these dates instead of the usual window
     python run.py zomato business --res-id 22222916 --start 2026-06-01 # one-off: only these outlets
                                                    # (offline and stock-out alerts go out from those jobs)
@@ -40,7 +41,7 @@ from core.common import ConfigError, log, session_path, setup_logging  # noqa: E
 TASKS = {
     "zomato": {"session": "zomato.session", "outlets": "zomato.outlets", "reviews": "zomato.reviews", "stockouts": "zomato.stockouts", "uptime": "zomato.uptime", "payouts": "zomato.payouts", "business": "zomato.business", "timings": "zomato.timings", "replies": "zomato.replies", "complaints": "zomato.complaints", "item_sales": "zomato.item_sales", "ratings": "zomato.ratings", "orders": "zomato.orders"},
     "swiggy": {"session": "swiggy.session", "outlets": "swiggy.outlets", "reviews": "swiggy.reviews", "stockouts": "swiggy.stockouts", "orders": "swiggy.orders", "business": "swiggy.business", "payouts": "swiggy.payouts", "complaints": "swiggy.complaints", "ratings": "swiggy.ratings"},
-    "alerts": {"send": "core.notify"},
+    "alerts": {"send": "core.notify", "health": "core.health"},
     "google": {"session": "google_business.session", "outlets": "google_business.outlets", "reviews": "google_business.reviews", "performance": "google_business.performance", "profile": "google_business.profile"},
 }
 
@@ -254,7 +255,17 @@ def main() -> int:
             _crash_alert(args.task, e)
     if args.daily_at:
         run_daily(args.daily_at, jobs, args.task, args.headless)
-    return 0 if ok else 1
+    return _exit_code(ok)
+
+
+def _exit_code(ok: bool) -> int:
+    """0 all done, 2 done except outlets that were skipped on purpose (already emailed), 1 failed."""
+    from core.common import SKIPPED
+    if SKIPPED:
+        log.warning("%s outlet(s) were skipped: %s", len(SKIPPED), "; ".join(SKIPPED[:10]))
+    if not ok:
+        return 1
+    return 2 if SKIPPED else 0
 
 
 if __name__ == "__main__":

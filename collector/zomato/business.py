@@ -14,7 +14,7 @@ from datetime import date, timedelta
 
 from core import alerts, config as cfg, db, derive
 from core.refusals import Refusals
-from core.common import ConfigError, log, require_env
+from core.common import ConfigError, log, note_skipped, require_env
 
 from .outlets import _cookies
 
@@ -164,8 +164,8 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                                     f"Res {s['res_id']}: {int(v)} delivered orders on {d}, more than one outlet can do "
                                     f"(limit {MAX_DAILY_ORDERS}). Zomato probably sent the whole account's totals. Nothing was saved.",
                                     "Check this outlet's Zomato id and which login can see it (Brands & Outlets, Sessions).")
-                    ok = False
-                    continue
+                    note_skipped("zomato business", f"{s['brand']} · {s['outlet_name']} ({s['res_id']})", "report looks wrong")
+                    break
                 with db.transaction() as cur:
                     for code, day, value, weight in rows:
                         cur.execute(
