@@ -11,7 +11,7 @@ export default function Screen({ title, children, onRefresh, refreshing }: { tit
       <FilterBar title={title} />
       <ScrollView
         contentContainerStyle={s.content}
-        refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={Theme.lime} /> : undefined}
+        refreshControl={onRefresh ? <RefreshControl refreshing={!!refreshing} onRefresh={onRefresh} tintColor={Theme.accent} /> : undefined}
       >
         {children}
       </ScrollView>

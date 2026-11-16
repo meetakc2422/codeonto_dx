@@ -35,17 +35,18 @@ export const Colors = {
 
 export default Colors;
 
-/** The phone app's look: black page, white cards, pastel insight cards, a lime accent for whatever is active. */
+/** The phone app's look, in the website's colours: navy page, white cards, pastel insight cards, the dashboard blue for whatever is active. */
 export const Theme = {
-  page: '#000000',
+  page: '#0B1229',
   paper: '#FFFFFF',
   ink: '#0B0B0F',
   inkMuted: '#6B7280',
   line: '#E5E7EB',
   white: '#FFFFFF',
   whiteMuted: '#9CA3AF',
-  chip: '#1C1C21',
-  lime: '#E4FF5C',
+  chip: '#1C2438',
+  accent: '#408FCA',
+  accentSoft: '#CFE3F7',
   mint: '#DDFBE8', mintLine: '#22A55A',
   cream: '#FEF3D3', creamLine: '#F59E0B',
   sky: '#CFE3FF', skyLine: '#3B82F6',

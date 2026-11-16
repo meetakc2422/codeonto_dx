@@ -34,7 +34,7 @@ export default function Login() {
         <TextInput style={s.input} placeholder="Password" placeholderTextColor={Theme.whiteMuted} secureTextEntry value={password} onChangeText={setPassword} onSubmitEditing={submit} />
         {error ? <Text style={s.error}>{error}</Text> : null}
         <Pressable style={[s.button, busy && { opacity: 0.6 }]} onPress={submit} disabled={busy}>
-          {busy ? <ActivityIndicator color={Theme.ink} /> : <Text style={s.buttonText}>Sign in</Text>}
+          {busy ? <ActivityIndicator color={Theme.white} /> : <Text style={s.buttonText}>Sign in</Text>}
         </Pressable>
       </View>
     </KeyboardAvoidingView>
@@ -48,6 +48,6 @@ const s = StyleSheet.create({
   sub: { color: Theme.whiteMuted, marginBottom: 16 },
   input: { backgroundColor: Theme.chip, color: Theme.white, borderRadius: 16, padding: 16, fontSize: 16 },
   error: { color: '#FCA5A5' },
-  button: { backgroundColor: Theme.lime, borderRadius: 999, padding: 16, alignItems: 'center', marginTop: 4 },
-  buttonText: { color: Theme.ink, fontWeight: '800', fontSize: 16 },
+  button: { backgroundColor: Theme.accent, borderRadius: 999, padding: 16, alignItems: 'center', marginTop: 4 },
+  buttonText: { color: Theme.white, fontWeight: '800', fontSize: 16 },
 });

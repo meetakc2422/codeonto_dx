@@ -70,10 +70,10 @@ export function Stat({ label, value, sub, tone }: { label: string; value: string
 export const Row = ({ children }: { children: React.ReactNode }) => <View style={s.row}>{children}</View>;
 
 type Tone = 'grey' | 'red' | 'amber' | 'green' | 'blue';
-/** A small label. On a white card it is pastel; `dark` is for use on the black page, where the active one is lime. */
+/** A small label. On a white card it is pastel; `dark` is for use on the black page, where the active one is blue. */
 export function Pill({ text, tone = 'grey', onPress, active, dark }: { text: string; tone?: Tone; onPress?: () => void; active?: boolean; dark?: boolean }) {
   const light = { grey: ['#F1F2F4', Theme.inkMuted], red: [Theme.badSoft, Theme.bad], amber: [Theme.warnSoft, Theme.warn], green: [Theme.goodSoft, Theme.good], blue: ['#DCEBFF', '#2563EB'] } as const;
-  const [bg, fg] = dark ? (active ? [Theme.lime, Theme.ink] : [Theme.chip, Theme.whiteMuted]) : light[tone];
+  const [bg, fg] = dark ? (active ? [Theme.accent, Theme.white] : [Theme.chip, Theme.whiteMuted]) : light[tone];
   const body = (
     <View style={[s.pill, { backgroundColor: bg }]}>
       <Text style={[s.pillText, { color: fg }]}>{text}</Text>
@@ -91,7 +91,7 @@ export function SectionTitle({ title, hint }: { title: string; hint?: string }) 
   );
 }
 
-export const Loading = () => <ActivityIndicator color={Theme.lime} style={{ marginTop: 40 }} />;
+export const Loading = () => <ActivityIndicator color={Theme.accent} style={{ marginTop: 40 }} />;
 export const Empty = ({ text }: { text: string }) => <Text style={s.empty}>{text}</Text>;
 export const ErrorBox = ({ text, onRetry }: { text: string; onRetry?: () => void }) => (
   <Card>

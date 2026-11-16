@@ -76,8 +76,8 @@ function Segmented<T extends string>({ options, value, onChange }: { options: [T
   return (
     <View style={s.seg}>
       {options.map(([v, l]) => (
-        <Pressable key={v} style={[s.segItem, value === v && { backgroundColor: Theme.lime }]} onPress={() => onChange(v)}>
-          <Text style={[s.segText, value === v && { color: Theme.ink }]}>{l}</Text>
+        <Pressable key={v} style={[s.segItem, value === v && { backgroundColor: Theme.accent }]} onPress={() => onChange(v)}>
+          <Text style={[s.segText, value === v && { color: Theme.white }]}>{l}</Text>
         </Pressable>
       ))}
     </View>
@@ -201,7 +201,7 @@ const s = StyleSheet.create({
   rate: { fontSize: 16, fontWeight: '800' },
   body: { color: Theme.ink, fontSize: 14, lineHeight: 20 },
   author: { color: Theme.inkMuted, fontSize: 12, marginTop: 6 },
-  reply: { marginTop: 10, borderLeftWidth: 3, borderLeftColor: Theme.lime, paddingLeft: 10 },
+  reply: { marginTop: 10, borderLeftWidth: 3, borderLeftColor: Theme.accent, paddingLeft: 10 },
   replyText: { color: Theme.inkMuted, fontSize: 13, lineHeight: 18 },
   hint: { color: Theme.inkMuted, fontSize: 12, marginBottom: 2 },
   input: { backgroundColor: '#F4F5F7', color: Theme.ink, borderRadius: 14, padding: 12, minHeight: 110, textAlignVertical: 'top' },

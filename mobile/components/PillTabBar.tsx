@@ -3,7 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Theme } from '../constants/Colors';
 
-/** A floating dark pill: icons for the tabs, and the active one opens into a lime pill with its name. */
+/** A floating dark pill: icons for the tabs, and the active one opens into a blue pill with its name. */
 // props come from expo-router's Tabs (a react-navigation bottom tab bar)
 export default function PillTabBar({ state, descriptors, navigation }: any) {
   return (
@@ -13,7 +13,7 @@ export default function PillTabBar({ state, descriptors, navigation }: any) {
           const { options } = descriptors[route.key];
           const active = state.index === index;
           const label = (options.title as string) || route.name;
-          const icon = options.tabBarIcon?.({ focused: active, color: active ? Theme.ink : Theme.whiteMuted, size: 20 });
+          const icon = options.tabBarIcon?.({ focused: active, color: active ? Theme.white : Theme.whiteMuted, size: 20 });
           return (
             <Pressable
               key={route.key}
@@ -33,8 +33,8 @@ export default function PillTabBar({ state, descriptors, navigation }: any) {
 
 const s = StyleSheet.create({
   wrap: { position: 'absolute', left: 0, right: 0, bottom: 0, alignItems: 'center' },
-  bar: { flexDirection: 'row', backgroundColor: '#17171B', borderRadius: 40, padding: 6, gap: 4, marginBottom: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
-  item: { height: 46, minWidth: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12, backgroundColor: '#26262C' },
-  itemActive: { backgroundColor: Theme.lime, paddingHorizontal: 16 },
-  label: { color: Theme.ink, fontWeight: '800', fontSize: 13 },
+  bar: { flexDirection: 'row', backgroundColor: '#121A33', borderRadius: 40, padding: 6, gap: 4, marginBottom: 8, borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  item: { height: 46, minWidth: 46, borderRadius: 23, alignItems: 'center', justifyContent: 'center', flexDirection: 'row', gap: 6, paddingHorizontal: 12, backgroundColor: '#1C2438' },
+  itemActive: { backgroundColor: Theme.accent, paddingHorizontal: 16 },
+  label: { color: Theme.white, fontWeight: '800', fontSize: 13 },
 });

@@ -48,7 +48,7 @@ export default function FilterBar({ title }: { title: string }) {
           <Text style={s.chipText}>{periodLabel}</Text>
           <ChevronDown size={14} color={Theme.ink} />
         </Pressable>
-        <Pressable style={[s.chip, { backgroundColor: platform ? Theme.lime : '#FBE3E3' }]} onPress={() => setOpen('filters')}>
+        <Pressable style={[s.chip, { backgroundColor: platform ? Theme.accentSoft : '#E8F2FA' }]} onPress={() => setOpen('filters')}>
           <Text style={s.chipText}>{platform ? (platform === 'zomato' ? 'Zomato' : 'Swiggy') : 'Filters'}</Text>
           <SlidersHorizontal size={14} color={Theme.ink} />
         </Pressable>
@@ -66,8 +66,8 @@ const s = StyleSheet.create({
   wrap: { paddingHorizontal: 18, paddingTop: 6, paddingBottom: 6 },
   titleRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 },
   title: { color: Theme.white, fontSize: 32, fontWeight: '700' },
-  avatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: Theme.lime, alignItems: 'center', justifyContent: 'center' },
-  avatarText: { color: Theme.ink, fontWeight: '800' },
+  avatar: { width: 38, height: 38, borderRadius: 19, backgroundColor: Theme.accent, alignItems: 'center', justifyContent: 'center' },
+  avatarText: { color: Theme.white, fontWeight: '800' },
   chips: { flexDirection: 'row', gap: 8 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: Theme.white, borderRadius: 999, paddingHorizontal: 14, paddingVertical: 9, maxWidth: '45%' },
   chipText: { color: Theme.ink, fontWeight: '700', fontSize: 13, textTransform: 'capitalize', flexShrink: 1 },
@@ -77,5 +77,5 @@ const s = StyleSheet.create({
   option: { paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: Theme.line, flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   optionText: { color: Theme.inkMuted, fontSize: 16, textTransform: 'capitalize' },
   optionSub: { color: Theme.inkMuted, fontSize: 12 },
-  dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Theme.lime, borderWidth: 1, borderColor: Theme.ink },
+  dot: { width: 10, height: 10, borderRadius: 5, backgroundColor: Theme.accent },
 });
