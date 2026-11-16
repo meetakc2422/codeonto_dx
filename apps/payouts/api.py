@@ -12,7 +12,7 @@ from rest_framework.exceptions import PermissionDenied
 
 from apps.outlets.access import is_staff
 
-from .lines import guess_kind, lines
+from .lines import guess_kind, lines, needs_review
 from .models import PayoutCycle, PayoutLineType
 
 ISSUE_LABELS = {
@@ -492,6 +492,9 @@ def _new_lines(qs) -> list[dict]:
             if key not in known:
                 known[key] = PayoutLineType.objects.get_or_create(platform=c.platform_id, section=sec, label=label,
                                                                   defaults={"kind": guess_kind(sec, label), "first_seen": c.end_date})[0]
+            if not known[key].reviewed and not needs_review(sec, label):  # an expected line: no one needs to look at it
+                known[key].reviewed = True
+                known[key].save(update_fields=["reviewed"])
             if known[key].reviewed:
                 continue
             a = agg.setdefault(key, {"id": known[key].id, "platform": c.platform_id, "section": sec_label, "label": shown,

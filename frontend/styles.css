@@ -1182,3 +1182,8 @@ table.stmt .off { opacity: .35; }
 .an-chev { display: inline-block; width: 22px; margin-right: 4px; border: 0; background: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; transition: transform .15s; }
 .an-chev.open { transform: rotate(90deg); }
 .up-zh { margin-left: 6px; color: #b26a00; font-size: 11.5px; font-weight: 600; }
+.new-lines { padding: 10px 14px; }
+.new-lines > summary { cursor: pointer; list-style: none; font-size: 13px; }
+.new-lines > summary::-webkit-details-marker { display: none; }
+.new-lines > summary::before { content: "▸"; display: inline-block; margin-right: 8px; color: var(--muted); transition: transform .15s; }
+.new-lines[open] > summary::before { transform: rotate(90deg); }

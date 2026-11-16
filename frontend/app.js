@@ -1556,15 +1556,14 @@ async function renderReconciliation(page) {
       <div class="card kpi"><span class="kpi-label">To be paid</span><div class="kpi-value">${rupees(summary.to_be_paid_total)}</div><span class="muted">${inr.format(summary.to_be_paid_cycles)} payouts${summary.carried_forward_cycles ? ` · ${inr.format(summary.carried_forward_cycles)} carried forward (${rupees(summary.carried_forward_total)})` : ""}</span></div>
       <div class="card kpi"><span class="kpi-label">Commission take rate</span><div class="kpi-value">${summary.take_rate == null ? "—" : `${summary.take_rate.toFixed(2)}%`}</div><span class="muted">service fee on checked orders</span></div>
     </div>
-    ${summary.new_lines?.length ? `<div class="card new-lines" style="margin-bottom:20px"><div class="card-head"><h3>New statement lines</h3>
-        <span class="muted">${state.me.is_staff ? "say what each one is, once" : "Codeonto is reviewing these"}</span></div>
-      <p class="muted" style="margin-top:0">These appeared on Zomato or Swiggy payout statements for the first time. Until reviewed they count as deductions not tied to orders, and aren't counted as ad spend.</p>
+    ${summary.new_lines?.length && state.me.is_staff ? `<details class="card new-lines" style="margin-bottom:12px"><summary><b>${plural(summary.new_lines.length, "new statement line")}</b> to review <span class="muted">· lines we haven't seen on a Zomato or Swiggy statement before, click to open</span></summary>
+      <p class="muted" style="margin-top:10px">These appeared on Zomato or Swiggy payout statements for the first time. Until reviewed they count as deductions not tied to orders, and aren't counted as ad spend.</p>
       <table class="ov-table"><thead><tr><th>Platform</th><th>Line</th><th class="num">Payouts</th><th class="num">Total</th><th>Last seen</th><th></th></tr></thead><tbody>
       ${summary.new_lines.map((l) => `<tr><td>${l.platform === "swiggy" ? "Swiggy" : "Zomato"}</td><td><b>${esc(l.label)}</b><br><span class="muted">${esc(l.section)}</span></td>
         <td class="num">${inr.format(l.payouts)}</td><td class="num">${rupees(l.total)}</td><td class="muted">${shortDate(l.last_seen)}</td>
         <td>${state.me.is_staff ? `<span class="btn-row">${[["order", "Order charge"], ["ad", "Ad spend"], ["deduction", "Other deduction"]].map(([k, t]) =>
           `<button class="btn ${l.guess === k ? "blue" : "light"}" data-line="${l.id}" data-kind="${k}">${t}</button>`).join("")}</span>` : ""}</td></tr>`).join("")}
-      </tbody></table></div>` : ""}
+      </tbody></table></details>` : ""}
     ${summary.issues.length ? `<div class="card" style="margin-bottom:20px"><div class="card-head"><h3>What needs checking</h3></div>
       <ul class="payout-issues">${summary.issues.map((i) => `<li><button class="payout-issue-btn ${payoutFilters.issue === i.code ? "on" : ""}" data-payout-issue="${i.code}">
         <b>${inr.format(i.count)}</b> ${esc(i.label)}<span class="muted">${payoutFilters.issue === i.code ? "showing · clear" : "show"}</span></button></li>`).join("")}</ul></div>` : ""}
