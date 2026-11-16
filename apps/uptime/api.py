@@ -16,13 +16,15 @@ def _pct(online, checks):
 
 
 def _filtered(request, brand_id):
-    """(episodes that started in the period or are still going, uptime days in the period), limited to this login's outlets."""
+    """(episodes that overlap the period or are still going, uptime days in the period), limited to this login's outlets.
+    An episode that started before the period but ended inside it counts too (offline Saturday night until Sunday night
+    shows on Sunday)."""
     require_module(request.user, get_brand(request.user, brand_id), "store_uptime")
     qp = request.query_params
     end = date.fromisoformat(qp["end"]) if qp.get("end") else date.today()
     start = date.fromisoformat(qp["start"]) if qp.get("start") else end - timedelta(days=29)
     episodes = in_scope(OfflineEpisode.objects.filter(outlet__brand_id=brand_id), request.user).filter(
-        Q(log_date__range=(start, end)) | Q(is_active=True))
+        Q(log_date__lte=end, restored_at__date__gte=start) | Q(log_date__range=(start, end)) | Q(is_active=True))
     days = in_scope(UptimeDaily.objects.filter(outlet__brand_id=brand_id, day__range=(start, end)), request.user)
     if outlet_ids(qp.get("outlet_id")):
         ids = outlet_ids(qp.get("outlet_id"))

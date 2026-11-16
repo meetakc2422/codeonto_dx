@@ -135,6 +135,15 @@ class UptimeTests(TestCase):
         self.assertEqual([r["outlet_id"] for r in c.get(url, {**q, "status": "active"}).json()], [self.b.pk])
         self.assertEqual(len(c.get(url, {**q, "status": "restored"}).json()), 2)
 
+    def test_episode_that_started_the_day_before_shows_in_the_day_it_ended(self):
+        OfflineEpisode.objects.create(outlet=self.a, platform_id="zomato", is_active=False, log_date=self.today - timedelta(days=1),
+                                      first_detected_at=NOW - timedelta(hours=20), last_detected_at=NOW, restored_at=NOW, downtime_minutes=600)
+        OfflineEpisode.objects.create(outlet=self.a, platform_id="zomato", is_active=False, log_date=self.today - timedelta(days=3),
+                                      first_detected_at=NOW - timedelta(days=3), last_detected_at=NOW - timedelta(days=2),
+                                      restored_at=NOW - timedelta(days=2), downtime_minutes=60)  # ended before the period
+        s = self.summary(self.owner, outlet_id=self.a.pk)
+        self.assertEqual((s["events"], s["total_downtime"]), (3, 640))
+
     def test_alert_opens_after_15_minutes_offline(self):
         self.assertIsNotNone(store_offline(self.b))
         self.assertIsNone(store_offline(self.a))
