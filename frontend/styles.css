@@ -1168,12 +1168,12 @@ table.stmt .off { opacity: .35; }
 .an-wrap { overflow: auto; max-height: 70vh; border: 1px solid var(--border); border-radius: 10px; }
 .an-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 .an-table th, .an-table td { padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-.an-table thead th { position: sticky; top: 0; background: #f7f9fc; z-index: 2; text-align: center; }
+.an-table thead th { position: sticky; top: 0; background: #faf6f2; z-index: 2; text-align: center; }
 .an-col span { display: block; font-weight: 700; letter-spacing: .03em; text-transform: uppercase; font-size: 11.5px; }
 .an-col small, .an-col em { display: block; color: var(--muted); font-size: 11px; font-style: normal; }
 .an-id { display: inline-block; margin: 3px 0; padding: 1px 8px; background: #eef1f6; border-radius: 6px; font-size: 12px; }
 .an-label { position: sticky; left: 0; background: #fff; z-index: 1; min-width: 280px; text-align: left; }
-.an-table thead .an-label { z-index: 3; background: #f7f9fc; }
+.an-table thead .an-label { z-index: 3; background: #faf6f2; }
 .an-sec td { font-weight: 600; background: #f4f7fb; }
 .an-sec td.an-label { background: #f4f7fb; }
 .an-item td { background: #fff; font-weight: 400; }
