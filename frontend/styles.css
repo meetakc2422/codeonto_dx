@@ -1187,3 +1187,8 @@ table.stmt .off { opacity: .35; }
 .new-lines > summary::-webkit-details-marker { display: none; }
 .new-lines > summary::before { content: "▸"; display: inline-block; margin-right: 8px; color: var(--muted); transition: transform .15s; }
 .new-lines[open] > summary::before { transform: rotate(90deg); }
+.payout-combined { padding: 10px 14px; }
+.payout-combined > summary { cursor: pointer; list-style: none; font-size: 13px; }
+.payout-combined > summary::-webkit-details-marker { display: none; }
+.payout-combined > summary::before { content: "▸"; display: inline-block; margin-right: 8px; color: var(--muted); transition: transform .15s; }
+.payout-combined[open] > summary::before { transform: rotate(90deg); }

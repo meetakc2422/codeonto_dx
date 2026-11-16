@@ -1420,7 +1420,7 @@ function wireStaffBilling(page, clientId) {
 }
 
 // ---------- payout reconciliation ----------
-const payoutFilters = { status: "", q: "", open: null, issue: "", view: "list", basis: "net", aPlatform: "", detail: false };
+const payoutFilters = { status: "", q: "", open: null, issue: "", view: "list", basis: "net", aPlatform: "", detail: false, combinedOpen: false };
 const analyticsOpen = new Set();  // statement sections opened in the analytics view
 const stmtSel = new Map();  // statement view: "outletId:platform" -> Set of unticked cycle ids
 const rupeesShort = (v) => {  // ₹12.6k, ₹3.13 L, ₹1.2 Cr: for tight spaces
@@ -1567,16 +1567,16 @@ async function renderReconciliation(page) {
     ${summary.issues.length ? `<div class="card" style="margin-bottom:20px"><div class="card-head"><h3>What needs checking</h3></div>
       <ul class="payout-issues">${summary.issues.map((i) => `<li><button class="payout-issue-btn ${payoutFilters.issue === i.code ? "on" : ""}" data-payout-issue="${i.code}">
         <b>${inr.format(i.count)}</b> ${esc(i.label)}<span class="muted">${payoutFilters.issue === i.code ? "showing · clear" : "show"}</span></button></li>`).join("")}</ul></div>` : ""}
-    ${combined?.platforms.length ? `<div class="card payout-combined" style="margin-bottom:20px">
-      <div class="card-head"><h3>Combined statement <a class="btn light" style="margin-left:10px" href="${combinedXlsx}" download>Export Excel</a></h3>
-        <span class="muted">${plural(combined.total.payouts, "payout")} matching these filters · ${inr.format(combined.total.orders)} orders · net ${rupees(combined.total.net_payout)}
-          (paid ${rupees(combined.total.paid)} · to be paid ${rupees(combined.total.to_be_paid)})</span></div>
+    ${combined?.platforms.length ? `<details class="card payout-combined" id="combinedBox" style="margin-bottom:12px" ${payoutFilters.combinedOpen ? "open" : ""}>
+      <summary><b>Combined statement</b> <span class="muted">· ${plural(combined.total.payouts, "payout")} matching these filters · ${inr.format(combined.total.orders)} orders · net ${rupees(combined.total.net_payout)}
+          (paid ${rupees(combined.total.paid)} · to be paid ${rupees(combined.total.to_be_paid)}) · click to open</span></summary>
+      <p style="margin:10px 0 6px"><a class="btn light" href="${combinedXlsx}" download>Export Excel</a></p>
       <div class="payout-combined-grid">${combined.platforms.map((p) => `<div>
         <h4>${p.platform === "swiggy" ? "Swiggy" : "Zomato"} <span class="muted">· ${plural(p.payouts, "payout")} · ${plural(p.outlets, "outlet")} · ${inr.format(p.orders)} orders</span></h4>
         <table class="payout-statement"><tbody>${(() => { const base = stmtBase(p.sections); return p.sections.map((sec) => `<tr class="section"><td>${esc(sec.label)}</td><td>${rupees(sec.value)}</td></tr>
           ${sec.items.map((i) => `<tr><td class="muted">${esc(i.label)}</td><td class="muted">${rupees(i.value)}</td></tr>`).join("")}`).join("") + `<tr class="section total"><td>Net payout</td><td>${rupees(p.net_payout)}</td></tr>`; })()}</tbody></table></div>`).join("")}</div>
       <p class="muted" style="margin:8px 0 0">Adds up every payout matching the filters (dates, outlets, platform, status, search), the same ones the list and the CSV use. Zomato and Swiggy statements are laid out differently, so each is combined on its own.</p>
-    </div>` : ""}
+    </details>` : ""}
     <div class="card so-list">
       <div class="toolbar">
         <label class="payout-date">From <input id="payoutFrom" type="date" value="${range().start}" max="${isoDate(new Date())}"></label>
@@ -1626,6 +1626,7 @@ async function renderReconciliation(page) {
   }));
   page.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { payoutFilters.view = b.dataset.view; renderReconciliation(page); }));
   if (statements) wireStatementBlocks(page, statements.groups);
+  $("#combinedBox")?.addEventListener("toggle", (e) => { payoutFilters.combinedOpen = e.target.open; });
   page.querySelectorAll("[data-abasis]").forEach((b) => b.addEventListener("click", () => { payoutFilters.basis = b.dataset.abasis; renderReconciliation(page); }));
   page.querySelectorAll("[data-aplat]").forEach((b) => b.addEventListener("click", () => { payoutFilters.aPlatform = b.dataset.aplat; analyticsOpen.clear(); renderReconciliation(page); }));
   page.querySelectorAll("[data-asec]").forEach((b) => b.addEventListener("click", () => { const k = b.dataset.asec; analyticsOpen.has(k) ? analyticsOpen.delete(k) : analyticsOpen.add(k); renderReconciliation(page); }));
