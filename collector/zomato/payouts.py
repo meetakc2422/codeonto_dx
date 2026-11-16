@@ -452,7 +452,9 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             for cycle in cycles:
                 if stop.is_set():
                     return
-                if (s["outlet_id"], cycle["start_date"], cycle["end_date"]) in finished:
+                # a cycle that is PAID in our copy and still PAID on Zomato is done; if Zomato now says something else
+                # (a held or reversed payout), read it again so our status follows
+                if (s["outlet_id"], cycle["start_date"], cycle["end_date"]) in finished and cycle["status"] == "PAID":
                     continue
                 statement = fetch_statement(cookies, res_id, cycle)
                 orders = None
