@@ -3343,11 +3343,8 @@ async function renderMarketComp(page, outletId) {
       const r = await apiJSON(`${zBase(outletId)}/search`, "POST", { q: e.target.q.value, spot: zPeek(outletId)?.spot });
       results = r.results;
       $("#zResults").innerHTML = (r.total ? `<p class="muted" style="margin:0 0 4px">${inr.format(r.total)} restaurants for ${esc(r.query)} · showing the first ${results.length}</p>` : "") +
-        (results.length ? `<div class="comp-bulk" id="zBulk"><label class="check"><input type="checkbox" id="zBulkAll"> Select all</label>
-          <span class="muted" id="zBulkInfo">Tick the restaurants you want to compare with, then add them together.</span>
-          <button class="btn blue" id="zBulkGo" hidden></button><button class="btn light" id="zBulkClear" hidden>Clear</button></div>` +
-        results.map((x, i) => `<div class="comp-result">
-          <span><strong>${!x.is_us && !x.tracked ? `<input type="checkbox" class="comp-pick" data-zsel="${i}" aria-label="Select ${esc(x.name)}"> ` : ""}${esc(x.name)}${x.is_ad ? ' <em class="comp-ad">Ad</em>' : ""}${x.is_us ? ' <em class="comp-you">You</em>' : ""}</strong>
+        (results.length ? results.map((x, i) => `<div class="comp-result">
+          <span><strong>${esc(x.name)}${x.is_ad ? ' <em class="comp-ad">Ad</em>' : ""}${x.is_us ? ' <em class="comp-you">You</em>' : ""}</strong>
             <small class="muted">${[x.area, x.distance_km != null ? `${x.distance_km} km` : "", x.delivery_time, x.offers?.[0]?.text].filter(Boolean).map(esc).join(" · ")}</small></span>
           <span class="num">${x.rating != null ? `${x.rating.toFixed(1)} ★` : ""}</span>
           <span class="btn-row"><button class="btn light" data-zres="${i}" data-act="view">View</button>
@@ -3357,37 +3354,7 @@ async function renderMarketComp(page, outletId) {
     } catch (x) { err(x); $("#zResults").innerHTML = ""; }
     btn.disabled = false;
   });
-  // several restaurants at once: tick them, then add them in one go (the app limits how many can be compared per outlet)
-  const picked = () => [...document.querySelectorAll("#zResults [data-zsel]:checked")].map((c) => Number(c.dataset.zsel));
-  const refreshBulk = () => {
-    const n = picked().length, go = $("#zBulkGo");
-    if (!go) return;
-    go.hidden = !n; $("#zBulkClear").hidden = !n;
-    go.textContent = `Compare ${n} selected`;
-    $("#zBulkInfo").hidden = !!n;
-  };
-  $("#zResults").addEventListener("change", (e) => {
-    if (e.target.id === "zBulkAll") document.querySelectorAll("#zResults [data-zsel]").forEach((c) => { c.checked = e.target.checked; });
-    else if (!e.target.matches("[data-zsel]")) return;
-    refreshBulk();
-  });
-  $("#zResults").addEventListener("click", async (e) => {
-    if (e.target.id === "zBulkClear") { document.querySelectorAll("#zResults [data-zsel], #zBulkAll").forEach((c) => { c.checked = false; }); refreshBulk(); return; }
-    if (e.target.id === "zBulkGo") {
-      const idx = picked(), go = e.target;
-      go.disabled = true;
-      let added = 0, failed = "";
-      for (let k = 0; k < idx.length; k++) {
-        go.textContent = `Adding ${k + 1} of ${idx.length}…`;
-        const r = results[idx[k]];
-        try { await apiJSON(`${zBase(outletId)}/track`, "POST", { res_id: r.res_id, tracked: true, name: r.name, distance_km: r.distance_km, delivery_time: r.delivery_time, spot: zPeek(outletId)?.spot }); added++; }
-        catch (x) { failed = x.message; break; }  // most often the limit per outlet: no point trying the rest
-      }
-      if (failed) { toast(`${added ? `Added ${added}. ` : ""}${failed}`); $("#zError").textContent = failed; }
-      else toast(`Added ${added} to compare`);
-      render();
-      return;
-    }
+  $("#zResults").addEventListener("click", (e) => {
     const b = e.target.closest("[data-zres]");
     if (!b) return;
     const x = results[Number(b.dataset.zres)];
