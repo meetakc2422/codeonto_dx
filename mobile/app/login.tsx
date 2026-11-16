@@ -28,7 +28,7 @@ export default function Login() {
   return (
     <KeyboardAvoidingView style={s.page} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <View style={s.box}>
-        <Text style={s.logo}>SocialSpork</Text>
+        <Text style={s.logo}>Compass</Text>
         <Text style={s.sub}>Every outlet, every platform, one dashboard.</Text>
         <TextInput style={s.input} placeholder="Username" placeholderTextColor={Theme.whiteMuted} autoCapitalize="none" autoCorrect={false} value={username} onChangeText={setUsername} />
         <TextInput style={s.input} placeholder="Password" placeholderTextColor={Theme.whiteMuted} secureTextEntry value={password} onChangeText={setPassword} onSubmitEditing={submit} />

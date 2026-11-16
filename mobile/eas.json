@@ -4,11 +4,11 @@
     "preview": {
       "distribution": "internal",
       "android": { "buildType": "apk" },
-      "env": { "EXPO_PUBLIC_API_URL": "https://app.socialspork.com/api" }
+      "env": { "EXPO_PUBLIC_API_URL": "https://compass.codeonto.com/api" }
     },
     "production": {
       "autoIncrement": true,
-      "env": { "EXPO_PUBLIC_API_URL": "https://app.socialspork.com/api" }
+      "env": { "EXPO_PUBLIC_API_URL": "https://compass.codeonto.com/api" }
     }
   },
   "submit": { "production": {} }

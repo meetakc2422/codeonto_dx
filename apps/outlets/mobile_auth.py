@@ -11,7 +11,7 @@ from django.core import signing
 from rest_framework.authentication import BaseAuthentication
 from rest_framework.exceptions import AuthenticationFailed
 
-SALT = "socialspork-mobile"
+SALT = "codeonto-mobile"
 TOKEN_DAYS = 30
 
 

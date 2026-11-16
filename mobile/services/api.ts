@@ -1,12 +1,12 @@
 import axios from 'axios';
 import { storage } from './storage';
 
-// The SocialSpork dashboard API (the same one the website uses). Set EXPO_PUBLIC_API_URL to point at another server,
+// The Compass dashboard API (the same one the website uses). Set EXPO_PUBLIC_API_URL to point at another server,
 // e.g. http://192.168.1.x:8000/api for a Django server on your Mac while developing.
-export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://app.socialspork.com/api';
+export const API_BASE_URL = process.env.EXPO_PUBLIC_API_URL || 'https://compass.codeonto.com/api';
 
-const TOKEN_KEY = 'ss_token';
-const USER_KEY = 'ss_user';
+const TOKEN_KEY = 'co_token';
+const USER_KEY = 'co_user';
 
 export const apiClient = axios.create({ baseURL: API_BASE_URL, timeout: 25000 });
 

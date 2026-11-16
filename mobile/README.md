@@ -1,6 +1,6 @@
-# SocialSpork mobile
+# Compass mobile
 
-Expo (React Native) app for the SocialSpork dashboard: **Stock-outs, Uptime, Reviews, Payouts (reconciliation)**.
+Expo (React Native) app for the Compass dashboard: **Stock-outs, Uptime, Reviews, Payouts (reconciliation)**.
 It signs in at `POST /api/auth/mobile/login` and sends the returned token as `Authorization: Bearer ...`; the API applies
 the same access rules as the website (a client sees only its own brands and outlets).
 
@@ -33,7 +33,7 @@ Updating: a new build for each release. Bump nothing by hand; `autoIncrement` ra
 
 ## On a phone through a link (no install)
 
-The web build is served by the website at **https://app.socialspork.com/m**. Open it on the phone, sign in with your dashboard
+The web build is served by the website at **https://compass.codeonto.com/m**. Open it on the phone, sign in with your dashboard
 login, then "Add to Home Screen" (Safari Share menu, or Chrome menu) to get an icon and full-screen mode.
 
 After changing the app, rebuild that copy and push it:

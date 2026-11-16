@@ -1,18 +1,18 @@
 {
   "expo": {
-    "name": "SocialSpork",
-    "slug": "socialspork-mobile",
+    "name": "Compass",
+    "slug": "codeonto-mobile",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "socialspork",
+    "scheme": "codeonto",
     "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.socialspork.dashboard"
+      "bundleIdentifier": "com.codeonto.compass"
     },
     "android": {
-      "package": "com.socialspork.dashboard",
+      "package": "com.codeonto.compass",
       "adaptiveIcon": {
         "backgroundColor": "#0B1229",
         "foregroundImage": "./assets/images/android-icon-foreground.png",

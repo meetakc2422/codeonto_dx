@@ -35,7 +35,7 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    storage.get('ss_filters')
+    storage.get('co_filters')
       .then((raw) => {
         if (!raw) return;
         const f = JSON.parse(raw);
@@ -47,7 +47,7 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const save = (next: { brandId: number | null; days: number; platform: string }) =>
-    storage.set('ss_filters', JSON.stringify(next));
+    storage.set('co_filters', JSON.stringify(next));
 
   const brand = useMemo(() => brands.find((b) => b.id === brandId) || brands[0] || null, [brands, brandId]);
 
