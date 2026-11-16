@@ -19,7 +19,7 @@ $Jobs = @(
     @{ Name = "Login refresh worker";   Args = "run.py worker";                    When = "logon" },
     @{ Name = "Zomato menu proxy";      Args = "menu_proxy.py";                    When = "logon" },
     @{ Name = "Zomato uptime";          Args = "run.py zomato uptime --headless";  When = "logon" },
-    @{ Name = "Zomato offline hours";   Args = "run.py zomato offline_hours --headless"; When = "09:30" },
+    @{ Name = "Zomato offline hours";   Args = "run.py zomato offline_hours --headless"; When = "07:00" },
     @{ Name = "Zomato stock-outs";      Args = "run.py zomato stockouts --headless"; When = "logon" },
     @{ Name = "Alerts";                 Args = "run.py alerts send --every 15";    When = "logon" },
     @{ Name = "Data health check";      Args = "run.py alerts health";            When = "12:30" },
