@@ -473,7 +473,7 @@ def payout_cycle_detail(request, brand_id, cycle_id):
         **_cycle_json(c), "breakdown": c.breakdown, "delivered_orders": c.delivered_orders, "rejected_orders": c.rejected_orders,
         "issue_labels": ISSUE_LABELS,
         "orders": [{"order_id": o.order_id, "order_date": o.order_date, "status": o.status, "payment_mode": o.payment_mode,
-                    "net_order_value": _money(o.net_order_value), "base_fee_pct": _money(o.base_fee_pct), "service_fee_pct": _money(o.service_fee_pct), "fees_total": _money(o.fees_total),
+                    "gross_value": _money(o.subtotal + o.packaging_charge + o.gst_collected), "net_order_value": _money(o.net_order_value), "base_fee_pct": _money(o.base_fee_pct), "service_fee_pct": _money(o.service_fee_pct), "fees_total": _money(o.fees_total),
                     "government_charges": _money(o.government_charges), "other_deductions": _money(o.other_deductions), "net_deductions": _money(o.net_deductions),
                     "net_additions": _money(o.net_additions), "payout": _money(o.payout), "settlement_status": o.settlement_status,
                     "settlement_date": o.settlement_date, "unsettled_amount": _money(o.unsettled_amount), "issues": o.issues}

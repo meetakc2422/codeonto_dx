@@ -1570,8 +1570,8 @@ async function renderReconciliation(page) {
           (paid ${rupees(combined.total.paid)} · to be paid ${rupees(combined.total.to_be_paid)})</span></div>
       <div class="payout-combined-grid">${combined.platforms.map((p) => `<div>
         <h4>${p.platform === "swiggy" ? "Swiggy" : "Zomato"} <span class="muted">· ${plural(p.payouts, "payout")} · ${plural(p.outlets, "outlet")} · ${inr.format(p.orders)} orders</span></h4>
-        <table class="payout-statement"><tbody>${(() => { const base = stmtBase(p.sections); return p.sections.map((sec) => `<tr class="section"><td>${esc(sec.label)}</td><td>${rupees(sec.value)}${pctOf(sec.value, base)}</td></tr>
-          ${sec.items.map((i) => `<tr><td class="muted">${esc(i.label)}</td><td class="muted">${rupees(i.value)}${pctOf(i.value, base)}</td></tr>`).join("")}`).join("") + `<tr class="section total"><td>Net payout</td><td>${rupees(p.net_payout)}${pctOf(p.net_payout, base)}</td></tr>`; })()}</tbody></table></div>`).join("")}</div>
+        <table class="payout-statement"><tbody>${(() => { const base = stmtBase(p.sections); return p.sections.map((sec) => `<tr class="section"><td>${esc(sec.label)}</td><td>${rupees(sec.value)}</td></tr>
+          ${sec.items.map((i) => `<tr><td class="muted">${esc(i.label)}</td><td class="muted">${rupees(i.value)}</td></tr>`).join("")}`).join("") + `<tr class="section total"><td>Net payout</td><td>${rupees(p.net_payout)}</td></tr>`; })()}</tbody></table></div>`).join("")}</div>
       <p class="muted" style="margin:8px 0 0">Adds up every payout matching the filters (dates, outlets, platform, status, search), the same ones the list and the CSV use. Zomato and Swiggy statements are laid out differently, so each is combined on its own.</p>
     </div>` : ""}
     <div class="card so-list">
@@ -1980,6 +1980,10 @@ async function togglePayoutDetail(tr, id) {
   const bigLines = d.breakdown.filter((sec) => !ORDER_SECTIONS.includes(sec.id)).flatMap((sec) => sec.items.filter((i) => i.value < 0).map((i) => ({ ...i, section: sec.label })))
     .sort((a, b) => a.value - b.value).slice(0, 3);
   const nGap = d.orders.filter((o) => reasons(o).some((x) => x.gap)).length;
+  // each order as a share of the payout's gross and net sales (Zomato's own statement totals; the orders' sum when the statement has none)
+  const secBase = (re) => { const s = d.breakdown.find((x) => re.test(x.label || "") || re.test(x.id || "")); return s ? Math.abs(Number(s.value)) || null : null; };
+  const grossBase = secBase(/^(gross order value|gross_order_value|total_order_value|total_customer_paid)/i) || d.orders.reduce((t, o) => t + Math.abs(Number(o.gross_value) || 0), 0) || null;
+  const netBase = secBase(/^net order value/i) || d.orders.reduce((t, o) => t + Math.abs(Number(o.net_order_value) || 0), 0) || null;
   const nFlag = d.orders.filter(flagged).length;
   const explain = carried ? `The orders match the statement. ${d.platform === "swiggy" ? "Swiggy" : "Zomato"} paid ₹0 because deductions not tied to orders (${bigLines.map((l) => `${l.label} ${rupees(l.value)}`).join(", ") || "see the statement"}) were bigger than what the orders earned; ${rupees(-(d.expected_payout || 0))} carries into the next payout`
     : gap && !nGap && bigLines.length ? `No single order explains it. Biggest deductions not tied to orders: ${bigLines.map((l) => `${l.label} ${rupees(l.value)}`).join(", ")}`
@@ -1991,8 +1995,8 @@ async function togglePayoutDetail(tr, id) {
     <div class="payout-columns">
       <div>
         <h4>${d.platform === "swiggy" ? "Swiggy" : "Zomato"}'s statement</h4>
-        ${d.breakdown.length ? `<table class="payout-statement"><tbody>${(() => { const base = stmtBase(d.breakdown); return d.breakdown.map((s) => `<tr class="section"><td>${esc(s.label)}</td><td>${rupees(s.value)}${pctOf(s.value, base)}</td></tr>
-          ${s.items.filter((i) => i.value).map((i) => `<tr class="${(carried || gap) && bigLines.some((l) => l.label === i.label && l.value === i.value) ? "payout-culprit" : ""}"><td class="muted">${esc(i.label)}</td><td class="muted">${rupees(i.value)}${pctOf(i.value, base)}</td></tr>`).join("")}`).join("") + `<tr class="section total"><td>Net payout</td><td>${rupees(d.net_payout)}${pctOf(d.net_payout, base)}</td></tr>`; })()}</tbody></table>` : '<p class="muted">No statement available.</p>'}
+        ${d.breakdown.length ? `<table class="payout-statement"><tbody>${(() => { const base = stmtBase(d.breakdown); return d.breakdown.map((s) => `<tr class="section"><td>${esc(s.label)}</td><td>${rupees(s.value)}</td></tr>
+          ${s.items.filter((i) => i.value).map((i) => `<tr class="${(carried || gap) && bigLines.some((l) => l.label === i.label && l.value === i.value) ? "payout-culprit" : ""}"><td class="muted">${esc(i.label)}</td><td class="muted">${rupees(i.value)}</td></tr>`).join("")}`).join("") + `<tr class="section total"><td>Net payout</td><td>${rupees(d.net_payout)}</td></tr>`; })()}</tbody></table>` : '<p class="muted">No statement available.</p>'}
       </div>
       <div>
         <h4>Our check</h4>
@@ -2009,11 +2013,11 @@ async function togglePayoutDetail(tr, id) {
       ${gap || nFlag || carried ? `<span class="payout-explain ${gap ? "bad" : carried ? "warn" : ""}">${gap ? `Difference ${rupees(gap)} · ` : ""}${esc(explain)}</span>` : ""}
       ${nFlag ? `<label class="muted"><input type="checkbox" class="payout-only-flagged"> Show only flagged orders</label>` : ""}</div>
       <div class="table-wrap payout-orders"><table>
-      <thead><tr><th>Order ID</th><th>Date</th><th>Status</th><th>Order value</th><th>Fee %</th><th>Fees</th><th>Taxes</th><th>Other</th><th>Payout</th><th>Settlement</th><th>Why flagged</th></tr></thead>
+      <thead><tr><th>Order ID</th><th>Date</th><th>Status</th><th>Gross value</th><th>Net value</th><th>Fee %</th><th>Fees</th><th>Taxes</th><th>Other</th><th>Payout</th><th>Settlement</th><th>Why flagged</th></tr></thead>
       <tbody>${orders.map((o) => `<tr class="${flagged(o) ? (reasons(o).some((x) => x.gap) ? "flagged gap" : "flagged") : ""}">
         <td>${esc(o.order_id)}</td>
         <td class="muted">${o.order_date ? new Date(o.order_date).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—"}</td>
-        <td>${esc(o.status)}</td><td>${rupees(o.net_order_value)}</td><td>${o.base_fee_pct}%${o.service_fee_pct !== o.base_fee_pct ? ` <span class="muted">+${(o.service_fee_pct - o.base_fee_pct).toFixed(1)}% distance</span>` : ""}</td><td>${rupees(o.fees_total)}</td>
+        <td>${esc(o.status)}</td><td>${rupees(o.gross_value)}${pctOf(o.gross_value, grossBase)}</td><td>${rupees(o.net_order_value)}${pctOf(o.net_order_value, netBase)}</td><td>${o.base_fee_pct}%${o.service_fee_pct !== o.base_fee_pct ? ` <span class="muted">+${(o.service_fee_pct - o.base_fee_pct).toFixed(1)}% distance</span>` : ""}</td><td>${rupees(o.fees_total)}</td>
         <td>${rupees(o.government_charges)}</td><td>${rupees(o.other_deductions)}</td><td><b>${rupees(o.payout)}</b></td>
         <td>${esc(o.settlement_status || "—")}${o.unsettled_amount ? ` <span class="muted">${rupees(o.unsettled_amount)} left</span>` : ""}</td>
         <td>${reasons(o).map((x) => `<span class="ov-issue ${x.money ? "money" : ""}">${esc(x.text)}</span>`).join(" ")}</td></tr>`).join("")}</tbody></table></div>` : ""}
