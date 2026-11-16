@@ -1159,3 +1159,6 @@ table.stmt .off { opacity: .35; }
 .so-long-top b { color: var(--text); font-weight: 600; margin-right: 4px; }
 .so-link { border: 0; background: none; color: var(--blue, #2f6fb5); font: inherit; font-size: 12.5px; cursor: pointer; padding: 0 4px; text-decoration: underline; }
 .so-long-top[hidden] { display: none; }
+/* checkboxes in a toolbar were stretched like text inputs: keep the box small and next to its label */
+.toolbar input[type="checkbox"] { min-width: 0; flex: none; width: 16px; height: 16px; padding: 0; margin: 0; }
+.toolbar label.check { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
