@@ -2217,7 +2217,7 @@ function topSellerStrip(summary, periodWord = "in this period") {
   const since = (ts) => new Date(ts).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
   return `<div class="so-loss">
     ${items.length ? `<div class="so-loss-main"><span class="so-loss-label">${hasPer ? "Best sellers lost to stock-outs" : "Best sellers out right now"}</span>
-        ${hasPer ? `<b>${range(per.low, per.high)}</b><small>estimated sales lost ${esc(periodWord)}</small>`
+        ${hasPer ? `<b>${range(per.low, per.high)}</b><small>estimated sales lost ${esc(periodWord)}${summary.long_off ? ` · items off ${summary.long_off_days}+ days not counted` : ""}</small>`
           : t.high ? `<b>${range(t.low, t.high)}</b><small>estimated sales lost so far today</small>` : `<small>not enough order history yet to value them</small>`}
         ${hasPer && t?.items?.length ? `<p class="so-loss-today">${plural(t.items.length, "best seller")} out right now${t.high ? ` · ${range(t.low, t.high)} lost so far today` : ""}</p>` : ""}
         <div class="so-loss-items" id="lossItems">${items.slice(0, 20).map((i) => {
@@ -2343,8 +2343,8 @@ async function renderStockOuts(page) {
   page.innerHTML = `
     <div class="so-hero">
       <div><span class="so-live"><i></i> Live</span>
-        <div class="so-big">${inr.format(summary.active)}<small> items out of stock right now</small></div>
-        <p>across ${summary.outlets_affected} outlet${summary.outlets_affected === 1 ? "" : "s"} · ${inr.format(restored)} back in stock · avg downtime ${downtimeText(summary.avg_downtime) || "—"}${summary.long_off ? ` · ${inr.format(summary.long_off)} off for ${summary.long_off_days}+ days` : ""}</p>
+        <div class="so-big">${inr.format(summary.active - summary.long_off)}<small> items out of stock right now</small></div>
+        <p>across ${summary.outlets_affected} outlet${summary.outlets_affected === 1 ? "" : "s"} · ${inr.format(restored)} back in stock · avg downtime ${downtimeText(summary.avg_downtime) || "—"}${summary.long_off ? ` · <b>${inr.format(summary.long_off)}</b> more off for ${summary.long_off_days}+ days (listed separately)` : ""}</p>
         ${SHOW_STOCK_LOSS ? `<p class="so-lost" title="Estimate: each item's usual sales for the hours it was out, using the outlet's own hour-by-hour order pattern${summary.lost_unpriced ? `. ${summary.lost_unpriced} stock-outs have no sales history, so no ₹` : ""}">
           <b>${rupees(summary.lost_sales)}</b> of sales missed in this period <small>(estimate)</small></p>` : ""}</div>
       ${hasToday ? `<div class="so-now">Now serving<b>${now}</b></div>` : ""}
@@ -2362,7 +2362,8 @@ async function renderStockOuts(page) {
           <span class="so-bar"><i style="width:${(mealNum(m) / maxMeal) * 100}%"></i></span>
 </button>`;
       }).join("")}</div>
-      ${summary.long_off ? `<button class="so-earlier ${stockFilters.status === "long" ? "on" : ""}" id="sLong"><b>+${inr.format(summary.long_off)}</b> off for ${summary.long_off_days}+ days · probably taken off the menu · click to see</button>` : ""}</div>
+      ${summary.long_off ? `<button class="so-earlier ${stockFilters.status === "long" ? "on" : ""}" id="sLong"><b>+${inr.format(summary.long_off)}</b> off for ${summary.long_off_days}+ days · removed from the menu, or really out? · click to see</button>` : ""}
+      ${summary.long_off_top_sellers?.length ? `<p class="so-long-top"><b>Top sellers off ${summary.long_off_days}+ days:</b> ${summary.long_off_top_sellers.map((t) => `<span class="so-chip out" data-tip="out at ${plural(t.outlets, "outlet")}, longest ${t.days} days">${esc(t.item_name)} · ${t.days}d</span>`).join("")}</p>` : ""}</div>
 
     ${outletList.length > 1 ? `<div class="so-section">${stockFilters.city
       ? `<h3><button class="so-back" id="sCities">‹ All cities</button> ${esc(stockFilters.city)} <small>items out of stock now · click an outlet to filter</small></h3>`

@@ -189,14 +189,16 @@ def _order_based_loss(request, brand_id, qp, qs, start: date, end: date) -> dict
         ids = list(outlets.values_list("id", flat=True))
         active = list(qs.filter(is_active=True, platform_id__in=plats).exclude(first_detected_at__lt=_long_cutoff()))
         # what the answer depends on: the outlets, platforms and dates, and which stock-outs are open right now
-        sig = f"{sorted(ids)}|{plats}|{start}|{end}|{len(active)}|{max((x.id for x in active), default=0)}"
+        long_eps = list(qs.filter(is_active=True, platform_id__in=plats, first_detected_at__lt=_long_cutoff()))
+        sig = f"{sorted(ids)}|{plats}|{start}|{end}|{len(active)}|{max((x.id for x in active), default=0)}|{len(long_eps)}|{max((x.id for x in long_eps), default=0)}"
         key = "ob_loss:" + hashlib.md5(sig.encode()).hexdigest()
         hit = cache.get(key)
         if hit is not None:
             return hit
         now = datetime.now(IST)
         period = period_loss(list(qs.filter(platform_id__in=plats)), start, end, now, _long_cutoff())
-        out = {"top_sellers_out": top_sellers_out(active, now), "period_loss": period, "stock_rejections": rejected_for_stock(ids, start, end)}
+        out = {"top_sellers_out": top_sellers_out(active, now), "period_loss": period, "stock_rejections": rejected_for_stock(ids, start, end),
+               "long_off_top_sellers": _long_off_top_sellers(long_eps, plats, now)}
         cache.set(key, out, ORDER_LOSS_CACHE_SEC)
         return out
     except Exception:  # noqa: BLE001
@@ -204,6 +206,26 @@ def _order_based_loss(request, brand_id, qp, qs, start: date, end: date) -> dict
 
         logging.getLogger(__name__).exception("order-based stock-out loss failed")
         return {"top_sellers_out": None, "stock_rejections": None}
+
+
+def _long_off_top_sellers(episodes, plats, now) -> list[dict]:
+    """Best sellers that have been off for days: the ones an owner most wants to hear about (removed on purpose, or really out?)."""
+    from .loss import best_sellers, service_day
+
+    found: dict[str, dict] = {}
+    today = service_day(now)
+    for plat in plats:
+        eps = [e for e in episodes if e.platform_id == plat]
+        if not eps:
+            continue
+        top = best_sellers({e.outlet_id for e in eps}, today, plat)
+        for e in eps:
+            if e.item_name in top.get(e.outlet_id, ()):
+                t = found.setdefault(e.item_name, {"item_name": e.item_name, "outlet_ids": set(), "days": 0})
+                t["outlet_ids"].add(e.outlet_id)
+                t["days"] = max(t["days"], (now - e.first_detected_at).days)
+    rows = [{"item_name": t["item_name"], "outlets": len(t["outlet_ids"]), "days": t["days"]} for t in found.values()]
+    return sorted(rows, key=lambda r: (-r["outlets"], -r["days"]))[:12]
 
 
 @api_view(["GET"])
