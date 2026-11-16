@@ -2217,7 +2217,7 @@ function topSellerStrip(summary, periodWord = "in this period") {
   const since = (ts) => new Date(ts).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
   return `<div class="so-loss">
     ${items.length ? `<div class="so-loss-main"><span class="so-loss-label">${hasPer ? "Best sellers lost to stock-outs" : "Best sellers out right now"}</span>
-        ${hasPer ? `<b>${range(per.low, per.high)}</b><small>estimated sales lost ${esc(periodWord)}${summary.long_off ? ` · only the first ${summary.long_off_days} days of long stock-outs counted` : ""}</small>`
+        ${hasPer ? `<b>${range(per.low, per.high)}</b><small>estimated sales lost ${esc(periodWord)}${summary.long_off ? `` : ""}</small>`
           : t.high ? `<b>${range(t.low, t.high)}</b><small>estimated sales lost so far today</small>` : `<small>not enough order history yet to value them</small>`}
         ${hasPer && t?.items?.length ? `<p class="so-loss-today">${plural(t.items.length, "best seller")} out right now${t.high ? ` · ${range(t.low, t.high)} lost so far today` : ""}</p>` : ""}
         <div class="so-loss-items" id="lossItems">${items.slice(0, 20).map((i) => {
@@ -2352,7 +2352,7 @@ async function renderStockOuts(page) {
 
     ${topSellerStrip(summary, periodWord)}
 
-    <div class="so-section"><h3>By mealtime <small>big number: items out ${periodWord}, counted under the first meal each went out in · hover for the sales lost in that meal · click to filter</small></h3>
+    <div class="so-section"><h3>By mealtime <small data-tip="Items out ${periodWord}, counted under the first meal each went out in. Hover a tile for the sales lost in that meal; click it to filter.">items out ${periodWord}</small></h3>
       <div class="so-meals">${summary.by_meal.map((m) => {
         const meta = MEALS.find((x) => x.name === m.meal);
         const ml = summary.period_loss?.by_meal?.[m.meal];
@@ -2362,8 +2362,8 @@ async function renderStockOuts(page) {
           <span class="so-bar"><i style="width:${(mealNum(m) / maxMeal) * 100}%"></i></span>
 </button>`;
       }).join("")}</div>
-      ${summary.long_off ? `<button class="so-earlier ${stockFilters.status === "long" ? "on" : ""}" id="sLong"><b>+${inr.format(summary.long_off)}</b> off for ${summary.long_off_days}+ days · removed from the menu, or really out? · click to see</button>` : ""}
-      ${summary.long_off_top_sellers?.length ? `<p class="so-long-top"><b>Top sellers off ${summary.long_off_days}+ days:</b> ${summary.long_off_top_sellers.map((t) => `<span class="so-chip out" data-tip="out at ${plural(t.outlets, "outlet")}, longest ${t.days} days">${esc(t.item_name)} · ${t.days}d</span>`).join("")}</p>` : ""}</div>
+      ${summary.long_off ? `<button class="so-earlier ${stockFilters.status === "long" ? "on" : ""}" id="sLong"><b>+${inr.format(summary.long_off)}</b> off for ${summary.long_off_days}+ days · may be removed from the menu${summary.long_off_top_sellers?.length ? ` · ${summary.long_off_top_sellers.length} top sellers ▾` : ""}</button>` : ""}
+      ${summary.long_off_top_sellers?.length ? `<div class="so-long-top" id="longTop" hidden><b>Top sellers off ${summary.long_off_days}+ days:</b> ${summary.long_off_top_sellers.map((t) => `<span class="so-chip out" data-tip="out at ${plural(t.outlets, "outlet")}, longest ${t.days} days">${esc(t.item_name)} · ${t.days}d</span>`).join("")}<button class="so-link" id="sLongList">See all ${inr.format(summary.long_off)} items</button></div>` : ""}</div>
 
     ${outletList.length > 1 ? `<div class="so-section">${stockFilters.city
       ? `<h3><button class="so-back" id="sCities">‹ All cities</button> ${esc(stockFilters.city)} <small>items out of stock now · click an outlet to filter</small></h3>`
@@ -2409,7 +2409,9 @@ async function renderStockOuts(page) {
     stockFilters.meal = ""; stockFilters.outlet = ""; stockFilters.city = "";
     renderStockOuts(page);
   });
-  $("#sLong")?.addEventListener("click", () => { stockFilters.status = "long"; stockFilters.meal = ""; renderStockOuts(page); });
+  const showLong = () => { stockFilters.status = "long"; stockFilters.meal = ""; renderStockOuts(page); };
+  $("#sLongList")?.addEventListener("click", showLong);
+  $("#sLong")?.addEventListener("click", () => { const top = $("#longTop"); if (top) top.hidden = !top.hidden; else showLong(); });
   $("#sStatus").addEventListener("click", (e) => {
     const b = e.target.closest("button"); if (!b) return;
     stockFilters.status = b.dataset.v;
