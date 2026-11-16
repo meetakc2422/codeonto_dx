@@ -18,7 +18,7 @@ from apps.metrics import freshness
 from apps.outlets import api as outlets
 from apps.alerts import recipients_api
 from apps.integrations import sessions_api
-from apps.outlets import auth_api, staff_api, team_api
+from apps.outlets import auth_api, mobile_api, staff_api, team_api
 from apps.reviews import api as reviews
 from apps.reviews import service_api as reply_service
 from apps.stockouts import api as stockouts
@@ -48,6 +48,7 @@ api = [
     path("staff/sessions/<int:account_id>/refresh", sessions_api.refresh_session),
     path("staff/sessions/<int:account_id>/sync-outlets", sessions_api.sync_outlets),
     path("auth/login", auth_api.login_view),
+    path("auth/mobile/login", mobile_api.mobile_login),
     path("auth/otp/request", auth_api.otp_request),
     path("auth/otp/verify", auth_api.otp_verify),
     path("auth/logout", auth_api.logout_view),

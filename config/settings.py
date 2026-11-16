@@ -118,7 +118,7 @@ FRONTEND_DIR = BASE_DIR / "frontend"
 REST_FRAMEWORK = {
     # Same login as Django admin (session cookie); every API call needs a logged-in user,
     # and apps.outlets.access limits what each user sees.
-    "DEFAULT_AUTHENTICATION_CLASSES": ["apps.outlets.authentication.SessionAuth"],
+    "DEFAULT_AUTHENTICATION_CLASSES": ["apps.outlets.authentication.SessionAuth", "apps.outlets.mobile_auth.MobileTokenAuth"],  # session first: it decides the 401 answer
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
 }
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 14  # stay logged in for two weeks
