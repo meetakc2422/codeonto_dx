@@ -1181,3 +1181,4 @@ table.stmt .off { opacity: .35; }
 .an-total { background: #fffbe8; }
 .an-chev { display: inline-block; width: 22px; margin-right: 4px; border: 0; background: none; font-size: 18px; line-height: 1; color: var(--muted); cursor: pointer; transition: transform .15s; }
 .an-chev.open { transform: rotate(90deg); }
+.up-zh { margin-left: 6px; color: #b26a00; font-size: 11.5px; font-weight: 600; }

@@ -2252,8 +2252,9 @@ async function renderUptime(page) {
     <div class="so-section"><h3>Outlets <small>${dayList.length > 1 ? `${squaresNote}daily uptime, one square per day` : "uptime in this period"}, worst first · ${uptimeAll ? `all ${shown.length}` : `worst ${Math.min(UP_TOP, shown.length)} of ${shown.length}`}${uptimeCity ? ` in ${esc(uptimeCity)}` : ""} · click to filter</small></h3>
       <div class="up-heat">${(uptimeAll ? shown : shown.slice(0, UP_TOP)).map((o) => `
         <button class="up-row ${String(uptimeFilters.outlet) === String(o.id) ? "on" : ""}" data-outlet="${o.id}" title="${esc(o.name)}">
-          <span class="up-name">${esc(o.name)} <small class="muted">${esc(o.city || "")}</small>${o.offline_since ? ' <em class="uptime-off">offline</em>' : ""}</span>
-          ${dayList.length > 1 ? `<span class="up-cells">${dayList.map((d) => { const v = dayOf(o)[d]; return `<i style="background:${upColor(v)}" title="${shortDate(d)}: ${v == null ? "no checks" : `${v.toFixed(1)}%`}"></i>`; }).join("")}</span>` : ""}
+          <span class="up-name">${esc(o.name)} <small class="muted">${esc(o.city || "")}</small>${o.offline_since ? ' <em class="uptime-off">offline</em>' : ""}${o.zomato_hours ? ` <small class="up-zh" title="Zomato's own count of hours this outlet was offline in this period">Zomato: ${o.zomato_hours.toFixed(1)} h offline</small>` : ""}</span>
+          ${dayList.length > 1 ? `<span class="up-cells">${dayList.map((d) => { const v = dayOf(o)[d], zh = (o.zomato_days || {})[d]; const zc = zh == null ? null : zh >= 3 ? "#e5484d" : zh >= 0.5 ? "#f5a524" : "#cfe8d6";
+          return `<i style="background:${v == null && zc ? zc : upColor(v)}" title="${shortDate(d)}: ${v == null ? (zh != null ? "no checks of ours" : "no checks") : `${v.toFixed(1)}%`}${zh != null ? ` · Zomato says ${zh.toFixed(1)} h offline` : ""}"></i>`; }).join("")}</span>` : ""}
           <b class="${o.offline_since ? "bad" : "ok"}">${o.uptime_pct == null ? "—" : `${o.uptime_pct.toFixed(1)}%`}</b></button>`).join("")}</div>
       ${shown.length > UP_TOP ? `<button class="btn light" id="uAll" style="margin-top:8px">${uptimeAll ? "Show fewer" : `Show all ${shown.length}`}</button>` : ""}</div>
 

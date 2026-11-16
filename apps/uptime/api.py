@@ -8,7 +8,7 @@ from rest_framework.response import Response
 from apps.outlets.access import brands_for, get_brand, in_scope, outlet_ids
 from apps.billing.access import require_module
 
-from .models import OfflineEpisode, UptimeDaily
+from .models import OfflineEpisode, UptimeDaily, ZomatoOfflineHours
 
 
 def _pct(online, checks):
@@ -42,7 +42,7 @@ def uptime_summary(request, brand_id):
     fields = ("outlet_id", "outlet__outlet_name", "outlet__area", "outlet__city", "outlet__zomato_id")
     # the area tells stores apart: many have the brand as their name, and a few share an area, so the id goes along
     entry = lambda r: {"id": r["outlet_id"], "name": r["outlet__area"] or r["outlet__outlet_name"], "city": r["outlet__city"],
-                       "zomato_id": r["outlet__zomato_id"], "uptime_pct": None, "checks": 0, "online": 0, "days": {}, "events": 0, "downtime_minutes": 0, "offline_since": None}
+                       "zomato_id": r["outlet__zomato_id"], "zomato_hours": None, "zomato_days": {}, "uptime_pct": None, "checks": 0, "online": 0, "days": {}, "events": 0, "downtime_minutes": 0, "offline_since": None}
     by_outlet = {}
     for r in days.values(*fields).annotate(checks=Sum("checks"), online=Sum("online_checks")):
         by_outlet[r["outlet_id"]] = {**entry(r), "uptime_pct": _pct(r["online"], r["checks"]), "checks": r["checks"], "online": r["online"], "days": {}}
@@ -55,6 +55,17 @@ def uptime_summary(request, brand_id):
         o["downtime_minutes"] += r["downtime_minutes"]
         if r["is_active"]:
             o["offline_since"] = r["first_detected_at"]
+    # Zomato's own offline hours per day (its owner-hub report): covers days our monitor wasn't running
+    qp = request.query_params
+    z_end = date.fromisoformat(qp["end"]) if qp.get("end") else date.today()
+    z_start = date.fromisoformat(qp["start"]) if qp.get("start") else z_end - timedelta(days=29)
+    zq = in_scope(ZomatoOfflineHours.objects.filter(outlet__brand_id=brand_id, day__range=(z_start, z_end)), request.user)
+    if outlet_ids(qp.get("outlet_id")):
+        zq = zq.filter(outlet_id__in=outlet_ids(qp.get("outlet_id")))
+    for r in zq.values(*fields, "day", "hours"):
+        o = by_outlet.setdefault(r["outlet_id"], entry(r))
+        o["zomato_days"][r["day"].isoformat()] = float(r["hours"])
+        o["zomato_hours"] = round((o["zomato_hours"] or 0) + float(r["hours"]), 2)
     outlets = sorted(by_outlet.values(), key=lambda o: (o["offline_since"] is None, o["uptime_pct"] is None, o["uptime_pct"] or 0, o["name"]))
     return Response({
         "uptime_pct": _pct(totals["online"] or 0, totals["checks"] or 0),

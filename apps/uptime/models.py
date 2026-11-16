@@ -44,3 +44,21 @@ class UptimeDaily(models.Model):
 
     def __str__(self):
         return f"{self.outlet} {self.day}: {self.online_checks}/{self.checks}"
+
+
+class ZomatoOfflineHours(models.Model):
+    """Zomato's own figure for how many hours a store was offline on a day (the partner dashboard's "Offline hours" report).
+    Kept next to our own uptime checks: it covers the days our monitor wasn't running, and shows how far apart the two are."""
+
+    outlet = models.ForeignKey("outlets.BrandOutlet", on_delete=models.CASCADE, related_name="zomato_offline_hours")
+    day = models.DateField()
+    hours = models.DecimalField(max_digits=5, decimal_places=2)
+    fetched_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "zomato_offline_hours"
+        constraints = [models.UniqueConstraint(fields=["outlet", "day"], name="uniq_zomato_offline_day")]
+        indexes = [models.Index(fields=["day"])]
+
+    def __str__(self):
+        return f"{self.outlet} {self.day}: {self.hours} h"
