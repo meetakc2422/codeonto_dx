@@ -25,7 +25,7 @@ from apps.uptime.models import UptimeDaily
 from .lines import norm
 from .models import PayoutCycle, PayoutLineType
 
-AD_SECTIONS = {"investments_in_growth", "growth_investments_in_ads"}
+AD_SECTIONS = {"investments_in_growth", "investments_in_growth_v2", "growth_investments_in_ads"}
 ORDER_VALUE_SECTIONS = {"total_order_value", "total_customer_paid"}
 LIFT_DAYS = 365  # history the per-outlet model learns from, whatever range is on screen
 MIN_CONTROL_DAYS = 90  # uptime / stock-outs join the model once an outlet has about this many days of them

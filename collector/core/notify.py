@@ -110,7 +110,7 @@ def _payout_events(cur, now: datetime) -> list[dict]:
     return out
 
 
-AD_SECTIONS = {"investments_in_growth", "growth_investments_in_ads"}
+AD_SECTIONS = {"investments_in_growth", "investments_in_growth_v2", "growth_investments_in_ads"}
 
 
 def _ads(breakdown) -> float:

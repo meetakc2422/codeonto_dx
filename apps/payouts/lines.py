@@ -2,7 +2,7 @@
 
 import re
 
-AD_SECTIONS = {"investments_in_growth", "growth_investments_in_ads"}
+AD_SECTIONS = {"investments_in_growth", "investments_in_growth_v2", "growth_investments_in_ads"}
 ORDER_SECTIONS = {"total_order_value", "total_customer_paid", "total_fees", "total_taxes", "order_level_deductions", "tax_deductions",
                   "additions", "complaint_cancellation_charges"}
 
