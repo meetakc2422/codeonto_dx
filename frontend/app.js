@@ -845,6 +845,39 @@ function reviewTableRow(r) {
     <td><span class="status ${r.reply_status}">${esc(REPLY_LABELS[r.reply_status] || r.reply_status)}</span></td></tr>`;
 }
 
+// a good general reply to start from, for outlets that do not use automatic replies: matched to the stars and to what the
+// customer complained about. Staff can edit it before sending. (Outlets on automatic replies get theirs from the collector.)
+const SAFETY_WORDS = /stomach|vomit|food poison|poison|hair|insect|cockroach|worm|hospital|sick|\bill\b|infection|fungus|plastic|glass/i;
+const REPLY_TOPICS = [
+  [/salt/i, "the food being too salty"], [/spic(y|e)|\bhot\b.*chilli|mirchi/i, "the spice level"], [/bland|tasteless|no taste|not tasty|taste/i, "the taste"],
+  [/cold|not hot|lukewarm|thanda/i, "the food arriving cold"], [/late|delay|slow|waited|took (too )?long/i, "the delay with your order"],
+  [/packag|spill|leak|box|seal/i, "the packaging"], [/missing|not delivered|wrong item|forgot|without|didn.?t (get|receive)/i, "the missing or incorrect item"],
+  [/quantity|portion|small|less|little/i, "the portion size"], [/price|expensive|costly|overpriced|value/i, "the pricing"],
+  [/stale|old|smell|rotten|spoil/i, "the freshness"], [/oily|oil\b|greasy|undercook|raw|burn|dry|hard|chewy|soggy/i, "how the food was cooked"],
+];
+function suggestReply(r) {
+  const first = (r.author_name || "").trim().split(/\s+/)[0];
+  const hi = first && !/^(anonymous|zomato|swiggy|customer|guest)$/i.test(first) ? `Hi ${first}` : "Hi there";
+  const brand = state.config?.brand?.name ? state.config.brand.name.replace(/\b\w/g, (c) => c.toUpperCase()) : "";
+  const sign = brand ? `\n\nWarm regards,\nTeam ${brand}` : "\n\nWarm regards,\nThe team";
+  const stars = r.rating != null ? Math.round(r.rating) : null;
+  const text = `${r.title || ""} ${r.body || ""}`;
+  if (SAFETY_WORDS.test(text)) {
+    return `${hi}, we are very sorry to hear this and we take it seriously. Food safety is our first priority. Please contact us with your order details so our team can look into it right away.${sign}`;
+  }
+  const topic = (REPLY_TOPICS.find(([re]) => re.test(text)) || [])[1];
+  if (stars == null || stars >= 4) {
+    if (topic) return `${hi}, thank you for the ${stars || ""}${stars ? "-star " : ""}rating and for your honest feedback about ${topic}. We have shared it with our kitchen team so we get it right next time. We look forward to serving you again soon.${sign}`;
+    return text.trim() ? `${hi}, thank you so much for the kind words${stars ? ` and the ${stars}-star rating` : ""}! We are delighted you enjoyed your order and look forward to serving you again soon.${sign}`
+      : `${hi}, thank you so much${stars ? ` for the ${stars}-star rating` : ""}! We are glad you enjoyed your order and hope to serve you again soon.${sign}`;
+  }
+  if (stars === 3) {
+    return `${hi}, thank you for your feedback. We are sorry your experience was not perfect${topic ? `, especially ${topic}` : ""}. We have shared your comments with our team so we can improve, and we would love another chance to serve you better.${sign}`;
+  }
+  if (topic) return `${hi}, we are sorry about ${topic} on your recent order. This is not the standard we aim for, and we have shared your feedback with our team so it is put right. Please reach out to us so we can make it up to you.${sign}`;
+  return `${hi}, we are sorry your order did not meet your expectations. We would like to understand what went wrong and make it right, so please reach out to us. We would love another chance to serve you better.${sign}`;
+}
+
 function reviewDetail(r) {
   const canReply = r.reply_status !== "replied" && state.me?.can_edit !== false;
   return `<tr class="cp-detail" data-detail="${r.id}"><td colspan="7">
@@ -852,7 +885,9 @@ function reviewDetail(r) {
     ${r.latest_reply ? `<div class="latest-reply" style="margin-top:8px">${esc(r.latest_reply)}</div>` : ""}
     ${r.contact ? contactBox(r) : ""}
     ${r.queued ? '<div class="sess-note ok" style="margin-top:8px">✓ Queued: it goes to Zomato within a few hours, when the collector next runs.</div>' : ""}
-    ${canReply && !r.queued ? `<div class="reply-box" style="margin-top:8px"><textarea rows="1" placeholder="Write a reply…"></textarea>
+    ${canReply && !r.queued && r.send_mode === "ai" ? '<div class="sess-note ok" style="margin-top:8px">Automatic replies are on for this outlet: a reply is written and posted within a few hours. You can still write your own below.</div>' : ""}
+    ${canReply && !r.queued && r.send_mode !== "ai" ? '<div class="muted" style="margin:8px 0 2px;font-size:12px">Suggested reply: edit it before you send.</div>' : ""}
+    ${canReply && !r.queued ? `<div class="reply-box" style="margin-top:8px"><textarea rows="${r.send_mode === "ai" ? 1 : 4}" placeholder="Write a reply…" data-suggested="${r.send_mode === "ai" ? "" : "1"}">${r.send_mode === "ai" ? "" : esc(suggestReply(r))}</textarea>
       <button class="btn light" data-reply>Save draft</button>${r.send_mode ? '<button class="btn blue" data-send title="Queue this reply to be posted on Zomato">Send to Zomato</button>' : ""}</div>` : ""}</td></tr>`;
 }
 
@@ -903,7 +938,7 @@ function bindReviewTable(list) {
       if (!confirm("Send this reply to Zomato? Once it is posted it can't be edited here.")) return;
       sendBtn.disabled = true;
       try {
-        await apiJSON(`/reviews/${detail.dataset.detail}/replies`, "POST", { body, send: true });
+        await apiJSON(`/reviews/${detail.dataset.detail}/replies`, "POST", { body, send: true, source: body === suggestReply(reviewRows.get(detail.dataset.detail)) ? "template" : "manual" });
         const r = { ...reviewRows.get(detail.dataset.detail), latest_reply: body, queued: true };
         if (r.reply_status === "pending") r.reply_status = "drafted";
         reviewRows.set(String(r.id), r);
@@ -920,7 +955,7 @@ function bindReviewTable(list) {
       if (!body) return toast("Write a reply first");
       btn.disabled = true;
       try {
-        await apiJSON(`/reviews/${detail.dataset.detail}/replies`, "POST", { body });
+        await apiJSON(`/reviews/${detail.dataset.detail}/replies`, "POST", { body, source: body === suggestReply(reviewRows.get(detail.dataset.detail)) ? "template" : "manual" });
         const r = { ...reviewRows.get(detail.dataset.detail), latest_reply: body };
         if (r.reply_status === "pending") r.reply_status = "drafted";
         reviewRows.set(String(r.id), r);
