@@ -1570,9 +1570,8 @@ async function renderReconciliation(page) {
           (paid ${rupees(combined.total.paid)} · to be paid ${rupees(combined.total.to_be_paid)})</span></div>
       <div class="payout-combined-grid">${combined.platforms.map((p) => `<div>
         <h4>${p.platform === "swiggy" ? "Swiggy" : "Zomato"} <span class="muted">· ${plural(p.payouts, "payout")} · ${plural(p.outlets, "outlet")} · ${inr.format(p.orders)} orders</span></h4>
-        <table class="payout-statement"><tbody>${p.sections.map((sec) => `<tr class="section"><td>${esc(sec.label)}</td><td>${rupees(sec.value)}</td></tr>
-          ${sec.items.map((i) => `<tr><td class="muted">${esc(i.label)}</td><td class="muted">${rupees(i.value)}</td></tr>`).join("")}`).join("")}
-          <tr class="section total"><td>Net payout</td><td>${rupees(p.net_payout)}</td></tr></tbody></table></div>`).join("")}</div>
+        <table class="payout-statement"><tbody>${(() => { const base = stmtBase(p.sections); return p.sections.map((sec) => `<tr class="section"><td>${esc(sec.label)}</td><td>${rupees(sec.value)}${pctOf(sec.value, base)}</td></tr>
+          ${sec.items.map((i) => `<tr><td class="muted">${esc(i.label)}</td><td class="muted">${rupees(i.value)}${pctOf(i.value, base)}</td></tr>`).join("")}`).join("") + `<tr class="section total"><td>Net payout</td><td>${rupees(p.net_payout)}${pctOf(p.net_payout, base)}</td></tr>`; })()}</tbody></table></div>`).join("")}</div>
       <p class="muted" style="margin:8px 0 0">Adds up every payout matching the filters (dates, outlets, platform, status, search), the same ones the list and the CSV use. Zomato and Swiggy statements are laid out differently, so each is combined on its own.</p>
     </div>` : ""}
     <div class="card so-list">
@@ -1639,6 +1638,13 @@ async function renderReconciliation(page) {
   $("#payoutIssueClear")?.addEventListener("click", () => { payoutFilters.issue = ""; renderReconciliation(page); });
   page.querySelectorAll("[data-open]").forEach((b) => b.addEventListener("click", () => togglePayoutDetail(b.closest("tr"), Number(b.dataset.open))));
 }
+
+// each statement line as a share of the net order value, like Zomato's own payout analytics (deductions shown as positive shares)
+function stmtBase(sections) {
+  const s = sections.find((x) => /^net order value/i.test(x.label || "")) || sections.find((x) => /^(total_order_value|total_customer_paid|gross_order_value)$/.test(x.id || ""));
+  return s ? Math.abs(Number(s.value)) || null : null;
+}
+const pctOf = (v, base) => (base && v != null ? ` <span class="pct">${(100 * Math.abs(Number(v)) / base).toFixed(2)}%</span>` : "");
 
 // ---------- alert settings: who gets WhatsApp / email alerts, for which outlets and alert types ----------
 async function renderAlertSettings(page, clientId) {
@@ -1985,9 +1991,8 @@ async function togglePayoutDetail(tr, id) {
     <div class="payout-columns">
       <div>
         <h4>${d.platform === "swiggy" ? "Swiggy" : "Zomato"}'s statement</h4>
-        ${d.breakdown.length ? `<table class="payout-statement"><tbody>${d.breakdown.map((s) => `<tr class="section"><td>${esc(s.label)}</td><td>${rupees(s.value)}</td></tr>
-          ${s.items.filter((i) => i.value).map((i) => `<tr class="${(carried || gap) && bigLines.some((l) => l.label === i.label && l.value === i.value) ? "payout-culprit" : ""}"><td class="muted">${esc(i.label)}</td><td class="muted">${rupees(i.value)}</td></tr>`).join("")}`).join("")}
-          <tr class="section total"><td>Net payout</td><td>${rupees(d.net_payout)}</td></tr></tbody></table>` : '<p class="muted">No statement available.</p>'}
+        ${d.breakdown.length ? `<table class="payout-statement"><tbody>${(() => { const base = stmtBase(d.breakdown); return d.breakdown.map((s) => `<tr class="section"><td>${esc(s.label)}</td><td>${rupees(s.value)}${pctOf(s.value, base)}</td></tr>
+          ${s.items.filter((i) => i.value).map((i) => `<tr class="${(carried || gap) && bigLines.some((l) => l.label === i.label && l.value === i.value) ? "payout-culprit" : ""}"><td class="muted">${esc(i.label)}</td><td class="muted">${rupees(i.value)}${pctOf(i.value, base)}</td></tr>`).join("")}`).join("") + `<tr class="section total"><td>Net payout</td><td>${rupees(d.net_payout)}${pctOf(d.net_payout, base)}</td></tr>`; })()}</tbody></table>` : '<p class="muted">No statement available.</p>'}
       </div>
       <div>
         <h4>Our check</h4>

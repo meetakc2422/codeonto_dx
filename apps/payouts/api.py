@@ -171,6 +171,13 @@ def payout_combined(request, brand_id):
     return Response({"platforms": per, "total": {**total, "payouts": sum(p["payouts"] for p in per), "orders": sum(p["orders"] for p in per)}})
 
 
+def _net_order_base(sections) -> float | None:
+    """The line the percentages are taken from: the net order value (Zomato's own payout analytics does the same)."""
+    sec = next((s for s in sections if (s["label"] or "").lower().startswith("net order value")), None) \
+        or next((s for s in sections if s["id"] in ("total_order_value", "total_customer_paid", "gross_order_value")), None)
+    return abs(float(sec["value"])) or None if sec else None
+
+
 @api_view(["GET"])
 def payout_combined_xlsx(request, brand_id):
     """The combined statement as Excel: one sheet per platform (every section and line, exact sums), then a sheet
@@ -196,22 +203,31 @@ def payout_combined_xlsx(request, brand_id):
         ws["A1"].font = Font(bold=True, size=12)
         ws.append([f"{p['payouts']} payouts · {p['outlets']} outlets · {p['orders']} orders"])
         ws.append([])
+        base = _net_order_base(p["sections"])  # every line as a share of the net order value, like Zomato's payout analytics
+        share = lambda v: (abs(float(v)) / base) if base else None
+        ws.append(["", "Amount", "% of net order value"])
+        for cell in ws[ws.max_row]:
+            cell.font = bold
         for sec in p["sections"]:
-            ws.append([sec["label"], sec["value"]])
+            ws.append([sec["label"], sec["value"], share(sec["value"])])
             for cell in ws[ws.max_row]:
                 cell.font = bold
             for it in sec["items"]:
-                ws.append([f"    {it['label']}", it["value"]])
-        ws.append(["Net payout", p["net_payout"]])
+                ws.append([f"    {it['label']}", it["value"], share(it["value"])])
+        ws.append(["Net payout", p["net_payout"], share(p["net_payout"])])
         for cell in ws[ws.max_row]:
             cell.font, cell.fill = bold, fill
         ws.append(["  of which paid", p["paid"]])
         ws.append(["  of which to be paid", p["to_be_paid"]])
-        for row in ws.iter_rows(min_row=4, min_col=2, max_col=2):
+        for row in ws.iter_rows(min_row=5, min_col=2, max_col=2):
             for cell in row:
                 cell.number_format = money
+        for row in ws.iter_rows(min_row=5, min_col=3, max_col=3):
+            for cell in row:
+                cell.number_format = "0.00%"
         ws.column_dimensions["A"].width = 58
         ws.column_dimensions["B"].width = 18
+        ws.column_dimensions["C"].width = 22
     ws = wb.create_sheet("Payouts")
     ws.append(["Outlet", "City", "Platform", "Res ID", "Cycle start", "Cycle end", "Payout date", "Status", "UTR", "Orders", "Net payout"])
     for cell in ws[1]:
