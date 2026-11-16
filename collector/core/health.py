@@ -72,4 +72,4 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     if not to:
         log.warning("health: ALERT_OPS_EMAILS is empty, so the gap list was not emailed")
         return True
-    return alerts.send_email(to, f"[SocialSpork collector] {len(gaps)} data gap(s) for {yesterday:%d %b}", render(gaps, yesterday))
+    return alerts.send_email(to, f"[Codeonto collector] {len(gaps)} data gap(s) for {yesterday:%d %b}", render(gaps, yesterday))
