@@ -10,3 +10,23 @@ the same access rules as the website (a client sees only its own brands and outl
 
 Point it at another server (for example Django on your Mac) with `EXPO_PUBLIC_API_URL=http://192.168.1.x:8000/api npm start`.
 Type-check: `npx tsc --noEmit`.
+
+## Giving it to a few people (no app stores)
+
+You need a free Expo account (`npx eas-cli login`) and, once, `npx eas-cli init` in this folder.
+
+**Android (APK, free):**
+
+    npx eas-cli build --platform android --profile preview
+
+When it finishes you get a link and QR code. Open it on the phone, download the APK, allow "install unknown apps", install.
+
+**iPhone (TestFlight, needs an Apple Developer account, $99 a year):**
+
+    npx eas-cli build --platform ios --profile production
+    npx eas-cli submit --platform ios
+
+Then in App Store Connect > TestFlight, add testers by email (up to 100 internal testers need no review). They install the
+TestFlight app and accept the invite. Without a paid Apple account, iPhones can only run it through Expo Go or the simulator.
+
+Updating: a new build for each release. Bump nothing by hand; `autoIncrement` raises the build number.
