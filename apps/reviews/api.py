@@ -135,7 +135,13 @@ def create_reply(request, review_id):
     if review.reply_status == "pending":
         review.reply_status = "drafted"
         review.save(update_fields=["reply_status", "updated_at"])
-    return Response({"id": reply.id, "status": reply.status, "body": reply.body}, status=201)
+    result = {}
+    if send:  # post it right now; if that is not possible it stays queued for the collector
+        from .zomato_send import post_now
+
+        result = post_now(review, reply)
+        reply.refresh_from_db()
+    return Response({"id": reply.id, "status": reply.status, "body": reply.body, **result}, status=201)
 
 
 @api_view(["POST"])

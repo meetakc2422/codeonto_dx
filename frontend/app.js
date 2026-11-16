@@ -935,17 +935,20 @@ function bindReviewTable(list) {
       const detail = sendBtn.closest(".cp-detail");
       const body = detail.querySelector("textarea").value.trim();
       if (!body) return toast("Write a reply first");
-      if (!confirm("Send this reply to Zomato? Once it is posted it can't be edited here.")) return;
+      if (!confirm("Send this reply to Zomato now? Once it is posted it can't be edited here.")) return;
       sendBtn.disabled = true;
+      const label = sendBtn.textContent;
+      sendBtn.textContent = "Sending…";
       try {
-        await apiJSON(`/reviews/${detail.dataset.detail}/replies`, "POST", { body, send: true, source: body === suggestReply(reviewRows.get(detail.dataset.detail)) ? "template" : "manual" });
-        const r = { ...reviewRows.get(detail.dataset.detail), latest_reply: body, queued: true };
-        if (r.reply_status === "pending") r.reply_status = "drafted";
+        const res = await apiJSON(`/reviews/${detail.dataset.detail}/replies`, "POST", { body, send: true, source: body === suggestReply(reviewRows.get(detail.dataset.detail)) ? "template" : "manual" });
+        if (!res.sent && !res.queued) throw new Error(res.error || "Zomato did not accept the reply");
+        const r = { ...reviewRows.get(detail.dataset.detail), latest_reply: body, queued: !!res.queued };
+        if (res.sent) r.reply_status = "replied"; else if (r.reply_status === "pending") r.reply_status = "drafted";
         reviewRows.set(String(r.id), r);
         list.querySelector(`.cp-row[data-id="${r.id}"]`).outerHTML = reviewTableRow(r);
         detail.outerHTML = reviewDetail(r);
-        toast("Queued: it will be posted to Zomato shortly");
-      } catch (err) { toast(err.message); sendBtn.disabled = false; }
+        toast(res.sent ? "Posted to Zomato" : "Queued: it will be posted to Zomato shortly");
+      } catch (err) { toast(err.message); sendBtn.disabled = false; sendBtn.textContent = label; }
       return;
     }
     const btn = e.target.closest("[data-reply]");
