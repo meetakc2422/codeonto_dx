@@ -1420,7 +1420,8 @@ function wireStaffBilling(page, clientId) {
 }
 
 // ---------- payout reconciliation ----------
-const payoutFilters = { status: "", q: "", open: null, issue: "", view: "list" };
+const payoutFilters = { status: "", q: "", open: null, issue: "", view: "list", basis: "net", aPlatform: "", detail: false };
+const analyticsOpen = new Set();  // statement sections opened in the analytics view
 const stmtSel = new Map();  // statement view: "outletId:platform" -> Set of unticked cycle ids
 const rupeesShort = (v) => {  // ₹12.6k, ₹3.13 L, ₹1.2 Cr: for tight spaces
   const n = Math.abs(v || 0);
@@ -1537,6 +1538,9 @@ async function renderReconciliation(page) {
     api(`/brands/${state.brandId}/payouts/combined`, listParams).catch(() => null),
   ]);
   const statements = payoutFilters.view === "statements" ? await api(`/brands/${state.brandId}/payouts/statements`, listParams) : null;
+  const analytics = payoutFilters.view === "analytics" ? await api(`/brands/${state.brandId}/payouts/analytics`, { ...listParams, platform: payoutFilters.aPlatform }) : null;
+  const analyticsXlsx = new URL(`${API}/brands/${state.brandId}/payouts/analytics/xlsx`, location.origin);
+  Object.entries({ ...listParams, platform: analytics?.platform || "", basis: payoutFilters.basis }).forEach(([k, v]) => { if (v !== "" && v != null) analyticsXlsx.searchParams.set(k, v); });
   const exportUrl = new URL(`${API}/brands/${state.brandId}/payouts/export`, location.origin);
   Object.entries(listParams).forEach(([k, v]) => { if (v !== "" && v != null) exportUrl.searchParams.set(k, v); });
   const combinedXlsx = new URL(`${API}/brands/${state.brandId}/payouts/combined/xlsx`, location.origin);
@@ -1579,13 +1583,13 @@ async function renderReconciliation(page) {
         <label class="payout-date">From <input id="payoutFrom" type="date" value="${range().start}" max="${isoDate(new Date())}"></label>
         <label class="payout-date">To <input id="payoutTo" type="date" value="${range().end}" max="${isoDate(new Date())}"></label>
         <input id="payoutSearch" type="search" placeholder="Search outlet or UTR…" value="${esc(payoutFilters.q)}">
-        <div class="segmented" id="payoutView">${[["list", "List"], ["statements", "Statement view"]].map(([v, l]) => `<button data-view="${v}" class="${payoutFilters.view === v ? "active" : ""}">${l}</button>`).join("")}</div>
-        ${payoutFilters.view === "statements" ? '<button class="btn blue" id="exportBook">Export Book</button>' : `<a class="btn light" href="${exportUrl}" download>Export CSV</a>`}
+        <div class="segmented" id="payoutView">${[["list", "List"], ["statements", "Statement view"], ["analytics", "Analytics"]].map(([v, l]) => `<button data-view="${v}" class="${payoutFilters.view === v ? "active" : ""}">${l}</button>`).join("")}</div>
+        ${payoutFilters.view === "statements" ? '<button class="btn blue" id="exportBook">Export Book</button>' : payoutFilters.view === "analytics" ? `<a class="btn blue" href="${analyticsXlsx}" download>Export Excel</a>` : `<a class="btn light" href="${exportUrl}" download>Export CSV</a>`}
         ${payoutFilters.issue ? `<button class="btn light" id="payoutIssueClear">${esc((summary.issues.find((i) => i.code === payoutFilters.issue) || {}).label || payoutFilters.issue)} ✕</button>` : ""}
         <div class="segmented" id="payoutStatus">${[["", "All"], ["issues", "To check"], ["paid", "Paid"], ["to_be_paid", "To be paid"]]
           .map(([v, l]) => `<button data-v="${v}" class="${payoutFilters.status === v ? "active" : ""}">${l}</button>`).join("")}</div>
       </div>
-      ${statements ? renderStatementBlocks(statements.groups) : cycles.results.length ? `<div class="table-wrap payout-table"><table>
+      ${analytics ? renderAnalytics(analytics) : statements ? renderStatementBlocks(statements.groups) : cycles.results.length ? `<div class="table-wrap payout-table"><table>
         <thead><tr><th>Outlet</th><th>Cycle</th><th>Payout date</th><th>Status</th><th>UTR</th><th>Orders</th><th>Net payout</th><th>Check</th></tr></thead>
         <tbody>${cycles.results.map((c) => `<tr data-cycle="${c.id}" class="${String(payoutFilters.open) === String(c.id) ? "open" : ""}">
           <td><b>${esc(c.outlet)}</b><br><span class="muted">${esc([c.city, c.platform === "swiggy" ? "Swiggy" : "Zomato", c.res_id].filter(Boolean).join(" · "))}</span></td>
@@ -1623,6 +1627,10 @@ async function renderReconciliation(page) {
   }));
   page.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { payoutFilters.view = b.dataset.view; renderReconciliation(page); }));
   if (statements) wireStatementBlocks(page, statements.groups);
+  page.querySelectorAll("[data-abasis]").forEach((b) => b.addEventListener("click", () => { payoutFilters.basis = b.dataset.abasis; renderReconciliation(page); }));
+  page.querySelectorAll("[data-aplat]").forEach((b) => b.addEventListener("click", () => { payoutFilters.aPlatform = b.dataset.aplat; analyticsOpen.clear(); renderReconciliation(page); }));
+  page.querySelectorAll("[data-asec]").forEach((b) => b.addEventListener("click", () => { const k = b.dataset.asec; analyticsOpen.has(k) ? analyticsOpen.delete(k) : analyticsOpen.add(k); renderReconciliation(page); }));
+  $("#aDetail")?.addEventListener("click", () => { payoutFilters.detail = !payoutFilters.detail; analyticsOpen.clear(); renderReconciliation(page); });
   $("#exportBook")?.addEventListener("click", () => {
     const url = new URL(`${API}/brands/${state.brandId}/payouts/book`, location.origin);
     Object.entries(listParams).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
@@ -1902,6 +1910,35 @@ function stmtTotals(g) {
   const on = g.cycles.filter((c) => !off.has(c.id));
   const net = on.reduce((n, c) => n + paise(c.net_payout), 0), paid = on.reduce((n, c) => n + paise(c.customer_paid), 0);
   return { n: on.length, net: net / 100, margin: paid ? Math.round((net / paid) * 10000) / 100 : null };
+}
+
+
+// Zomato-style payout analytics: an outlet per column, every statement line as an amount and its share of net (or gross) sales
+function renderAnalytics(a) {
+  if (!a.columns.length) return '<div class="empty-state"><h3>No payouts for these dates</h3><p>Pick other dates above.</p></div>';
+  const key = payoutFilters.basis === "gross" ? "gross_base" : "net_base";
+  const cols = [...a.columns, a.total];
+  const cell = (c, v) => `${rupees(v)}${c[key] ? ` <span class="pct">${(100 * Math.abs(v) / c[key]).toFixed(c === a.total ? 1 : 0)}%</span>` : ""}`;
+  const val = (c, sid) => (c.values[sid] || { value: 0, items: {} });
+  const head = (c) => `<th class="an-col ${c === a.total ? "an-total" : ""}"><span>${esc(c.name)}</span><small>${esc(c.city || "")}</small>${c.res_id ? `<b class="an-id">${esc(c.res_id)}</b>` : ""}${c.start ? `<em>${dayLabel(c.start)} – ${dayLabel(c.end)}</em>` : ""}</th>`;
+  const rows = a.sections.map((sec) => {
+    const open = payoutFilters.detail || analyticsOpen.has(sec.id);
+    const nonzero = sec.items.filter((lab) => cols.some((c) => val(c, sec.id).items[lab]));
+    const main = `<tr class="an-sec"><td class="an-label">${nonzero.length ? `<button class="an-chev ${open ? "open" : ""}" data-asec="${esc(sec.id)}" aria-label="Show lines">›</button>` : '<span class="an-chev"></span>'}${esc(sec.label)}</td>
+      ${cols.map((c) => `<td class="num ${c === a.total ? "an-total" : ""}">${cell(c, val(c, sec.id).value)}</td>`).join("")}</tr>`;
+    const items = open ? nonzero.map((lab) => `<tr class="an-item"><td class="an-label muted">${esc(lab)}</td>${cols.map((c) => `<td class="num muted ${c === a.total ? "an-total" : ""}">${cell(c, val(c, sec.id).items[lab] || 0)}</td>`).join("")}</tr>`).join("") : "";
+    return main + items;
+  }).join("");
+  return `<div class="an-bar">
+      ${a.platforms.length > 1 ? `<div class="segmented">${a.platforms.map((p) => `<button data-aplat="${p}" class="${a.platform === p ? "active" : ""}">${p === "swiggy" ? "Swiggy" : "Zomato"}</button>`).join("")}</div>` : ""}
+      <div class="segmented">${[["net", "% of net sales"], ["gross", "% of gross sales"]].map(([v, l]) => `<button data-abasis="${v}" class="${payoutFilters.basis === v ? "active" : ""}">${l}</button>`).join("")}</div>
+      <button class="btn light" id="aDetail">${payoutFilters.detail ? "Hide lines" : "Show all lines"}</button>
+      <span class="muted">${plural(a.total.cycles, "payout")} · ${plural(a.columns.length, "outlet")} · ${inr.format(a.total.orders)} orders · all payouts matching the filters above</span></div>
+    <div class="table-wrap an-wrap"><table class="an-table"><thead><tr><th class="an-label">Metrics</th>${cols.map(head).join("")}</tr></thead>
+      <tbody><tr class="an-sec"><td class="an-label"><span class="an-chev"></span>Total orders</td>${cols.map((c) => `<td class="num ${c === a.total ? "an-total" : ""}">${inr.format(c.orders)}</td>`).join("")}</tr>
+      ${rows}
+      <tr class="an-sec an-net"><td class="an-label"><span class="an-chev"></span>Net payout</td>${cols.map((c) => `<td class="num ${c === a.total ? "an-total" : ""}">${cell(c, c.net_payout)}</td>`).join("")}</tr></tbody></table></div>
+    <p class="muted" style="margin:8px 0 0">Percentages are each line's share of ${payoutFilters.basis === "gross" ? "gross sales (net order value plus the discounts)" : "net sales (the statement's net order value)"}. Zomato and Swiggy statements are laid out differently, so each is shown on its own.</p>`;
 }
 
 function renderStatementBlocks(groups) {

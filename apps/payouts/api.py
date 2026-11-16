@@ -515,3 +515,160 @@ def review_line(request, brand_id, line_id):
     line.kind, line.reviewed = kind, True
     line.save(update_fields=["kind", "reviewed"])
     return Response({"id": line.id, "kind": kind})
+
+
+# ---------- payout analytics: one column per outlet, every statement line as an amount and a % of net or gross sales ----------
+_NET_ID = ("net_order_value_subtotal",)
+_GROSS_IDS = ("gross_order_value", "total_customer_paid")  # Zomato's older "total_order_value" is its Net order value line
+
+
+def _is_net_section(s) -> bool:
+    return s["id"] in _NET_ID or (s["label"] or "").lower().startswith("net order value")  # label wins: layouts reuse ids
+
+
+def _is_gross_section(s) -> bool:
+    return s["id"] in _GROSS_IDS or (s["label"] or "").lower().startswith("gross order value")
+
+
+def _analytics(cycles, platform: str) -> dict:
+    """Payouts of one platform added up per outlet (all its cycles in the filters), plus a total column. Each column keeps the
+    statement's sections and lines in the platform's own order, and the two bases the percentages use: net sales (the
+    "Net order value" line) and gross sales (the "Gross order value" line, or net sales plus the discounts when a layout has none)."""
+    order, cols = {}, {}  # section id -> {"label", "items": {label}}; outlet id -> column
+    total = {"key": "total", "name": "Total", "city": "", "res_id": "", "orders": 0, "net_payout": Decimal(0), "sections": {}, "cycles": 0, "start": None, "end": None}
+
+    def add(col, sections):
+        for sec in sections:
+            sid = sec.get("id") or sec.get("label")
+            cs = col["sections"].setdefault(sid, {"value": Decimal(0), "items": {}})
+            cs["value"] += _dec(sec.get("value"))
+            for it in sec.get("items") or []:
+                lab = it.get("label") or ""
+                cs["items"][lab] = cs["items"].get(lab, Decimal(0)) + _dec(it.get("value"))
+
+    for c in cycles:
+        if c.platform_id != platform:
+            continue
+        for sec in c.breakdown or []:
+            sid = sec.get("id") or sec.get("label")
+            o = order.setdefault(sid, {"id": sid, "label": sec.get("label") or sid, "items": {}})
+            for it in sec.get("items") or []:
+                o["items"].setdefault(it.get("label") or "", None)
+        o = c.outlet
+        col = cols.setdefault(c.outlet_id, {"key": c.outlet_id, "name": o.area or o.outlet_name, "city": o.city,
+                                            "res_id": (o.swiggy_id if platform == "swiggy" else o.zomato_id) or "", "orders": 0,
+                                            "net_payout": Decimal(0), "sections": {}, "cycles": 0, "start": None, "end": None})
+        for tgt in (col, total):
+            tgt["orders"] += c.order_count or 0
+            tgt["net_payout"] += _dec(c.net_payout)
+            tgt["cycles"] += 1
+            tgt["start"] = c.start_date if tgt["start"] is None else min(tgt["start"], c.start_date)
+            tgt["end"] = c.end_date if tgt["end"] is None else max(tgt["end"], c.end_date)
+        add(col, c.breakdown or [])
+        add(total, c.breakdown or [])
+
+    sections = [{"id": s["id"], "label": s["label"], "items": list(s["items"])} for s in order.values()]
+
+    def finish(col):
+        net_sec = next((s for s in sections if _is_net_section(s)), None)
+        gross_sec = next((s for s in sections if _is_gross_section(s)), None)
+        net = col["sections"].get(net_sec["id"], {}).get("value") if net_sec else None
+        gross = col["sections"].get(gross_sec["id"], {}).get("value") if gross_sec else None
+        if gross is None and net_sec:  # layouts without a gross line: net sales plus the discounts taken off it
+            disc = sum((abs(v) for lab, v in col["sections"].get(net_sec["id"], {}).get("items", {}).items() if "discount" in lab.lower()), Decimal(0))
+            gross = abs(net or 0) + disc
+        net, gross = (gross if net is None else net), (net if gross is None else gross)  # a layout with only one of them uses it for both
+        f = lambda d: None if d is None else float(abs(d).quantize(Decimal("0.01")))
+        return {"key": col["key"], "name": col["name"], "city": col["city"], "res_id": col["res_id"], "orders": col["orders"],
+                "cycles": col["cycles"], "start": col["start"], "end": col["end"], "net_payout": float(col["net_payout"].quantize(Decimal("0.01"))),
+                "net_base": f(net), "gross_base": f(gross),
+                "values": {sid: {"value": float(v["value"].quantize(Decimal("0.01"))),
+                                 "items": {k: float(x.quantize(Decimal("0.01"))) for k, x in v["items"].items()}} for sid, v in col["sections"].items()}}
+
+    columns = sorted((finish(c) for c in cols.values()), key=lambda c: (-c["orders"], c["name"]))
+    return {"platform": platform, "sections": sections, "columns": columns, "total": finish(total)}
+
+
+def _analytics_platform(request, cycles) -> str:
+    wanted = request.query_params.get("platform")
+    have = sorted({c.platform_id for c in cycles})
+    return wanted if wanted in have else (have[0] if have else "zomato")
+
+
+@api_view(["GET"])
+def payout_analytics(request, brand_id):
+    """Zomato-style payout analytics: outlets as columns, statement lines as rows, % of net or gross sales. Uses the
+    same filters as the list (dates, outlets, status, search); ?platform= picks Zomato or Swiggy (their layouts differ)."""
+    cycles = [c for c, _ in _listed(request, brand_id)]
+    platform = _analytics_platform(request, cycles)
+    return Response({**_analytics(cycles, platform), "platforms": sorted({c.platform_id for c in cycles})})
+
+
+@api_view(["GET"])
+def payout_analytics_xlsx(request, brand_id):
+    """The analytics view as Excel: S.No, particular, then amount and % for each outlet and for the total."""
+    import io
+
+    from django.http import HttpResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    cycles = [c for c, _ in _listed(request, brand_id)]
+    platform = _analytics_platform(request, cycles)
+    d = _analytics(cycles, platform)
+    basis = "gross" if request.query_params.get("basis") == "gross" else "net"
+    key = "gross_base" if basis == "gross" else "net_base"
+    cols = d["columns"] + [d["total"]]
+    name = "Swiggy" if platform == "swiggy" else "Zomato"
+    wb = Workbook()
+    ws = wb.active
+    ws.title = f"{name} payout analytics"[:31]
+    bold, head, grey = Font(bold=True), PatternFill("solid", fgColor="FFC000"), PatternFill("solid", fgColor="E7E6E6")
+    money, pct = '#,##0.00;[Red]-#,##0.00', "0.00%"
+    ws.append(["S.No", "Particular"] + [x for c in cols for x in (f"{c['name']}\n{c['city'] or ''}\n{c['res_id']}".strip(), "")])
+    for i, c in enumerate(cols):
+        ws.merge_cells(start_row=1, start_column=3 + 2 * i, end_row=1, end_column=4 + 2 * i)
+    for cell in ws[1]:
+        cell.font, cell.fill, cell.alignment = bold, head, Alignment(horizontal="center", vertical="center", wrap_text=True)
+    ws.row_dimensions[1].height = 48
+    ws.append([None, f"Payout breakup · % from {'gross' if basis == 'gross' else 'net'} sales"])
+    ws["B2"].font = Font(bold=True, size=12)
+    ws.append([None, "Selected cycles"] + [x for c in cols for x in (f"{c['start']:%d %b} – {c['end']:%d %b %Y}" if c["start"] else "", "")])
+    ws.append([None, "Number of orders"] + [x for c in cols for x in (c["orders"], None)])
+    ws.append([None, ""] + ["Amount", "%"] * len(cols))
+    for cell in ws[5]:
+        cell.font = bold
+
+    def share(col, v):
+        base = col[key]
+        return (abs(v) / base) if base else None
+
+    n = 0
+    for sec in d["sections"]:
+        ws.append([None, sec["label"]] + [x for c in cols for x in ((c["values"].get(sec["id"]) or {}).get("value", 0), share(c, (c["values"].get(sec["id"]) or {}).get("value", 0)))])
+        r = ws.max_row
+        for cell in ws[r]:
+            cell.font, cell.fill = bold, grey
+        for lab in sec["items"]:
+            n += 1
+            ws.append([n, f"    {lab}"] + [x for c in cols for x in (((c["values"].get(sec["id"]) or {}).get("items") or {}).get(lab, 0),
+                                                                  share(c, ((c["values"].get(sec["id"]) or {}).get("items") or {}).get(lab, 0)))])
+    ws.append([None, "Net payout"] + [x for c in cols for x in (c["net_payout"], share(c, c["net_payout"]))])
+    for cell in ws[ws.max_row]:
+        cell.font, cell.fill = bold, PatternFill("solid", fgColor="92D050")
+    for r in range(6, ws.max_row + 1):
+        for i in range(len(cols)):
+            ws.cell(r, 3 + 2 * i).number_format = money
+            ws.cell(r, 4 + 2 * i).number_format = pct
+    ws.column_dimensions["A"].width = 7
+    ws.column_dimensions["B"].width = 56
+    for i in range(len(cols)):
+        ws.column_dimensions[get_column_letter(3 + 2 * i)].width = 16
+        ws.column_dimensions[get_column_letter(4 + 2 * i)].width = 10
+    ws.freeze_panes = "C6"
+    buf = io.BytesIO()
+    wb.save(buf)
+    resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = f'attachment; filename="payout-analytics-{name.lower()}.xlsx"'
+    return resp

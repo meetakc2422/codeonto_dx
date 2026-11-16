@@ -102,6 +102,8 @@ api = [
     path("brands/<int:brand_id>/payouts/export", payouts.payout_export),
     path("brands/<int:brand_id>/payouts/statements", payouts.payout_statements),
     path("brands/<int:brand_id>/payouts/book", payouts.payout_book),
+    path("brands/<int:brand_id>/payouts/analytics", payouts.payout_analytics),
+    path("brands/<int:brand_id>/payouts/analytics/xlsx", payouts.payout_analytics_xlsx),
     path("brands/<int:brand_id>/payouts/cycles/<int:cycle_id>", payouts.payout_cycle_detail),
     path("brands/<int:brand_id>/freshness", freshness.brand_freshness),
     path("brands/<int:brand_id>/uptime/summary", uptime.uptime_summary),
