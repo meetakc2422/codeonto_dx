@@ -263,7 +263,7 @@ def item_scorecard(request, brand_id):
         key = _norm(name)
         if key not in rows:
             rows[key] = {"name": name.strip(), "category": category, "units": 0.0, "revenue": 0.0, "orders": 0, "outlets": set(),
-                         "stockouts": 0, "stockout_hours": 0.0, "stockout_loss": 0.0, "complaints": 0, "refunds": 0.0,
+                         "stockouts": 0, "stockout_hours": 0.0, "stockout_loss": 0.0, "stockout_loss_high": 0.0, "complaints": 0, "refunds": 0.0,
                          "issues": defaultdict(int), "rated": 0, "bad": 0, "rating_sum": 0.0}
         elif category and not rows[key]["category"]:
             rows[key]["category"] = category
@@ -283,6 +283,19 @@ def item_scorecard(request, brand_id):
         x["stockouts"] += 1
         x["stockout_hours"] += hours
         x["stockout_loss"] += (loss or 0) if STOCKOUT_LOSS_SHOWN else 0
+
+    # sales missed on stock-outs: the same estimate as the Stock-outs page (best sellers only, a stock-out counts its first
+    # days, each platform valued with its own orders), so the two pages agree. Low end counts toward "₹ lost", the high end is shown too.
+    from apps.stockouts.loss import period_loss
+
+    overlap = list(scoped(StockOut.objects.filter(Q(log_date__lte=end) & (Q(is_active=True) | Q(restored_at__date__gte=start)), outlet__brand_id=brand_id))
+                   .exclude(platform_id="zomato", category="").select_related("outlet"))
+    if overlap:
+        now = datetime.now(TZ)
+        for it in period_loss(overlap, start, end, now, now - timedelta(days=3))["items"]:
+            x = row(it["item_name"])
+            x["stockout_loss"] += it["low"]
+            x["stockout_loss_high"] += it["high"]
 
     # complaints name items as "1 x Name, 2 x Other": match them against the known item names, longest first, so a
     # comma inside a name ("Dumpling, Tom Yum Sauce") doesn't split it
@@ -321,7 +334,7 @@ def item_scorecard(request, brand_id):
              "complaint_rate": round(100 * x["complaints"] / x["orders"], 2) if x["orders"] else 0,
              "avg_item_rating": round(x["rating_sum"] / x["rated"], 2) if x["rated"] else None,
              "bad_review_pct": round(100 * x["bad"] / x["rated"]) if x["rated"] else 0}
-        for k in ("units", "revenue", "stockout_hours", "stockout_loss", "refunds"):
+        for k in ("units", "revenue", "stockout_hours", "stockout_loss", "stockout_loss_high", "refunds"):
             r[k] = round(r[k], 1)
         del r["rating_sum"]
         r["flags"] = _flags(r, avg_rate)
