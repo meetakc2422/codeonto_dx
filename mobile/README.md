@@ -30,3 +30,13 @@ Then in App Store Connect > TestFlight, add testers by email (up to 100 internal
 TestFlight app and accept the invite. Without a paid Apple account, iPhones can only run it through Expo Go or the simulator.
 
 Updating: a new build for each release. Bump nothing by hand; `autoIncrement` raises the build number.
+
+## On a phone through a link (no install)
+
+The web build is served by the website at **https://app.socialspork.com/m**. Open it on the phone, sign in with your dashboard
+login, then "Add to Home Screen" (Safari Share menu, or Chrome menu) to get an icon and full-screen mode.
+
+After changing the app, rebuild that copy and push it:
+
+    npm run build:web      # writes ../frontend/m
+    git add ../frontend/m && git commit && git push

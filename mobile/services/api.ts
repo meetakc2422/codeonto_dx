@@ -1,5 +1,5 @@
 import axios from 'axios';
-import * as SecureStore from 'expo-secure-store';
+import { storage } from './storage';
 
 // The SocialSpork dashboard API (the same one the website uses). Set EXPO_PUBLIC_API_URL to point at another server,
 // e.g. http://192.168.1.x:8000/api for a Django server on your Mac while developing.
@@ -16,7 +16,7 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
 }
 
 apiClient.interceptors.request.use(async (config) => {
-  const token = await SecureStore.getItemAsync(TOKEN_KEY).catch(() => null);
+  const token = await storage.get(TOKEN_KEY);
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
@@ -34,16 +34,16 @@ apiClient.interceptors.response.use(
 );
 
 export const authStorage = {
-  saveToken: (t: string) => SecureStore.setItemAsync(TOKEN_KEY, t),
-  getToken: () => SecureStore.getItemAsync(TOKEN_KEY),
-  saveUser: (u: unknown) => SecureStore.setItemAsync(USER_KEY, JSON.stringify(u)),
+  saveToken: (t: string) => storage.set(TOKEN_KEY, t),
+  getToken: () => storage.get(TOKEN_KEY),
+  saveUser: (u: unknown) => storage.set(USER_KEY, JSON.stringify(u)),
   async getUser() {
-    const raw = await SecureStore.getItemAsync(USER_KEY);
+    const raw = await storage.get(USER_KEY);
     return raw ? JSON.parse(raw) : null;
   },
   async clear() {
-    await SecureStore.deleteItemAsync(TOKEN_KEY).catch(() => {});
-    await SecureStore.deleteItemAsync(USER_KEY).catch(() => {});
+    await storage.remove(TOKEN_KEY);
+    await storage.remove(USER_KEY);
   },
 };
 

@@ -35,6 +35,20 @@ from apps.assistant import api as assistant
 from apps.competition import api as competition
 from apps.competition import market_api, market_export, photos
 
+def mobile_web(request, path=""):
+    """The phone app's web build (frontend/m, built from mobile/ with `expo export --platform web`) at /m. Real files are served
+    as they are; any other address under /m opens the app, which draws the right screen itself."""
+    from pathlib import Path
+
+    root = Path(settings.FRONTEND_DIR) / "m"
+    rel = (path or "").strip("/")
+    if ".." not in rel:
+        for cand in (rel, f"{rel}.html", f"{rel}/index.html"):
+            if cand and (root / cand).is_file():
+                return serve(request, cand, document_root=root)
+    return serve(request, "index.html", document_root=root)
+
+
 admin.site.site_header = "Codeonto admin"
 admin.site.site_title = "Codeonto"
 admin.site.index_title = "Clients, brands & outlet mapping"
@@ -142,6 +156,7 @@ urlpatterns = [
     path("g/oauth/callback/", google_oauth.callback),
     path("codeonto/googleservices/oauth/callback/", google_oauth.callback),  # same handler under the api.codeonto.com address
     *[path(f"api/{p.pattern}", p.callback) for p in api],
+    re_path(r"^m(?:/(?P<path>.*))?$", mobile_web),
     # Dashboard (static SPA)
     path("", serve, {"path": "index.html", "document_root": settings.FRONTEND_DIR}),
     # plain HTML (no JavaScript) so Google's OAuth verification can read them

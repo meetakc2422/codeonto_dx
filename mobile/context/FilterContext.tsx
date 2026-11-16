@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
-import * as SecureStore from 'expo-secure-store';
+import { storage } from '../services/storage';
 import { useQuery } from '@tanstack/react-query';
 import { apiClient } from '../services/api';
 import { useAuth } from './AuthContext';
@@ -35,7 +35,7 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
   });
 
   useEffect(() => {
-    SecureStore.getItemAsync('ss_filters')
+    storage.get('ss_filters')
       .then((raw) => {
         if (!raw) return;
         const f = JSON.parse(raw);
@@ -47,7 +47,7 @@ export function FilterProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const save = (next: { brandId: number | null; days: number; platform: string }) =>
-    SecureStore.setItemAsync('ss_filters', JSON.stringify(next)).catch(() => {});
+    storage.set('ss_filters', JSON.stringify(next));
 
   const brand = useMemo(() => brands.find((b) => b.id === brandId) || brands[0] || null, [brands, brandId]);
 
