@@ -1538,9 +1538,9 @@ async function renderReconciliation(page) {
     api(`/brands/${state.brandId}/payouts/combined`, listParams).catch(() => null),
   ]);
   const statements = payoutFilters.view === "statements" ? await api(`/brands/${state.brandId}/payouts/statements`, listParams) : null;
-  const analytics = payoutFilters.view === "analytics" ? await api(`/brands/${state.brandId}/payouts/analytics`, { ...listParams, platform: payoutFilters.aPlatform }) : null;
+  const analytics = payoutFilters.view === "analytics" ? await api(`/brands/${state.brandId}/payouts/analytics`, { ...listParams, aplatform: payoutFilters.aPlatform }) : null;
   const analyticsXlsx = new URL(`${API}/brands/${state.brandId}/payouts/analytics/xlsx`, location.origin);
-  Object.entries({ ...listParams, platform: analytics?.platform || "", basis: payoutFilters.basis }).forEach(([k, v]) => { if (v !== "" && v != null) analyticsXlsx.searchParams.set(k, v); });
+  Object.entries({ ...listParams, aplatform: analytics?.platform || "", basis: payoutFilters.basis }).forEach(([k, v]) => { if (v !== "" && v != null) analyticsXlsx.searchParams.set(k, v); });
   const exportUrl = new URL(`${API}/brands/${state.brandId}/payouts/export`, location.origin);
   Object.entries(listParams).forEach(([k, v]) => { if (v !== "" && v != null) exportUrl.searchParams.set(k, v); });
   const combinedXlsx = new URL(`${API}/brands/${state.brandId}/payouts/combined/xlsx`, location.origin);

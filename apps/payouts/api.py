@@ -593,9 +593,9 @@ def _analytics(cycles, platform: str) -> dict:
 
 
 def _analytics_platform(request, cycles) -> str:
-    wanted = request.query_params.get("platform")
+    wanted = request.query_params.get("aplatform")  # which platform's layout to show; "platform" is the page's own filter
     have = sorted({c.platform_id for c in cycles})
-    return wanted if wanted in have else (have[0] if have else "zomato")
+    return wanted if wanted in have else ("zomato" if "zomato" in have else (have[0] if have else "zomato"))
 
 
 @api_view(["GET"])
