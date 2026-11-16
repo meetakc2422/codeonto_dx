@@ -139,13 +139,20 @@ def _status(qs, qp):
 
 def _losses(rows: list, qp) -> dict:
     """stock-out id -> (hours out inside the period, ₹ of usual sales missed or None when the item has no sales history).
-    Same estimate as the item scorecard: the item's usual ₹ a day, spread over the outlet's hour-by-hour order pattern."""
-    from apps.insights.api import stockout_losses
-
+    The ₹ part is the same estimate as the item scorecard. It reads order history for every row, so it is only built when
+    asked for (?loss=1); the page does not show it. The hours are cheap and the list always needs them."""
     end = date.fromisoformat(qp["end"]) if qp.get("end") else date.today()
     start = date.fromisoformat(qp["start"]) if qp.get("start") else end - timedelta(days=29)
     since = datetime.combine(start, time.min, tzinfo=IST)
     until = datetime.combine(end + timedelta(days=1), time.min, tzinfo=IST)
+    if not qp.get("loss"):
+        out = {}
+        for s in rows:
+            a, b = max(s.first_detected_at, since), min(s.restored_at or s.last_detected_at, until)
+            out[s.id] = (max(0.0, (b - a).total_seconds() / 3600), None)
+        return out
+    from apps.insights.api import stockout_losses
+
     return {s.id: (hours, loss) for s, hours, loss in stockout_losses(rows, end, since, until)[0]}
 
 
