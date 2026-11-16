@@ -570,7 +570,8 @@ async function renderOverview(page) {
     const loss = stock.period_loss;
     tiles.push(T(loss?.high ? "red" : stock.active ? "amber" : "ok", "#/stock_outs", "Sales lost to stock-outs",
       loss?.high ? `${rupeesShort(loss.low)}<small> – ${rupeesShort(loss.high)}</small>` : "—", loss?.high ? `estimated, best sellers, ${periodLabel()}` : "not enough order history to estimate"));
-    tiles.push(T(stock.active ? "amber" : "ok", "#/stock_outs", "Items out of stock", inr.format(stock.active), stock.active ? `across ${plural(stock.outlets_affected, "outlet")}` : "Full menu live"));
+    const recentOut = stock.active - (stock.long_off || 0);  // items off for days are probably off the menu: counted apart, like on the Stock-outs page
+    tiles.push(T(recentOut ? "amber" : "ok", "#/stock_outs", "Items out of stock", inr.format(recentOut), stock.active ? `across ${plural(stock.outlets_affected, "outlet")}${stock.long_off ? ` · +${inr.format(stock.long_off)} off ${stock.long_off_days}+ days` : ""}` : "Full menu live"));
   }
   if (uptime) tiles.push(T(offline.length ? "red" : "ok", "#/store_uptime", "Outlets offline", inr.format(offline.length),
     offline.length ? "Not taking orders right now" : `All online${uptime.uptime_pct != null ? ` · ${fmt(uptime.uptime_pct, "percent")} uptime` : ""}`));

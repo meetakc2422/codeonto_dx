@@ -1192,3 +1192,8 @@ table.stmt .off { opacity: .35; }
 .payout-combined > summary::-webkit-details-marker { display: none; }
 .payout-combined > summary::before { content: "▸"; display: inline-block; margin-right: 8px; color: var(--muted); transition: transform .15s; }
 .payout-combined[open] > summary::before { transform: rotate(90deg); }
+
+/* added to a phone's home screen the page runs full screen: keep the top bar clear of the notch and the bottom clear of the home bar */
+:root { --topbar-h: calc(64px + env(safe-area-inset-top, 0px)); }
+.topbar { padding-top: env(safe-area-inset-top, 0px); }
+body { padding-bottom: env(safe-area-inset-bottom, 0px); }
