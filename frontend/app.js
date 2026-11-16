@@ -2217,7 +2217,7 @@ function topSellerStrip(summary, periodWord = "in this period") {
   const since = (ts) => new Date(ts).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
   return `<div class="so-loss">
     ${items.length ? `<div class="so-loss-main"><span class="so-loss-label">${hasPer ? "Best sellers lost to stock-outs" : "Best sellers out right now"}</span>
-        ${hasPer ? `<b>${range(per.low, per.high)}</b><small>estimated sales lost ${esc(periodWord)}${summary.long_off ? ` · items off ${summary.long_off_days}+ days not counted` : ""}</small>`
+        ${hasPer ? `<b>${range(per.low, per.high)}</b><small>estimated sales lost ${esc(periodWord)}${summary.long_off ? ` · only the first ${summary.long_off_days} days of long stock-outs counted` : ""}</small>`
           : t.high ? `<b>${range(t.low, t.high)}</b><small>estimated sales lost so far today</small>` : `<small>not enough order history yet to value them</small>`}
         ${hasPer && t?.items?.length ? `<p class="so-loss-today">${plural(t.items.length, "best seller")} out right now${t.high ? ` · ${range(t.low, t.high)} lost so far today` : ""}</p>` : ""}
         <div class="so-loss-items" id="lossItems">${items.slice(0, 20).map((i) => {
@@ -2236,7 +2236,7 @@ function topSellerStrip(summary, periodWord = "in this period") {
             <span class="so-how-line">4. We multiply by the dish's latest price. That is the high end.</span>
             <span class="so-how-line">5. The low end is 40% of that, because some customers order something else instead.</span>
             <span class="so-how-note">Example: a burger that normally sells 6 at lunch, out for all of lunch at ₹200, shows ₹480 – ₹1,200.</span>
-            <span class="so-how-note">Each platform (Zomato, Swiggy) is valued with its own orders. Dishes with under 7 in-stock days of history get no figure. Each stock-out counts for at most its first 3 days; dishes off the menu longer than that are left out.</span>
+            <span class="so-how-note">Each platform (Zomato, Swiggy) is valued with its own orders. Dishes with under 7 in-stock days of history get no figure. Each stock-out counts for at most its first 3 days; any days after that are not counted, because the dish may have been taken off the menu.</span>
           </span></span></p></div>` : ""}
     ${rej && rej.orders ? `<div class="so-loss-side"><b>${plural(rej.orders, "order")}</b><small>turned away for items out of stock in this period · ${rupees(rej.value)} in orders (measured, not estimated)</small></div>` : ""}
   </div>`;
