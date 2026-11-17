@@ -2373,6 +2373,7 @@ const MEALS = [
 const stockFilters = { status: "active", q: "", meal: "", outlet: "", city: "" };
 let stockRows = [];
 let stockShowMinor = false;
+let stockMoreOpen = false;  // "See the details" stays open while someone works inside it
 let stockAllOutlets = false;
 const TOP_OUTLETS = 10;
 // a dish that is back, was never out long and cost next to nothing is noise in the list: folded away until asked for
@@ -2426,7 +2427,20 @@ async function renderStockOuts(page) {
   const shownOutlets = stockAllOutlets ? cityOutlets
     : cityOutlets.filter((o, i) => (i < TOP_OUTLETS && o.out) || String(o.id) === String(stockFilters.outlet));
 
-  page.innerHTML = `
+  // the answer first, in plain words: what is out, what it costs, what to fix. Everything else is under "See the details".
+  const outNow = summary.active - summary.long_off;
+  const per = summary.period_loss;
+  const lostMid = per && per.high ? Math.round((per.low + per.high) / 2) : 0;
+  const outNames = new Set((summary.top_sellers_out?.items || []).map((i) => i.item_name));
+  const fix = (per?.items || []).slice(0, 5);
+  const simple = `<div class="so-simple">
+      <p class="so-s-status">${outNow ? `<b>${plural(outNow, "dish")}</b> ${outNow === 1 ? "is" : "are"} out of stock right now, across <b>${plural(summary.outlets_affected, "outlet")}</b>.` : "<b>Everything is available</b> right now."}</p>
+      ${lostMid ? `<p class="so-s-money">Your best dishes being out of stock cost you about <b>${rupeesShort(lostMid)}</b> in sales ${isToday ? periodWord : state.custom ? `between ${dayLabel(start)} and ${dayLabel(end)}` : `in the last ${state.days} days`}. <small class="muted">(an estimate)</small></p>` : ""}
+      ${fix.length ? `<h3>Fix these first</h3><ol class="so-fix">${fix.map((i) => `<li><b>${esc(i.item_name)}</b>
+        <span class="muted">at ${plural(i.outlets, "outlet")} · lost about</span> <b>${rupeesShort(Math.round((i.low + i.high) / 2))}</b>${outNames.has(i.item_name) ? ' <em class="so-nowtag">out now</em>' : ""}</li>`).join("")}</ol>` : ""}
+    </div>`;
+  page.innerHTML = `${simple}
+    <details id="soMore" class="so-more" ${stockMoreOpen || stockFilters.meal || stockFilters.outlet || stockFilters.city || stockFilters.q || stockFilters.status !== "active" ? "open" : ""}><summary>See the details</summary>
     <div class="so-hero">
       <div><span class="so-live"><i></i> Live</span>
         <div class="so-big">${inr.format(summary.active - summary.long_off)}<small> items out of stock right now</small></div>
@@ -2475,7 +2489,9 @@ async function renderStockOuts(page) {
         <button class="btn blue" id="sExport" style="margin-left:auto">Export to Excel</button>
       </div>
       <div id="stockList"></div>
-    </div>`;
+    </div>
+    </details>`;
+  $("#soMore")?.addEventListener("toggle", (e) => { stockMoreOpen = e.target.open; });
 
   page.querySelectorAll("[data-meal]").forEach((b) => b.addEventListener("click", () => {
     stockFilters.meal = stockFilters.meal === b.dataset.meal ? "" : b.dataset.meal;
