@@ -1217,3 +1217,5 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .sl-more { margin-top: 2px; border: 0; background: none; color: var(--blue); font-weight: 600; font-size: 12px; cursor: pointer; padding: 2px 0; }
 .so-loss-main:has(.sl-list) { padding: 8px 12px; }
 @media (max-width: 600px) { .sl-row { grid-template-columns: minmax(0, 1fr) 54px; } .sl-bar { display: none; } }
+.so-loss-main .so-loss-label { font-size: 14px; font-weight: 800; letter-spacing: 0; text-transform: none; color: var(--text); margin-bottom: 2px; }
+.so-loss-main .so-loss-label::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #e5484d; margin-right: 7px; vertical-align: 1px; }
