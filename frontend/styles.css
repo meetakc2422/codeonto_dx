@@ -1197,20 +1197,6 @@ table.stmt .off { opacity: .35; }
 :root { --topbar-h: calc(64px + env(safe-area-inset-top, 0px)); }
 .topbar { padding-top: env(safe-area-inset-top, 0px); }
 body { padding-bottom: env(safe-area-inset-bottom, 0px); }
-/* stock-outs: the plain answer on top */
-.so-simple { background: #fff; border: 1px solid var(--border); border-radius: 16px; padding: 18px 20px; margin-bottom: 14px; }
-.so-simple p { margin: 0 0 8px; }
-.so-s-status { font-size: 20px; line-height: 1.35; }
-.so-s-money { font-size: 16px; line-height: 1.45; color: var(--text); }
-.so-simple b { font-weight: 800; color: var(--text); }
-.so-simple h3 { margin: 14px 0 6px; font-size: 15px; }
-.so-fix { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 6px; font-size: 15px; }
-.so-nowtag { font-style: normal; font-size: 11px; font-weight: 700; color: var(--red); background: var(--red-soft); border-radius: 999px; padding: 2px 8px; margin-left: 4px; }
-.so-more { margin-bottom: 14px; }
-.so-more > summary { cursor: pointer; list-style: none; display: inline-block; padding: 9px 16px; border: 1px solid var(--border); border-radius: 999px; background: #fff; font-weight: 600; font-size: 13px; margin-bottom: 12px; }
-.so-more > summary::-webkit-details-marker { display: none; }
-.so-more > summary::after { content: " ▾"; color: var(--muted); }
-.so-more[open] > summary::after { content: " ▴"; }
 /* sales lost on your best dishes: one number, then a short ranked list */
 .so-loss-main .sl-big { font-size: 30px; font-weight: 800; margin: 0 8px 0 0; }
 .sl-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px; margin: 4px 0 6px; }
@@ -1229,3 +1215,4 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .sl-list:not(.open) .sl-row:nth-child(n+6) { display: none; }
 .sl-more { margin-top: 8px; border: 0; background: none; color: var(--blue); font-weight: 600; font-size: 13px; cursor: pointer; padding: 4px 0; }
 @media (max-width: 600px) { .sl-row { grid-template-columns: minmax(0, 1fr) 70px; } .sl-bar { display: none; } }
+
