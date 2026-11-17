@@ -31,8 +31,9 @@ TEMPLATES = [
     ("WHATSAPP_TEMPLATE_OFFLINE", "zomato_outage_alert",
      "Outage alert for {{1}}: {{2}} outlet(s) went offline on Zomato at {{3}}.\n\n{{4}}\n\nPlease check the outlet or open your dashboard for details.",
      ["Foodiness", "1", "5:29 pm, 8 Nov", "Sector 63 (Noida)"]),
-    ("WHATSAPP_TEMPLATE_ONLINE", "zomato_recovery_alert",
-     "Good news for {{1}}: {{2}} outlet(s) are back online on Zomato as of {{3}}.\n\n{{4}}\n\nOpen your dashboard for details.",
+    # replaces zomato_recovery_alert ("Good news for ..."); set WHATSAPP_TEMPLATE_ONLINE to this name once Meta approves it
+    ("WHATSAPP_TEMPLATE_ONLINE", "zomato_outage_resolved_alert",
+     "Outage resolved for {{1}}: {{2}} outlet(s) are live on Zomato again as of {{3}}.\n\n{{4}}\n\nOpen your dashboard for details.",
      ["Foodiness", "1", "6:02 pm, 8 Nov", "Sector 63 (Noida), was offline 33 min"]),
     ("WHATSAPP_TEMPLATE_GENERIC", "restaurant_offline_alert",
      "Hello, this is an automated alert from your restaurant monitoring service. We noticed {{1}} for {{2}} "
