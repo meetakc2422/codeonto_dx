@@ -1211,3 +1211,21 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .so-more > summary::-webkit-details-marker { display: none; }
 .so-more > summary::after { content: " ▾"; color: var(--muted); }
 .so-more[open] > summary::after { content: " ▴"; }
+/* sales lost on your best dishes: one number, then a short ranked list */
+.so-loss-main .sl-big { font-size: 30px; font-weight: 800; margin: 0 8px 0 0; }
+.sl-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px; margin: 4px 0 6px; }
+.sl-sub { font-size: 13px; color: var(--text); margin: 0; }
+.sl-now { margin: 0 0 12px; font-size: 14px; }
+.sl-now b { font-size: 14px; margin: 0; }
+.sl-list { display: flex; flex-direction: column; gap: 2px; margin-top: 6px; }
+.sl-row { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(60px, 1fr) 72px; align-items: center; gap: 12px; padding: 9px 4px; border-top: 1px solid var(--border); }
+.sl-row.clickable { cursor: pointer; }
+.sl-row.clickable:hover { background: #f7f9fc; }
+.sl-name b { font-size: 14px; margin: 0; display: block; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sl-name small { font-size: 12px; color: var(--muted); }
+.sl-bar { height: 8px; background: #f1f3f7; border-radius: 99px; overflow: hidden; }
+.sl-bar i { display: block; height: 100%; background: #e5484d; border-radius: 99px; }
+.so-loss-main .sl-amt { font-size: 15px; font-weight: 800; margin: 0; text-align: right; }
+.sl-list:not(.open) .sl-row:nth-child(n+6) { display: none; }
+.sl-more { margin-top: 8px; border: 0; background: none; color: var(--blue); font-weight: 600; font-size: 13px; cursor: pointer; padding: 4px 0; }
+@media (max-width: 600px) { .sl-row { grid-template-columns: minmax(0, 1fr) 70px; } .sl-bar { display: none; } }

@@ -63,10 +63,22 @@ export default function StockOuts() {
           />
           {loss?.high ? (
             <Card>
-              <CardTitle label="Best sellers lost to stock-outs" title={`${rupeesShort(loss.low)} – ${rupeesShort(loss.high)}`} />
-              <Text style={s.sub}>estimated sales lost in this period · only each stock-out's first 3 days count</Text>
-              <View style={s.chips}>
-                {(loss.items || []).slice(0, 8).map((i: any) => <Pill key={i.item_name} tone="red" text={`${i.item_name} · ${rupeesShort(i.low)}–${rupeesShort(i.high)}`} />)}
+              <CardTitle label="Sales lost on your best dishes" title={`${rupeesShort(Math.round((loss.low + loss.high) / 2))} about`} />
+              <Text style={s.sub}>somewhere between {rupeesShort(loss.low)} and {rupeesShort(loss.high)} · only each stock-out's first 3 days count</Text>
+              <View style={{ marginTop: 8 }}>
+                {(loss.items || []).slice(0, 6).map((i: any) => {
+                  const top = Math.max(...(loss.items || []).map((x: any) => x.high || 0), 1);
+                  return (
+                    <View key={i.item_name} style={s.lossRow}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={s.item}>{i.item_name}</Text>
+                        <Text style={s.sub}>{i.outlets} outlet{i.outlets === 1 ? '' : 's'}{i.price ? ` · ₹${inr.format(i.price)} each` : ''}</Text>
+                        <View style={s.bar}><View style={[s.barFill, { width: `${Math.max(4, (100 * i.high) / top)}%` }]} /></View>
+                      </View>
+                      <Text style={s.amt}>{rupeesShort(Math.round((i.low + i.high) / 2))}</Text>
+                    </View>
+                  );
+                })}
               </View>
             </Card>
           ) : null}
@@ -106,6 +118,10 @@ export default function StockOuts() {
 }
 
 const s = StyleSheet.create({
+  lossRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 10, borderTopWidth: 1, borderTopColor: Theme.line },
+  bar: { height: 6, backgroundColor: '#F1F3F7', borderRadius: 99, marginTop: 6, overflow: 'hidden' },
+  barFill: { height: 6, backgroundColor: Theme.bad, borderRadius: 99 },
+  amt: { color: Theme.ink, fontSize: 16, fontWeight: '800' },
   status: { color: Theme.ink, fontSize: 20, lineHeight: 28 },
   money: { color: Theme.ink, fontSize: 15, lineHeight: 22, marginTop: 8 },
   b: { fontWeight: '800', color: Theme.ink },

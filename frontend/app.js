@@ -109,7 +109,7 @@ function filterParams(extra = {}) {
 }
 
 const inr = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
-const plural = (n, w) => `${inr.format(n)} ${w}${n === 1 ? "" : "s"}`;
+const plural = (n, w, many) => `${inr.format(n)} ${n === 1 ? w : many || `${w}s`}`;
 function compactCount(v) {
   const a = Math.abs(v);
   return a >= 1e7 ? `${(v / 1e7).toFixed(1)} Cr` : a >= 1e5 ? `${(v / 1e5).toFixed(1)}L` : a >= 1e3 ? `${(v / 1e3).toFixed(1)}K` : inr.format(v);
@@ -2302,16 +2302,26 @@ function topSellerStrip(summary, periodWord = "in this period") {
   const range = (lo, hi) => (hi ? `${rupeesShort(lo)} – ${rupeesShort(hi)}` : "");
   const since = (ts) => new Date(ts).toLocaleString("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", hour: "numeric", minute: "2-digit", hour12: true });
   return `<div class="so-loss">
-    ${items.length ? `<div class="so-loss-main"><span class="so-loss-label">${hasPer ? "Best sellers lost to stock-outs" : "Best sellers out right now"}</span>
-        ${hasPer ? `<b>${range(per.low, per.high)}</b><small>estimated sales lost ${esc(periodWord)}${summary.long_off ? `` : ""}</small>`
-          : t.high ? `<b>${range(t.low, t.high)}</b><small>estimated sales lost so far today</small>` : `<small>not enough order history yet to value them</small>`}
-        ${hasPer && t?.items?.length ? `<p class="so-loss-today">${plural(t.items.length, "best seller")} out right now${t.high ? ` · ${range(t.low, t.high)} lost so far today` : ""}</p>` : ""}
-        <div class="so-loss-items" id="lossItems">${items.slice(0, 20).map((i) => {
-          const est = (hasPer || i.enough_history) && i.high ? `${range(i.low, i.high)} estimated lost` : "no estimate yet";
-          const where = hasPer ? `out at ${i.outlets} outlet${i.outlets === 1 ? "" : "s"}` : `out since ${since(i.since)} at ${i.outlets} outlet${i.outlets === 1 ? "" : "s"}`;
-          const tip = `${est} · ${where}${i.price ? ` · ₹${inr.format(i.price)} each` : ""}${hasPer && i.episodes?.length ? " · click for details" : ""}`;
-          return `<span class="so-chip out ${hasPer && i.episodes?.length ? "clickable" : ""}" ${hasPer && i.episodes?.length ? `data-lossitem="${esc(i.item_name)}" role="button" tabindex="0"` : ""} data-tip="${esc(tip)}">${esc(i.item_name)}</span>`;
-        }).join("")}${items.length > 5 ? `<button type="button" class="so-chip more" id="lossMore" data-n="${Math.min(items.length, 20) - 5}">+${Math.min(items.length, 20) - 5} more</button>` : ""}</div>
+    ${items.length ? `<div class="so-loss-main"><span class="so-loss-label">${hasPer ? "Sales lost on your best dishes" : "Best dishes out right now"}</span>
+        ${(() => {
+          const lo = hasPer ? per.low : t?.low, hi = hasPer ? per.high : t?.high;
+          if (!hi) return `<p class="sl-sub">Not enough order history yet to put a value on them.</p>`;
+          return `<div class="sl-head"><b class="sl-big">${rupeesShort(Math.round((lo + hi) / 2))}</b>
+            <span class="sl-sub">about, ${hasPer ? esc(periodWord) : "so far today"} <span class="muted">(somewhere between ${rupeesShort(lo)} and ${rupeesShort(hi)})</span></span></div>`;
+        })()}
+        ${hasPer && t?.items?.length ? `<p class="sl-now"><b>${plural(t.items.length, "best dish", "best dishes")}</b> ${t.items.length === 1 ? "is" : "are"} out right now${t.high ? `, costing about <b>${rupeesShort(Math.round((t.low + t.high) / 2))}</b> so far today` : ""}.</p>` : ""}
+        <div class="so-loss-items sl-list" id="lossItems">${(() => {
+          const top = Math.max(...items.map((x) => x.high || 0), 1);
+          return items.slice(0, 20).map((i) => {
+            const priced = (hasPer || i.enough_history) && i.high;
+            const click = hasPer && i.episodes?.length;
+            return `<div class="sl-row ${click ? "clickable" : ""}" ${click ? `data-lossitem="${esc(i.item_name)}" role="button" tabindex="0"` : ""}>
+              <div class="sl-name"><b>${esc(i.item_name)}</b><small>${plural(i.outlets, "outlet")}${i.price ? ` · ₹${inr.format(i.price)} each` : ""}</small></div>
+              <div class="sl-bar"><i style="width:${priced ? Math.max(4, (100 * i.high) / top) : 0}%"></i></div>
+              <b class="sl-amt">${priced ? rupeesShort(Math.round((i.low + i.high) / 2)) : "—"}</b></div>`;
+          }).join("");
+        })()}</div>
+        ${items.length > 5 ? `<button type="button" class="sl-more" id="lossMore" data-n="${Math.min(items.length, 20) - 5}">Show ${Math.min(items.length, 20) - 5} more dishes</button>` : ""}
         <div class="so-loss-detail" id="lossDetail" hidden></div>
         <p class="so-loss-note"><span class="so-how" tabindex="0">How is this estimated?
           <span class="so-how-body">
@@ -2350,7 +2360,7 @@ document.addEventListener("click", (e) => {
   const more = e.target.closest("#lossMore");
   if (more) {
     const open = $("#lossItems").classList.toggle("open");
-    more.textContent = open ? "Show less" : `+${more.dataset.n} more`;
+    more.textContent = open ? "Show fewer dishes" : `Show ${more.dataset.n} more dishes`;
     return;
   }
   const chip = e.target.closest("[data-lossitem]");
