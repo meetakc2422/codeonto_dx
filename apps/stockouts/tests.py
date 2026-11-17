@@ -157,7 +157,8 @@ class TopSellers(OutletsBase):
                                  mealtime="Dinner", status="Cancelled", rejection_reason="Item out of stock", item_name="Hit Burger",
                                  quantity=1, order_subtotal=Decimal("300"))
         res = loss.rejected_for_stock([self.mine.pk], today - timedelta(days=30), today)
-        self.assertEqual(res, {"orders": 2, "value": 750})  # the Zomato one (450) and this one (300)
+        self.assertEqual({k: res[k] for k in ("orders", "value")}, {"orders": 2, "value": 750})  # the Zomato one (450) and this one (300)
+        self.assertEqual(res["by_platform"], {"swiggy": 1, "zomato": 1})
 
     def test_summary_has_the_period_loss(self):
         owner = self.as_user(self.owner).get(f"/api/brands/{self.brand_a.pk}/stock-outs/summary").json()
@@ -165,8 +166,10 @@ class TopSellers(OutletsBase):
 
     def test_rejections_for_stock_are_counted_once(self):
         today = loss.service_day(timezone.now())
-        self.assertEqual(loss.rejected_for_stock([self.mine.pk], today - timedelta(days=30), today), {"orders": 1, "value": 450})
-        self.assertEqual(loss.rejected_for_stock([self.sibling.pk], today - timedelta(days=30), today), {"orders": 0, "value": 0})
+        res = loss.rejected_for_stock([self.mine.pk], today - timedelta(days=30), today)
+        self.assertEqual({k: res[k] for k in ("orders", "value")}, {"orders": 1, "value": 450})
+        self.assertEqual(res["by_platform"], {"zomato": 1})
+        self.assertEqual(loss.rejected_for_stock([self.sibling.pk], today - timedelta(days=30), today), {"orders": 0, "value": 0, "by_platform": {}, "by_outlet": []})
 
     def test_summary_carries_the_new_fields_and_respects_scope(self):
         url = f"/api/brands/{self.brand_a.pk}/stock-outs/summary"
