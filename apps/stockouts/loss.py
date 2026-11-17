@@ -158,11 +158,23 @@ def top_sellers_out(active: list[StockOut], now: datetime) -> dict:
 
 
 def rejected_for_stock(outlet_ids, start: date, end: date) -> dict:
-    """Orders rejected or cancelled because an item was out of stock (Zomato's and Swiggy's reason mentions it), in the period: a measured loss, not an estimate."""
-    rows = (OrderLine.objects.filter(outlet_id__in=outlet_ids, rejection_reason__icontains="out of stock", order_date__range=(start, end))
-            .values("order_id", "order_subtotal").distinct())
+    """Orders rejected or cancelled because an item was out of stock (Zomato's and Swiggy's reason mentions it), in the period: a measured loss, not an estimate.
+    Also where they were lost: the outlets with the most, and the split by platform."""
+    from apps.outlets.models import BrandOutlet
+
+    rows = list(OrderLine.objects.filter(outlet_id__in=outlet_ids, rejection_reason__icontains="out of stock", order_date__range=(start, end))
+                .values("order_id", "order_subtotal", "outlet_id", "platform_id").distinct())
     value = sum(float(r["order_subtotal"] or 0) for r in rows)
-    return {"orders": len(rows), "value": round(value)}
+    by_outlet, by_platform = defaultdict(lambda: [0, 0.0]), defaultdict(int)
+    for r in rows:
+        o = by_outlet[r["outlet_id"]]
+        o[0] += 1
+        o[1] += float(r["order_subtotal"] or 0)
+        by_platform[r["platform_id"]] += 1
+    top = sorted(by_outlet.items(), key=lambda kv: -kv[1][0])[:6]
+    names = {o.id: (o.area or o.outlet_name) for o in BrandOutlet.objects.filter(id__in=[k for k, _ in top])}
+    return {"orders": len(rows), "value": round(value), "by_platform": dict(by_platform),
+            "by_outlet": [{"outlet": names.get(k, f"Outlet {k}"), "orders": v[0], "value": round(v[1])} for k, v in top]}
 
 
 def _outlet_label(o) -> str:

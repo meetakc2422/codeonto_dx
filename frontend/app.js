@@ -2323,6 +2323,13 @@ function topSellerStrip(summary, periodWord = "in this period") {
         })()}</div>
         ${items.length > 5 ? `<button type="button" class="sl-more" id="lossMore" data-n="${Math.min(items.length, 20) - 5}">Show ${Math.min(items.length, 20) - 5} more dishes</button>` : ""}
         <div class="so-loss-detail" id="lossDetail" hidden></div>
+        ${rej && rej.orders ? `<div class="sl-rej"><span><b>${plural(rej.orders, "order")}</b> turned away because dishes were out of stock · <b>${rupeesShort(rej.value)}</b> <span class="muted">(measured)</span></span>
+          <button type="button" class="sl-more" id="rejMore">Details</button></div>
+          <div class="sl-rej-detail" id="rejDetail" hidden>
+            ${(rej.by_platform && Object.keys(rej.by_platform).length) ? `<p class="muted" style="margin:0 0 4px">${Object.entries(rej.by_platform).map(([k, v]) => `${k === "swiggy" ? "Swiggy" : "Zomato"} ${plural(v, "order")}`).join(" · ")}</p>` : ""}
+            ${(rej.by_outlet || []).map((o) => `<div class="sl-rej-row"><span>${esc(o.outlet)}</span><span><b>${plural(o.orders, "order")}</b> · ${rupeesShort(o.value)}</span></div>`).join("")}
+            <p class="muted" style="margin:6px 0 0">Orders the platform rejected or cancelled because an item was out of stock, from your order history.</p>
+          </div>` : ""}
         <p class="so-loss-note"><span class="so-how" tabindex="0">How is this estimated?
           <span class="so-how-body">
             <span class="so-how-title">How this is estimated</span>
@@ -2334,7 +2341,7 @@ function topSellerStrip(summary, periodWord = "in this period") {
             <span class="so-how-note">Example: a burger that normally sells 6 at lunch, out for all of lunch at ₹200, shows ₹480 – ₹1,200.</span>
             <span class="so-how-note">Each platform (Zomato, Swiggy) is valued with its own orders. Dishes with under 7 in-stock days of history get no figure. Each stock-out counts for at most its first 3 days; any days after that are not counted, because the dish may have been taken off the menu.</span>
           </span></span></p></div>` : ""}
-    ${rej && rej.orders ? `<div class="so-loss-side"><b>${plural(rej.orders, "order")}</b><small>turned away for items out of stock in this period · ${rupees(rej.value)} in orders (measured, not estimated)</small></div>` : ""}
+    ${rej && rej.orders && !items.length ? `<div class="so-loss-side"><b>${plural(rej.orders, "order")}</b><small>turned away for items out of stock in this period · ${rupees(rej.value)} in orders (measured, not estimated)</small></div>` : ""}
   </div>`;
 }
 
@@ -2363,6 +2370,8 @@ document.addEventListener("click", (e) => {
     more.textContent = open ? "Show fewer dishes" : `Show ${more.dataset.n} more dishes`;
     return;
   }
+  const rejBtn = e.target.closest("#rejMore");
+  if (rejBtn) { const box = $("#rejDetail"); box.hidden = !box.hidden; rejBtn.textContent = box.hidden ? "Details" : "Hide details"; return; }
   const chip = e.target.closest("[data-lossitem]");
   if (chip) return showLossDetail(chip.dataset.lossitem);
   if (e.target.closest("[data-closeloss]")) $("#lossDetail").hidden = true;

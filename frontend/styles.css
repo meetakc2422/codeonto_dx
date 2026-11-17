@@ -1224,3 +1224,9 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .so-loss-side { padding: 10px 16px; }
 .so-loss-side b { font-size: 22px; }
 .so-loss-side small { font-size: 12px; line-height: 1.4; }
+.sl-rej { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 6px; padding: 6px 2px 0; border-top: 1px solid var(--border); font-size: 12px; }
+.sl-rej b { font-size: 12.5px; margin: 0; }
+.sl-rej-detail { margin: 4px 0 6px; padding: 8px 10px; background: #f7f9fc; border-radius: 8px; font-size: 12px; }
+.sl-rej-detail[hidden] { display: none; }
+.sl-rej-row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-top: 1px solid var(--border); }
+.sl-rej-row:first-of-type { border-top: 0; }
