@@ -31,6 +31,7 @@ $Jobs = @(
     @{ Name = "All outlets";            Args = "run.py all outlets --headless";    When = "06:00" },
     @{ Name = "Zomato business";        Args = "run.py zomato business --headless"; When = "12:00,14:00,19:00" },
     @{ Name = "Swiggy business";        Args = "run.py swiggy business --headless"; When = "12:05,14:05,19:05" },
+    @{ Name = "Swiggy business yesterday"; Args = "run.py swiggy business_yesterday --headless"; When = "07:30,11:10" },
     @{ Name = "Zomato item sales";      Args = "run.py zomato item_sales --headless"; When = "12:15,14:15,19:15" },
     @{ Name = "Zomato orders";          Args = "run.py zomato orders --headless";  When = "10:00" },
     @{ Name = "Swiggy orders";          Args = "run.py swiggy orders --headless";  When = "10:05" },

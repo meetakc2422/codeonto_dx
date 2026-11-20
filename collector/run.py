@@ -40,7 +40,7 @@ from core.common import ConfigError, log, session_path, setup_logging  # noqa: E
 # at once (e.g. outlets, to know what disappeared). Add a job: one module + one line here.
 TASKS = {
     "zomato": {"session": "zomato.session", "outlets": "zomato.outlets", "reviews": "zomato.reviews", "stockouts": "zomato.stockouts", "uptime": "zomato.uptime", "payouts": "zomato.payouts", "business": "zomato.business", "timings": "zomato.timings", "replies": "zomato.replies", "complaints": "zomato.complaints", "item_sales": "zomato.item_sales", "ratings": "zomato.ratings", "orders": "zomato.orders", "offline_hours": "zomato.offline_hours"},
-    "swiggy": {"session": "swiggy.session", "outlets": "swiggy.outlets", "reviews": "swiggy.reviews", "stockouts": "swiggy.stockouts", "orders": "swiggy.orders", "business": "swiggy.business", "payouts": "swiggy.payouts", "complaints": "swiggy.complaints", "ratings": "swiggy.ratings"},
+    "swiggy": {"session": "swiggy.session", "outlets": "swiggy.outlets", "reviews": "swiggy.reviews", "stockouts": "swiggy.stockouts", "orders": "swiggy.orders", "business": "swiggy.business", "business_yesterday": "swiggy.business_yesterday", "payouts": "swiggy.payouts", "complaints": "swiggy.complaints", "ratings": "swiggy.ratings"},
     "alerts": {"send": "core.notify", "health": "core.health"},
     "google": {"session": "google_business.session", "outlets": "google_business.outlets", "reviews": "google_business.reviews", "performance": "google_business.performance", "profile": "google_business.profile"},
 }
@@ -190,6 +190,7 @@ def main() -> int:
     parser.add_argument("--start", "--from", dest="start", metavar="YYYY-MM-DD",
                         help="business, item_sales, complaints, payouts, swiggy reviews: start of the dates to fetch")
     parser.add_argument("--end", "--to", dest="end", metavar="YYYY-MM-DD", help="end of the dates to fetch (default: the job's usual end)")
+    parser.add_argument("--dry-run", action="store_true", help="swiggy business_yesterday: ask for a few outlets and print what came back; save nothing")
     parser.add_argument("--res-id", action="append", help="only these outlets (repeatable or comma separated)")
     args = parser.parse_args()
     setup_logging()
@@ -204,6 +205,8 @@ def main() -> int:
             os.environ[env] = value
     if args.start and args.end and args.start > args.end:
         parser.error("--start is after --end")
+    if args.dry_run:
+        os.environ["SWIGGY_T1_DRY_RUN"] = "1"
     if args.res_id:
         os.environ["ONLY_RES_IDS"] = ",".join(x.strip() for v in args.res_id for x in v.split(",") if x.strip())
 
