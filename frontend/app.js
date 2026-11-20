@@ -507,7 +507,10 @@ async function render() {
     else if (route === "tickets") await renderComplaints(page);
     else if (route === "items") await renderItems(page);
     else if (route === "store_uptime") await renderUptime(page);
-    else if (route === "reconciliation") await renderReconciliation(page);
+    else if (route === "reconciliation") {
+      if (state.hasDining && state.reconView === "dining") await renderDiningPayouts(page);
+      else { await renderReconciliation(page); addReconToggle(page); }
+    }
     else if (route === "marketplace_ads") await renderAds(page);
     else if (route === "alerts") await renderAlerts(page);
     else if (route === "listings") await renderListings(page);
@@ -1644,6 +1647,43 @@ async function renderAds(page) {
       },
     },
   });
+}
+
+// Delivery | Dining switch on Reconciliation, for brands with a dining outlet. Each side is its own page render.
+function reconToggleHtml() {
+  const v = state.reconView === "dining" ? "dining" : "delivery";
+  return `<div class="segmented recon-toggle" style="margin-bottom:16px;width:fit-content"><button data-v="delivery" class="${v === "delivery" ? "active" : ""}">Delivery</button><button data-v="dining" class="${v === "dining" ? "active" : ""}">Dining</button></div>`;
+}
+function addReconToggle(page) {
+  if (!state.hasDining) return;
+  page.insertAdjacentHTML("afterbegin", reconToggleHtml());
+  bindReconToggle(page);
+}
+function bindReconToggle(page) {
+  page.querySelector(".recon-toggle")?.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-v]"); if (!b) return;
+    state.reconView = b.dataset.v; render();
+  });
+}
+
+async function renderDiningPayouts(page) {
+  const d = await api(`/brands/${state.brandId}/dining/payouts`, filterParams());
+  const s = d.summary, st = d.by_status;
+  const label = { PENDING: "Pending settlement", CARRY_FORWARD: "Carried forward", SETTLED: "Settled", PAID: "Paid" };
+  page.innerHTML = `${reconToggleHtml()}
+    <div class="grid cols-3" style="margin-bottom:20px">
+      <div class="card kpi"><span class="kpi-label">Billed (dining)</span><div class="kpi-value">${rupees(s.bill_amount)}</div><span class="muted">${inr.format(s.bills)} bills${s.first ? ` · ${shortDate(s.first)} to ${shortDate(s.last)}` : ""}</span></div>
+      <div class="card kpi"><span class="kpi-label">Zomato commission</span><div class="kpi-value">${rupees(s.commission)}</div><span class="muted">plus ${rupees(s.tax)} tax on commission</span></div>
+      <div class="card kpi"><span class="kpi-label">Receivable from Zomato</span><div class="kpi-value">${rupees(s.net_receivable)}</div><span class="muted">${Object.entries(st).map(([k, v]) => `${esc(label[k] || k)} ${rupees(v.net)}`).join(" · ") || "no bills yet"}</span></div>
+    </div>
+    <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>By outlet</h3></div>
+      ${d.outlets.length ? `<table class="ov-table"><thead><tr><th>Outlet</th><th class="num">Bills</th><th class="num">Billed</th><th class="num">Commission</th><th class="num">Receivable</th><th class="num">Not yet paid</th></tr></thead><tbody>
+      ${d.outlets.map((o) => `<tr><td><b>${esc(o.name)}</b><br><small class="muted">${esc(o.res_id)}</small></td><td class="num">${inr.format(o.bills)}</td><td class="num">${rupees(o.bill_amount)}</td><td class="num">${rupees(o.commission)}</td><td class="num">${rupees(o.net_receivable)}</td><td class="num">${rupees(o.unpaid)}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">No dining outlets here.</p>`}</div>
+    ${d.settlements.length ? `<div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Settlements</h3><small class="muted">grouped by bank reference</small></div><table class="ov-table"><thead><tr><th>Reference (UTR)</th><th>Date</th><th class="num">Bills</th><th class="num">Amount</th></tr></thead><tbody>
+      ${d.settlements.map((x) => `<tr><td><code>${esc(x.utr)}</code></td><td>${x.date ? shortDate(x.date) : ""}</td><td class="num">${inr.format(x.bills)}</td><td class="num">${rupees(x.amount)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted" style="margin:0 0 16px">No settled bills in this report yet: everything is pending or carried forward.</p>`}
+    <div class="card"><div class="card-head"><h3>Latest bills</h3><small class="muted">newest 100</small></div><table class="ov-table"><thead><tr><th>When</th><th>Outlet</th><th>Type</th><th class="num">Bill</th><th class="num">Commission</th><th class="num">Receivable</th><th>Status</th></tr></thead><tbody>
+      ${d.recent.map((t) => `<tr><td class="muted">${t.at ? shortDate(t.at) : ""}</td><td>${esc(t.outlet)}</td><td><small>${esc(t.discount_type || t.type || "")}</small></td><td class="num">${rupees(t.bill)}</td><td class="num">${rupees(t.commission)}</td><td class="num">${rupees(t.net)}</td><td><small>${esc(label[t.status] || t.status || "")}</small></td></tr>`).join("")}</tbody></table></div>`;
+  bindReconToggle(page);
 }
 
 async function renderReconciliation(page) {

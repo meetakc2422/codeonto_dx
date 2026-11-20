@@ -27,6 +27,7 @@ from apps.insights import api as insights
 from apps.uptime import api as uptime
 from apps.payouts import ads as payout_ads
 from apps.payouts import api as payouts
+from apps.payouts import dining_api as payout_dining
 from apps.billing import api as billing
 from apps.listings import api as listings
 from apps.alerts import api as alerts
@@ -110,6 +111,7 @@ api = [
     path("clients/<int:client_id>/billing/requests", billing.request_plan),
     path("brands/<int:brand_id>/ads/performance", payout_ads.ads_performance),
     path("brands/<int:brand_id>/dining", dining_api.brand_dining),
+    path("brands/<int:brand_id>/dining/payouts", payout_dining.brand_dining_payouts),
     path("brands/<int:brand_id>/payouts/summary", payouts.payout_summary),
     path("brands/<int:brand_id>/payouts/line-types/<int:line_id>", payouts.review_line),
     path("brands/<int:brand_id>/payouts/cycles", payouts.payout_cycles),

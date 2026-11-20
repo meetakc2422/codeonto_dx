@@ -97,3 +97,38 @@ class PayoutLineType(models.Model):
 
     def __str__(self):
         return f"{self.platform} · {self.section} · {self.label}"
+
+
+class DiningPayoutTransaction(models.Model):
+    """One line of Zomato's consolidated dining payout report (the "Transactions summary" sheet): a bill, its
+    commission and what Zomato owes the outlet, with the settlement status and bank reference once paid."""
+
+    res_id = models.CharField(max_length=32)
+    outlet = models.ForeignKey("outlets.BrandOutlet", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    transaction_id = models.CharField(max_length=100)
+    occurred_at = models.DateTimeField(null=True, blank=True)
+    transaction_type = models.CharField(max_length=100, blank=True)
+    kind = models.CharField(max_length=50, blank=True)
+    bill_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    cover_charge = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    discount_type = models.CharField(max_length=100, blank=True)
+    instant_discount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    promo_share = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    commissionable_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    commission_pct = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+    commission_amount = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    tax_on_commission = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    tips = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    adjustment_type = models.CharField(max_length=100, blank=True)
+    adjustment = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    net_receivable = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    settlement_status = models.CharField(max_length=50, blank=True)
+    settlement_date = models.DateField(null=True, blank=True)
+    utr_number = models.CharField(max_length=100, blank=True)
+    remarks = models.TextField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "dining_payout_transactions"
+        constraints = [models.UniqueConstraint(fields=["transaction_id", "res_id"], name="uniq_dining_payout_tx")]
+        indexes = [models.Index(fields=["res_id", "occurred_at"]), models.Index(fields=["outlet", "settlement_status"])]
