@@ -2,7 +2,7 @@
 slots were left, how that changed across the readings so far, and which 15-minute slots are still open."""
 
 from collections import defaultdict
-from datetime import date
+from datetime import date, timedelta
 
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -20,6 +20,22 @@ def _dining_outlets(request, brand_id):
     return qs.filter(id__in=ids) if ids else qs
 
 
+def _past(rid, start, end):
+    """Past dining dates in the range: for each date, meal and offer, the most slots we ever saw, the last reading, and so
+    how many were taken (an estimate: a cancellation or a manual change also moves the count)."""
+    if end < start:
+        return []
+    groups = defaultdict(list)  # (for_date, meal, offer) -> [slots_left] oldest first
+    for o in Offer.objects.filter(res_id=rid, for_date__gte=start, for_date__lte=end, slots_left__isnull=False).order_by("taken_at"):
+        groups[(o.for_date, o.meal_time, o.offer)].append(o.slots_left)
+    rows = []
+    for (d, meal, offer), v in sorted(groups.items(), reverse=True):
+        cap, last = max(v), v[-1]
+        rows.append({"date": d.isoformat(), "meal": meal, "offer": offer, "capacity": cap, "left": last, "booked": cap - last,
+                     "fill_pct": round(100 * (cap - last) / cap) if cap else None, "readings": len(v)})
+    return rows
+
+
 @api_view(["GET"])
 def brand_dining(request, brand_id):
     get_brand(request.user, brand_id)
@@ -28,6 +44,11 @@ def brand_dining(request, brand_id):
         return Response({"has_dining": bool(outlets)})
     out = []
     today = date.today().isoformat()
+    try:
+        end = date.fromisoformat(request.query_params["end"]) if request.query_params.get("end") else date.today()
+        start = date.fromisoformat(request.query_params["start"]) if request.query_params.get("start") else end - timedelta(days=29)
+    except ValueError:
+        end = date.today(); start = end - timedelta(days=29)
     for bo in outlets:
         rid = bo.zomato_id
         times = list(Offer.objects.filter(res_id=rid).order_by("-taken_at").values_list("taken_at", flat=True).distinct()[:40])
@@ -54,5 +75,6 @@ def brand_dining(request, brand_id):
                 open_times = {s["time"] for s in v["slots"]}
                 v["gone"] = sorted(seen[date.fromisoformat(d)] - open_times)  # was bookable earlier, not now: full or closed
                 row["days"].append({"date": d, **v})
+        row["past"] = _past(rid, start, min(end, date.today() - timedelta(days=1)))
         out.append(row)
     return Response({"has_dining": bool(outlets), "outlets": out})

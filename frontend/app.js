@@ -536,7 +536,7 @@ function addPerfTabs(page, route) {
 
 // Sidebar page "Slots & offers": dining offers and bookable slots, for brands that have a dining outlet.
 async function renderDiningPage(page) {
-  const d = await api(`/brands/${state.brandId}/dining`, { outlet_id: state.locationId });
+  const d = await api(`/brands/${state.brandId}/dining`, { outlet_id: state.locationId, ...range() });
   page.innerHTML = `<div id="diningView"></div>`;
   renderDiningView($("#diningView"), d);
 }
@@ -549,7 +549,7 @@ function renderDiningView(box, d) {
     return `<div class="card dining-card" data-i="${i}" style="margin-bottom:16px">
       <div class="card-head"><h3>${esc(o.name)}</h3><small class="muted">checked ${timeAgo(o.last_checked)} · ${esc(o.readings)} reading${o.readings === 1 ? "" : "s"}</small></div>
       <div class="segmented dining-days" style="margin:8px 0 12px;flex-wrap:wrap">${o.days.map((x, k) => `<button data-k="${k}" class="${k === 0 ? "active" : ""}">${new Date(x.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</button>`).join("")}</div>
-      <div class="dining-day">${diningDay(day)}</div></div>`;
+      <div class="dining-day">${diningDay(day)}</div>${diningPast(o.past || [])}</div>`;
   }).join("");
   box.querySelectorAll(".dining-card").forEach((card) => {
     const o = d.outlets[Number(card.dataset.i)];
@@ -559,6 +559,18 @@ function renderDiningView(box, d) {
       card.querySelector(".dining-day").innerHTML = diningDay(o.days[Number(b.dataset.k)]);
     };
   });
+}
+
+// Past dining dates in the chosen period: how much of each offer's capacity was taken (estimated from slots left).
+function diningPast(rows) {
+  const head = `<h4 style="margin:22px 0 4px">Past days · ${esc(periodLabel())}</h4>`;
+  if (!rows.length) return `${head}<p class="muted" style="margin:0">No readings for past dates in this period. We keep the last 30 days.</p>`;
+  const tone = (p) => (p == null ? "" : p >= 70 ? "color:#16a34a" : p < 30 ? "color:#dc2626" : "");
+  return `${head}<p class="muted" style="margin:0 0 8px;font-size:12px">Booked = most slots we saw minus the last reading. An estimate: cancellations and manual changes also move the count.</p>
+    <table class="tbl"><thead><tr><th>Date</th><th>Meal</th><th>Offer</th><th>Slots</th><th>Booked</th><th>Filled</th></tr></thead><tbody>${rows.map((r) => `<tr>
+      <td>${new Date(r.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</td>
+      <td>${esc(r.meal)}</td><td><b>${esc(r.offer)}</b></td><td>${esc(r.capacity)}</td><td>${esc(r.booked)}</td>
+      <td style="${tone(r.fill_pct)}"><b>${r.fill_pct == null ? "—" : esc(r.fill_pct) + "%"}</b></td></tr>`).join("")}</tbody></table>`;
 }
 
 function diningDay(day) {
