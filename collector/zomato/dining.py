@@ -35,7 +35,7 @@ def _session() -> dict:
     path = session_path("zomato_district", "app")
     if not path.exists():
         raise ConfigError(f"No District app login. Save the customer app's headers in {path} as {{\"headers\": {{...}}}}")
-    return json.loads(path.read_text())["headers"]
+    return json.loads(path.read_text(encoding="utf-8-sig"))["headers"]  # utf-8-sig: PowerShell writes a byte-order mark
 
 
 def config(account: str) -> dict:
