@@ -14,7 +14,7 @@ def serve(request, path, document_root=None):
 
 
 from apps.metrics import api as metrics
-from apps.metrics import freshness
+from apps.metrics import dining_api, freshness
 from apps.outlets import api as outlets
 from apps.alerts import recipients_api
 from apps.integrations import sessions_api
@@ -109,6 +109,7 @@ api = [
     path("clients/<int:client_id>/billing", billing.client_billing),
     path("clients/<int:client_id>/billing/requests", billing.request_plan),
     path("brands/<int:brand_id>/ads/performance", payout_ads.ads_performance),
+    path("brands/<int:brand_id>/dining", dining_api.brand_dining),
     path("brands/<int:brand_id>/payouts/summary", payouts.payout_summary),
     path("brands/<int:brand_id>/payouts/line-types/<int:line_id>", payouts.review_line),
     path("brands/<int:brand_id>/payouts/cycles", payouts.payout_cycles),

@@ -512,7 +512,7 @@ async function render() {
     else if (route === "competitors") await renderCompetition(page);
     else if (state.config.kpis.some((k) => k.module === route)) await renderModule(page, route);
     else renderComingSoon(page, route);
-    if (PERF_CODES.includes(route)) addPerfTabs(page, route);
+    if (PERF_CODES.includes(route)) { addPerfTabs(page, route); addDiningToggle(page); }
   } catch (e) {
     page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(userMessage(e))}</p></div>`;
   }
@@ -526,6 +526,61 @@ function addPerfTabs(page, route) {
   page.insertAdjacentHTML("afterbegin", `<div class="segmented perf-tabs" style="margin-bottom:16px;flex-wrap:wrap">${tabs.map(([code, label]) =>
     `<button data-go="${code}" class="${code === route ? "active" : ""}">${label}</button>`).join("")}</div>`);
   page.querySelectorAll(".perf-tabs [data-go]").forEach((b) => { b.onclick = () => { location.hash = `#/${b.dataset.go}`; }; });
+}
+
+// Delivery | Dining switch at the top of the Performance pages, shown only when an outlet has a dining id.
+async function addDiningToggle(page) {
+  let d;
+  try { d = await api(`/brands/${state.brandId}/dining`, { outlet_id: state.locationId }); } catch { return; }
+  if (!d.has_dining || !page.isConnected) return;
+  const bar = document.createElement("div");
+  bar.className = "segmented";
+  bar.style.cssText = "margin-bottom:16px;width:fit-content";
+  const mode = () => state.perfView || "delivery";
+  const paint = () => {
+    bar.innerHTML = `<button data-v="delivery" class="${mode() === "delivery" ? "active" : ""}">Delivery</button><button data-v="dining" class="${mode() === "dining" ? "active" : ""}">Dining</button>`;
+    page.querySelectorAll(":scope > :not(.perf-dining-bar):not(#diningView)").forEach((el) => { el.hidden = mode() === "dining"; });
+    page.querySelector("#diningView")?.remove();
+    if (mode() === "dining") { const box = document.createElement("div"); box.id = "diningView"; page.appendChild(box); renderDiningView(box, d); }
+  };
+  bar.classList.add("perf-dining-bar");
+  bar.onclick = (e) => { const b = e.target.closest("[data-v]"); if (!b) return; state.perfView = b.dataset.v; paint(); };
+  page.insertAdjacentElement("afterbegin", bar);
+  paint();
+}
+
+function renderDiningView(box, d) {
+  if (!d.outlets.length) { box.innerHTML = `<div class="card empty-state"><h3>No dining outlets in this selection</h3></div>`; return; }
+  box.innerHTML = d.outlets.map((o, i) => {
+    if (!o.days.length) return `<div class="card" style="margin-bottom:16px"><h3>${esc(o.name)}</h3><p class="muted">No dining readings yet. The collector hasn't run for this outlet.</p></div>`;
+    const day = o.days[0];
+    return `<div class="card dining-card" data-i="${i}" style="margin-bottom:16px">
+      <div class="card-head"><h3>${esc(o.name)}</h3><small class="muted">checked ${timeAgo(o.last_checked)} · ${esc(o.readings)} reading${o.readings === 1 ? "" : "s"}</small></div>
+      <div class="segmented dining-days" style="margin:8px 0 12px;flex-wrap:wrap">${o.days.map((x, k) => `<button data-k="${k}" class="${k === 0 ? "active" : ""}">${new Date(x.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</button>`).join("")}</div>
+      <div class="dining-day">${diningDay(day)}</div></div>`;
+  }).join("");
+  box.querySelectorAll(".dining-card").forEach((card) => {
+    const o = d.outlets[Number(card.dataset.i)];
+    card.querySelector(".dining-days").onclick = (e) => {
+      const b = e.target.closest("[data-k]"); if (!b) return;
+      card.querySelectorAll(".dining-days button").forEach((x) => x.classList.toggle("active", x === b));
+      card.querySelector(".dining-day").innerHTML = diningDay(o.days[Number(b.dataset.k)]);
+    };
+  });
+}
+
+function diningDay(day) {
+  const offers = day.offers.length ? `<table class="tbl"><thead><tr><th>Meal</th><th>Offer</th><th>Window</th><th>Slots left</th><th>Booked since first reading</th><th>Cover charge</th></tr></thead><tbody>${day.offers.map((o) => `<tr>
+      <td>${esc(o.meal)}</td><td><b>${esc(o.offer)}</b></td><td><small>${esc(o.window)}</small></td>
+      <td>${o.slots_left == null ? '<span class="muted">no limit shown</span>' : `<b>${esc(o.slots_left)}</b>`}</td>
+      <td>${o.booked_since_first == null ? "—" : esc(o.booked_since_first)}</td><td>${o.cover_charge == null ? "—" : "₹" + esc(o.cover_charge)}</td></tr>`).join("")}</tbody></table>`
+    : `<p class="muted">No offers on this day.</p>`;
+  const byMeal = {};
+  day.slots.forEach((s) => (byMeal[s.meal || "Slots"] = byMeal[s.meal || "Slots"] || []).push(s));
+  const chip = (s, gone) => `<span class="comp-cuisine ${gone ? "" : "on"}" style="${gone ? "text-decoration:line-through;opacity:.5" : ""}" title="${gone ? "bookable earlier today, gone now" : "open"}">${esc(s.time || s)}${s.discount_pct ? ` · ${esc(s.discount_pct)}%` : ""}</span>`;
+  const slots = Object.entries(byMeal).map(([m, list]) => `<div style="margin-top:12px"><b>${esc(m)}</b> <small class="muted">${list.length} open</small><div class="comp-cuisine-row" style="margin-top:6px">${list.map((s) => chip(s, false)).join("")}</div></div>`).join("");
+  const gone = day.gone.length ? `<div style="margin-top:12px"><b>Gone since earlier readings</b> <small class="muted">full or closed</small><div class="comp-cuisine-row" style="margin-top:6px">${day.gone.map((t) => chip({ time: t }, true)).join("")}</div></div>` : "";
+  return offers + slots + gone;
 }
 
 function sparkline(points, tone = "#d9480f") {
