@@ -29,6 +29,7 @@ DAYS = cfg.integer("DINING_DAYS", 7)
 MEALS = [m.strip() for m in cfg.text("DINING_MEALS", "Lunch,Dinner,All Day").split(",") if m.strip()]
 PACE_SEC = cfg.numbers("DINING_PACE_SEC", "0.6,1.4")
 COVERS = cfg.integer("DINING_COVERS", 2)
+KEEP_DAYS = cfg.integer("DINING_KEEP_DAYS", 30)  # readings older than this are deleted at the end of a run
 
 
 def _session() -> dict:
@@ -180,4 +181,15 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         offers_saved += len(offers); slots_saved += len(slots)
         log.info("zomato dining %s: %d offers, %d slots over %d days", rid, len(offers), len(slots), DAYS)
     log.info("zomato dining: %d offer rows and %d slot rows saved for %d stores", offers_saved, slots_saved, len(stores))
+    if KEEP_DAYS > 0:
+        try:
+            with db.transaction() as cur:
+                cur.execute("DELETE FROM dining_slot_snapshots WHERE taken_at < now() - make_interval(days => %s)", (KEEP_DAYS,))
+                gone_slots = cur.rowcount
+                cur.execute("DELETE FROM dining_offer_snapshots WHERE taken_at < now() - make_interval(days => %s)", (KEEP_DAYS,))
+                gone_offers = cur.rowcount
+            if gone_slots or gone_offers:
+                log.info("zomato dining: removed readings older than %d days (%d slot rows, %d offer rows)", KEEP_DAYS, gone_slots, gone_offers)
+        except Exception as e:
+            log.warning("zomato dining: could not clean old readings: %s", e)
     return ok
