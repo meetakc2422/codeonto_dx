@@ -737,13 +737,25 @@ async function renderModule(page, module) {
   const funnel = module === "marketplace_funnel" ? funnelCard(kpiRes.kpis) : "";
   // one day selected: a lone dot on a chart says nothing, so show the day's number (and each platform's share of it) instead
   const single = trend.length <= 1;
-  const singleDay = () => {  // one slim line: the day, its value, and each platform's part of it
-    const day = trend[0] ? new Date(trend[0].date).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : "";
-    const parts = platformSeries.length > 1 ? platformSeries.map((s) => { const v = s.points.at(-1)?.value;
-      return `<span class="pill"><span class="dot" style="background:${PLATFORM_COLORS[s.platform.code] || "#94a3b8"}"></span>${esc(s.platform.name)} <b>${v == null ? "—" : fmt(v, meta.unit, false)}</b></span>`; }).join(" ") : "";
-    return `<div class="single-day" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px 14px;padding:4px 0 2px">
-      <span class="muted">${day}</span><b style="font-size:22px">${trend[0] ? fmt(trend[0].value, meta.unit, false) : "—"}</b>${parts}</div>`;
-  };
+  const kpi = kpiRes.kpis.find((k) => k.code === meta.code);
+  const cur = trend[0]?.value ?? kpi?.value ?? null;
+  const prev = kpi && kpi.change_pct != null && kpi.change_pct > -100 && kpi.value != null ? kpi.value / (1 + kpi.change_pct / 100) : null;
+  const addable = !["percent", "rating", "ratio", "seconds", "minutes"].includes(meta.unit);  // only totals split into a share per platform
+  const split = platformSeries.map((s) => ({ name: s.platform.name, code: s.platform.code, v: s.points.at(-1)?.value })).filter((x) => x.v != null && x.v > 0);
+  const dayLabel = trend[0] ? new Date(trend[0].date).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" }) : "";
+  const bar = (label, v, max, color) => `<div style="display:grid;grid-template-columns:104px 1fr 96px;align-items:center;gap:10px;margin:9px 0">
+    <span class="muted">${esc(label)}</span><div style="background:#eef1f5;border-radius:6px;height:12px"><div style="width:${max ? Math.max(2, Math.abs(v) / max * 100) : 0}%;height:12px;border-radius:6px;background:${color}"></div></div>
+    <b style="text-align:right">${fmt(v, meta.unit, false)}</b></div>`;
+  const donut = addable && split.length > 1;
+  // one day selected: a lone dot on a chart says nothing, so show the day against the previous one and split by platform
+  const singleDay = () => `<div class="single-day" style="display:flex;flex-wrap:wrap;gap:12px 28px;align-items:center;padding:4px 0">
+    ${donut ? `<div style="position:relative;width:170px;height:170px"><canvas id="cSplit"></canvas>
+      <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none"><b style="font-size:20px">${fmt(cur, meta.unit)}</b><span class="muted" style="font-size:12px">${dayLabel}</span></div></div>`
+      : `<div><div class="muted">${dayLabel}</div><b style="font-size:30px">${fmt(cur, meta.unit, false)}</b></div>`}
+    <div style="flex:1;min-width:260px">
+      ${prev != null && cur != null ? bar("This day", cur, Math.max(cur, prev), "#408fca") + bar("Previous day", prev, Math.max(cur, prev), "#cbd5e1") : ""}
+      ${split.length > 1 ? `<div style="border-top:1px solid #eef1f5;margin:10px 0 2px"></div>` + split.map((x) => bar(x.name, x.v, Math.max(...split.map((y) => y.v)), PLATFORM_COLORS[x.code] || "#94a3b8")).join("") : ""}
+    </div></div>`;
   page.innerHTML = `
     ${kpiCards(kpiRes.kpis, module)}
     ${funnel}
@@ -767,6 +779,9 @@ async function renderModule(page, module) {
       })
     : [{ label: meta.name, data: trend.map((p) => p.value) }];
   if (!single) lineChart($("#cTrend"), labels, datasets, meta.unit);
+  else if (donut) chart($("#cSplit"), { type: "doughnut",
+    data: { labels: split.map((x) => x.name), datasets: [{ data: split.map((x) => x.v), backgroundColor: split.map((x) => PLATFORM_COLORS[x.code] || "#94a3b8"), borderWidth: 2 }] },
+    options: { maintainAspectRatio: false, cutout: "68%", plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.label}: ${fmt(c.parsed, meta.unit, false)}` } } } } });
 
   page.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => {
     location.hash = `#/${module}?kpi=${b.dataset.kpi}`;
