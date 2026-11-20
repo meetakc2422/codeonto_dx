@@ -12,3 +12,4 @@ collector/logs/*
 !collector/logs/.gitkeep
 collector/playwright_data/
 /sessions/
+collector/reports/

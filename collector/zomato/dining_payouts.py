@@ -248,9 +248,16 @@ def fetch_reports(since: datetime, expected: int, wait_sec: int = 30, tries: int
                     raw, enc = decode_header(name)[0]
                     name = raw.decode(enc or "utf-8") if isinstance(raw, bytes) else raw
                     if name.lower().endswith((".xlsx", ".xls")):
-                        path = os.path.join(tempfile.mkdtemp(prefix="dining_report_"), re.sub(r"[^\w.\-]", "_", name))
+                        safe = re.sub(r"[^\w.\-]", "_", name)
+                        payload = part.get_payload(decode=True)
+                        path = os.path.join(tempfile.mkdtemp(prefix="dining_report_"), safe)
                         with open(path, "wb") as f:
-                            f.write(part.get_payload(decode=True))
+                            f.write(payload)
+                        keep = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "reports")  # a raw copy to open in Excel
+                        os.makedirs(keep, exist_ok=True)
+                        with open(os.path.join(keep, safe), "wb") as f:
+                            f.write(payload)
+                        log.info("zomato dining_payouts: kept the original report at %s", os.path.join(keep, safe))
                         saved.append(path)
             imap.logout()
         except Exception as e:
