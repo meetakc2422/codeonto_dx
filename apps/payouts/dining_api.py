@@ -36,9 +36,9 @@ def brand_dining_payouts(request, brand_id):
     if end:
         qs = qs.filter(occurred_at__date__lte=end)
 
-    utr, status = request.query_params.get("utr"), request.query_params.get("status")
-    if utr or status:  # the bills behind one settlement (bank reference) or one status, e.g. PENDING
-        sel = qs.filter(utr_number=utr) if utr else qs.filter(settlement_status__iexact=status)
+    utr, status, of = request.query_params.get("utr"), request.query_params.get("status"), request.query_params.get("of")
+    if utr or status or of:  # the bills behind one settlement (bank reference), one status (e.g. PENDING) or one outlet
+        sel = qs.filter(utr_number=utr) if utr else qs.filter(settlement_status__iexact=status) if status else qs.filter(outlet_id=of)
         return Response({"bills": [{"id": t.transaction_id, "outlet": t.outlet.display_name if t.outlet else t.res_id, "at": t.occurred_at,
                                     "type": t.transaction_type, "discount_type": t.discount_type, "bill": _f(t.bill_amount), "cover_charge": _f(t.cover_charge),
                                     "commission": _f(t.commission_amount), "tax": _f(t.tax_on_commission), "adjustment": _f(t.adjustment),
