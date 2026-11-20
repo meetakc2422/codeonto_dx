@@ -65,3 +65,29 @@ class DemoClientTests(TestCase):
         self.assertTrue(c.login(username="client1", password="1234"))
         names = {b["name"] for b in c.get("/api/brands").json()}
         self.assertEqual(names, {"Sample Kitchen Co"})
+
+    def test_it_makes_order_history_so_the_sales_lost_figures_have_something_to_work_from(self):
+        from django.contrib.auth import get_user_model
+        from rest_framework.test import APIClient
+
+        from apps.orders.models import OrderLine
+        from apps.outlets.models import Brand
+
+        run("--outlets", "10", "--days", "30")
+        lines = OrderLine.objects.filter(outlet__brand__client__is_demo=True)
+        self.assertTrue(lines.filter(status="Delivered").exists())
+        self.assertTrue(lines.filter(status="Rejected", rejection_reason__icontains="out of stock").exists())
+        # no sales of a dish while it was out of stock
+        from apps.stockouts.models import StockOut
+        for so in StockOut.objects.filter(outlet__brand__client__is_demo=True, is_active=False)[:40]:
+            self.assertFalse(lines.filter(outlet=so.outlet, platform_id=so.platform_id, item_name=so.item_name, status="Delivered",
+                                          placed_at__gte=so.first_detected_at, placed_at__lt=so.restored_at).exists())
+        brand = Brand.objects.get(client__is_demo=True)
+        staff = get_user_model().objects.create_user("ops", password="x", is_staff=True)
+        c = APIClient(HTTP_HOST="localhost")
+        c.force_login(staff)
+        from datetime import date, timedelta
+        end = date.today() - timedelta(days=1)
+        d = c.get(f"/api/brands/{brand.id}/stock-outs/summary", {"start": (end - timedelta(days=29)).isoformat(), "end": end.isoformat()}).json()
+        self.assertGreater(d["stock_rejections"]["orders"], 0)
+        self.assertGreater(d["period_loss"]["high"], 0)

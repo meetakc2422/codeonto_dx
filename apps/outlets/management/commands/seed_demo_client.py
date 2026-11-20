@@ -11,7 +11,7 @@ Nothing here touches a real client. Safety:
 - its platform ids are written DEMO-Z-0001 / DEMO-S-0001 and stored as inactive catalog rows, so no collector job ever tries to
   fetch them, and no real id can collide with them;
 - it has no alert recipients, so no message is ever sent for it;
-- all names, reviews and figures are invented.
+- all names, reviews, orders and figures are invented.
 """
 
 import random
@@ -27,6 +27,7 @@ from apps.insights.models import ItemSalesDaily
 from apps.listings.models import ListingProfile
 from apps.masters.models import Industry, Kpi
 from apps.metrics.models import MetricDaily
+from apps.orders.models import OrderLine
 from apps.outlets.models import Brand, BrandOutlet, Client, ClientUser, SwiggyOutlet, ZomatoOutlet
 from apps.payouts.models import PayoutCycle
 from apps.reviews.models import Review
@@ -106,6 +107,7 @@ class Command(BaseCommand):
             self.stdout.write(f"{len(outlets)} outlets made; making their data ...")
             self.make_metrics_and_reviews(outlets)
             self.make_stockouts_and_uptime(outlets)
+            self.make_orders(outlets)
             self.make_payouts(outlets)
             self.make_item_sales(outlets)
             self.make_listings(outlets)
@@ -153,8 +155,14 @@ class Command(BaseCommand):
             if rng.random() < 0.1:
                 quality = rng.uniform(0.05, 0.35)  # the problem outlets every chain has
             outlets.append({"o": bo, "scale": min(2.2, max(0.4, rng.lognormvariate(0, 0.35))), "quality": quality, "swiggy": has_swiggy,
-                            "ads": rng.random() < 0.6, "hyperpure": rng.random() < 0.4, "city": city, "area": area})
+                            "ads": rng.random() < 0.6, "hyperpure": rng.random() < 0.4, "city": city, "area": area, "menu": self.make_menu()})
         return client, brand, outlets
+
+    def make_menu(self):
+        """7-10 dishes with popularity weights (a few sell most): [(name, category, price, weight)]. The same menu drives the item sales,
+        the stock-outs and the orders, so a stock-out of a best seller has real sales to lose."""
+        dishes = self.rng.sample(ITEMS, self.rng.randint(7, 10))
+        return [(n, c, p, 1 / (i + 1) ** 0.9) for i, (n, c, p) in enumerate(dishes)]
 
     # ---------- daily KPIs and reviews ----------
     def make_metrics_and_reviews(self, outlets):
@@ -238,13 +246,15 @@ class Command(BaseCommand):
         kpi = {k.code: k.id for k in Kpi.objects.all()}
         stock, episodes, uptime, kpis = [], [], [], []
         now = datetime.now(IST)
+        self.eps = {}  # (outlet id, platform) -> [(item, from, until)], read by make_orders
         for og in outlets:
             for plat in ("zomato", "swiggy"):
                 if plat == "swiggy" and not og["swiggy"]:
                     continue
                 active_items = set()
+                eps = self.eps.setdefault((og["o"].id, plat), [])
                 for _ in range(rng.randint(2, 7) + (4 if og["quality"] < 0.4 else 0)):
-                    name, cat, _ = rng.choice(ITEMS)
+                    name, cat, _price, _w = rng.choices(og["menu"], weights=[m[3] ** 0.5 for m in og["menu"]])[0]
                     day = rng.choice(self.day_list[-30:])
                     start = datetime.combine(day, time(rng.randint(9, 21), rng.randint(0, 59)), tzinfo=IST)
                     hour = start.hour
@@ -252,10 +262,12 @@ class Command(BaseCommand):
                     still_out = day >= self.yesterday - timedelta(days=1) and name not in active_items and rng.random() < 0.5
                     if still_out:
                         active_items.add(name)
+                        eps.append((name, start, now + timedelta(days=1)))
                         stock.append(StockOut(outlet=og["o"], platform_id=plat, item_name=name, category=cat, back_at="", mealtime=meal, is_active=True,
                                               log_date=day, first_detected_at=start, last_detected_at=now, restored_at=None, downtime_minutes=None))
                     else:
                         mins = rng.randint(25, 420)
+                        eps.append((name, start, start + timedelta(minutes=mins)))
                         stock.append(StockOut(outlet=og["o"], platform_id=plat, item_name=name, category=cat, back_at="", mealtime=meal, is_active=False,
                                               log_date=day, first_detected_at=start, last_detected_at=start + timedelta(minutes=mins),
                                               restored_at=start + timedelta(minutes=mins), downtime_minutes=mins))
@@ -281,6 +293,61 @@ class Command(BaseCommand):
         UptimeDaily.objects.bulk_create(uptime, batch_size=5000)
         MetricDaily.objects.bulk_create(kpis, batch_size=5000, ignore_conflicts=True)
         self.stdout.write(f"  {len(stock)} stock-outs, {len(episodes)} offline stretches, {len(uptime)} uptime days")
+
+    # ---------- order history: what the sales-lost figures are worked out from ----------
+    def make_orders(self, outlets):
+        """The last 30 service days of orders (one row per dish per order), with no sales of a dish while it was out of stock, and a few
+        orders turned away 'because an item was out of stock'. The stock-outs page learns what each outlet normally sells from these."""
+        rng = self.rng
+        hours, weights = [11, 12, 13, 14, 15, 17, 18, 19, 20, 21, 22], [4, 8, 9, 6, 3, 3, 4, 7, 10, 9, 4]
+        meal = lambda h: "Breakfast" if h < 12 else "Lunch" if h < 16 else "Evening Snacks" if h < 19 else "Dinner" if h < 23 else "Late Night Dinner"
+        window = self.day_list[-30:]
+        total = turned_away = counter = 0
+        for og in outlets:
+            menu, mw = og["menu"], [m[3] for m in og["menu"]]
+            for plat in ("zomato", "swiggy"):
+                if plat == "swiggy" and not og["swiggy"]:
+                    continue
+                eps = self.eps.get((og["o"].id, plat), [])
+                lines = []
+                base = (10 if plat == "zomato" else 7) * og["scale"]
+                for day in window:
+                    for _ in range(max(0, round(base * (1.25 if day.weekday() >= 4 else 0.9) * rng.uniform(0.75, 1.25)))):
+                        hour = rng.choices(hours, weights)[0]
+                        placed = datetime.combine(day, time(hour, rng.randint(0, 59)), tzinfo=IST)
+                        picked, seen = [], set()
+                        for _i in range(rng.choices([1, 2, 3], [55, 30, 15])[0]):
+                            it = rng.choices(menu, mw)[0]
+                            if it[0] in seen or any(e[0] == it[0] and e[1] <= placed < e[2] for e in eps):
+                                continue  # nobody buys a dish that is out of stock
+                            seen.add(it[0])
+                            picked.append((it, 2 if rng.random() < 0.12 else 1))
+                        if not picked:
+                            continue
+                        counter += 1
+                        oid = f"DEMO{plat[0].upper()}{counter:07d}"
+                        sub = sum(q * it[2] for it, q in picked)
+                        status = "Delivered" if rng.random() < 0.95 else "Cancelled"
+                        for it, q in picked:
+                            lines.append(OrderLine(outlet=og["o"], platform_id=plat, order_id=oid, placed_at=placed, order_date=day, mealtime=meal(hour), status=status,
+                                                   rejection_reason="", item_name=it[0], quantity=q, unit_price=d2(it[2]) if len(picked) == 1 else None,
+                                                   order_subtotal=d2(sub), order_total=d2(sub * 1.05)))
+                # orders turned away because an item was out of stock
+                for name, a, b in eps:
+                    price = next(m[2] for m in menu if m[0] == name)
+                    for _ in range(rng.randint(0, 2)):
+                        placed = a + (min(b, datetime.now(IST)) - a) * rng.random()
+                        service_day = (placed - timedelta(hours=5)).date()
+                        if service_day < window[0] or service_day > window[-1]:
+                            continue
+                        counter += 1
+                        turned_away += 1
+                        lines.append(OrderLine(outlet=og["o"], platform_id=plat, order_id=f"DEMO{plat[0].upper()}{counter:07d}", placed_at=placed, order_date=service_day,
+                                               mealtime=meal(placed.astimezone(IST).hour), status="Rejected", rejection_reason="Item out of stock", item_name=name,
+                                               quantity=1, unit_price=d2(price), order_subtotal=d2(price), order_total=d2(price * 1.05)))
+                OrderLine.objects.bulk_create(lines, batch_size=3000)
+                total += len(lines)
+        self.stdout.write(f"  {total} order lines ({turned_away} turned away for stock)")
 
     # ---------- weekly payouts with a statement each ----------
     def make_payouts(self, outlets):
@@ -337,10 +404,9 @@ class Command(BaseCommand):
         rng = self.rng
         rows = []
         for og in outlets:
-            menu = rng.sample(ITEMS, rng.randint(7, 10))
             for day in self.day_list[-30:]:
-                for name, cat, price in menu:
-                    qty = max(0, round((3 + price / 120) * og["scale"] * rng.uniform(0.3, 1.8) * (1.2 if day.weekday() >= 4 else 0.9)))
+                for name, cat, price, w in og["menu"]:
+                    qty = max(0, round((2 + 14 * w) * og["scale"] * rng.uniform(0.3, 1.8) * (1.2 if day.weekday() >= 4 else 0.9)))
                     if qty:
                         rows.append(ItemSalesDaily(outlet=og["o"], platform_id="zomato", item_name=name, category=cat, day=day, quantity=d2(qty),
                                                    unit_price=d2(price * rng.uniform(0.97, 1.03)), orders=max(1, int(qty * 0.8)), rating=None))
