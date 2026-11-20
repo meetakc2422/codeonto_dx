@@ -12,6 +12,7 @@ from apps.outlets.access import get_brand, in_scope, outlet_ids
 from apps.billing.access import require_module
 
 from .models import StockOut
+from apps.metrics.http_cache import cached_get
 
 
 IST = ZoneInfo("Asia/Kolkata")
@@ -236,6 +237,7 @@ def _long_off_top_sellers(episodes, plats, now) -> list[dict]:
 
 
 @api_view(["GET"])
+@cached_get(60)
 def stock_outs_summary(request, brand_id):
     qs, qp = _filtered(request, brand_id)
     totals = qs.aggregate(events=Count("id"), active=Count("id", filter=Q(is_active=True)),

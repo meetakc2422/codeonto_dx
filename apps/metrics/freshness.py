@@ -14,6 +14,7 @@ from apps.payouts.models import PayoutCycle
 from apps.reviews.models import Review
 from apps.stockouts.models import StockOut
 from apps.uptime.models import UptimeDaily
+from .http_cache import cached_get
 
 # key, label, model, timestamp field, hours of silence before it counts as late, platforms to check
 SOURCES = [
@@ -36,6 +37,7 @@ def _aware(value):
 
 
 @api_view(["GET"])
+@cached_get(60)
 def brand_freshness(request, brand_id):
     brand = get_brand(request.user, brand_id)
     now = timezone.now()

@@ -9,6 +9,7 @@ from apps.masters.models import Kpi
 from apps.outlets.access import get_brand, in_scope, outlet_limit, outlet_ids
 
 from .rollups import rollup_review_metrics
+from .http_cache import cached_get
 
 # Aggregates metric_daily by each KPI's own rule. 'last' takes each outlet/platform's
 # latest value in the window, then sums counts or averages everything else, weighted by each row's weight (1 unless
@@ -91,6 +92,7 @@ def _filters(request) -> dict:
 
 
 @api_view(["GET"])
+@cached_get(60)
 def brand_kpis(request, brand_id):
     """KPI cards: value for the period and change vs the same-length previous period."""
     get_brand(request.user, brand_id)
@@ -128,6 +130,7 @@ _MIN_BASE = {"count": 20, "currency": 2000, "seconds": 60, "minutes": 2, "ratio"
 
 
 @api_view(["GET"])
+@cached_get(60)
 def brand_drops(request, brand_id):
     """The biggest wrong-way moves of each outlet's KPIs against the previous period of the same length, worst first:
     [{outlet_id, outlet, city, code, name, module, unit, value, previous, change_pct, severity}]."""

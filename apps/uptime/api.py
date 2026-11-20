@@ -9,6 +9,7 @@ from apps.outlets.access import brands_for, get_brand, in_scope, outlet_ids
 from apps.billing.access import require_module
 
 from .models import OfflineEpisode, UptimeDaily, ZomatoOfflineHours
+from apps.metrics.http_cache import cached_get
 
 
 def _pct(online, checks):
@@ -35,6 +36,7 @@ def _filtered(request, brand_id):
 
 
 @api_view(["GET"])
+@cached_get(60)
 def uptime_summary(request, brand_id):
     episodes, days, _ = _filtered(request, brand_id)
     totals = days.aggregate(checks=Sum("checks"), online=Sum("online_checks"), last=Max("updated_at"))

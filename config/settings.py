@@ -100,10 +100,14 @@ DATABASES = {
 PIPELINE_DATABASE_URL = env("PIPELINE_DATABASE_URL", "postgresql://localhost:5432/dashboard_v1")
 
 # A cache every gunicorn worker shares (files on this machine, no extra service). The default in-memory cache is per worker, so a repeat
-# request often lands on a worker that has not seen the answer. Tests keep the in-memory one so they never read an old run's answers.
+# request often lands on a worker that has not seen the answer. Tests use the in-memory one (the sign-in throttles need a working cache) and switch the response cache off below.
 CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}} if "test" in sys.argv else {
     "default": {"BACKEND": "django.core.cache.backends.filebased.FileBasedCache", "LOCATION": env("CACHE_DIR", "/var/tmp/socialspork-cache"),
                 "TIMEOUT": 120, "OPTIONS": {"MAX_ENTRIES": 2000}}}
+
+# the 60-second cache on the dashboard's heavy read-only calls (apps/metrics/http_cache.py); off in tests, where each test's rolled-back data must never be
+# answered from an earlier test
+RESPONSE_CACHE = "test" not in sys.argv
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
