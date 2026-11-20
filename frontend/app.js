@@ -3269,6 +3269,7 @@ async function loadMarketCuisines(outletId) {
     box.innerHTML = `<div class="comp-cuisine-head"><b>${esc(p.name || "This outlet")}</b> serves <small class="muted">click a cuisine to see who else serves it nearby</small></div>
       <div class="comp-cuisine-row">${p.cuisines.map((c) => `<button type="button" class="comp-cuisine" data-cuisine="${esc(c)}">${esc(c)}</button>`).join("")}</div>
       ${p.open_text || p.cost_text ? `<small class="muted">${[p.open_text, p.cost_text].filter(Boolean).map(esc).join(" · ")}</small>` : ""}`;
+    loadCuisineRanking(outletId, box, spot);
     box.onclick = (e) => {
       const b = e.target.closest("[data-cuisine]");
       if (!b) return;
@@ -3277,6 +3278,22 @@ async function loadMarketCuisines(outletId) {
       form.requestSubmit();
     };
   } catch (x) { if ($("#zCuisines")) box.innerHTML = `<small class="muted">The cuisines couldn't be loaded right now. Please try again in a moment.</small>`; }
+}
+
+// where the outlet sits in the app's own list for each cuisine tag
+async function loadCuisineRanking(outletId, box, spot) {
+  const slot = document.createElement("div");
+  slot.className = "comp-rank";
+  slot.innerHTML = `<small class="muted">Checking your rank for each cuisine…</small>`;
+  box.appendChild(slot);
+  try {
+    const p = await api(`${zBase(outletId)}/ranking`, spot ? { spot: JSON.stringify(spot) } : {});
+    if (!slot.isConnected) return;
+    if (!p.rows?.length) { slot.innerHTML = p.detail ? `<small class="muted">${esc(p.detail)}</small>` : ""; return; }
+    slot.innerHTML = `<div class="comp-cuisine-head"><b>Your rank by cuisine</b> <small class="muted">in ${zName()}'s own list at this spot, first ${p.rows[0].checked || 30} shown</small></div>
+      <table class="tbl"><thead><tr><th>Cuisine</th><th>Your rank</th><th>Ahead of you</th></tr></thead><tbody>${p.rows.map((r) =>
+        `<tr><td>${esc(r.cuisine)}</td><td>${r.rank ? `<b>#${r.rank}</b> <small class="muted">of ${esc(r.of)}</small>` : `<span class="muted">not in top ${esc(r.checked)}</span>`}</td><td><small>${r.top.map(esc).join(", ")}</small></td></tr>`).join("")}</tbody></table>`;
+  } catch (x) { if (slot.isConnected) slot.innerHTML = `<small class="muted">The ranking couldn't be loaded right now.</small>`; }
 }
 
 async function renderMarketComp(page, outletId) {

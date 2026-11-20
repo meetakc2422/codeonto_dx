@@ -205,6 +205,43 @@ def cuisines(request, brand_id, outlet_id, platform):
     return Response(_profile_json(r))
 
 
+RANK_FRESH = 3 * 3600  # seconds a cuisine's ranking is kept, so reopening the page doesn't search again
+
+
+@api_view(["GET"])
+def ranking(request, brand_id, outlet_id, platform):
+    """Where the outlet sits in the app's own list for each of its cuisine tags: [{cuisine, rank, of, top}]. rank is None
+    when the outlet isn't in the first pages. Zomato only; kept for a few hours."""
+    from django.core.cache import cache
+    m = _market(platform)
+    if not hasattr(m, "ranked"):
+        return Response({"detail": f"Ranking by cuisine isn't available on {m.name} yet.", "rows": []})
+    outlet = _outlet(request, brand_id, outlet_id)
+    place = _spot(request, outlet, m)
+    if not place:
+        return Response({"detail": f"Set the outlet's {m.name} location first."}, status=400)
+    ours = our_res_id(outlet, m, find=True)[0]
+    r = MarketRestaurant.objects.filter(platform=m.code, res_id=ours).first() if ours else None
+    tags = ((r.info or {}).get("cuisines") if r else None) or []
+    if not tags:
+        return Response({"detail": "Open the cuisine tags first so we know them.", "rows": []})
+    rows = []
+    for tag in tags:
+        key = f"rank:{m.code}:{outlet.id}:{place.get('lat')}:{place.get('lng')}:{tag}"
+        row = cache.get(key)
+        if row is None:
+            try:
+                total, found = m.ranked(place, tag)
+            except m.Error as e:
+                return _error(e)
+            ids = [x["res_id"] for x in found]
+            row = {"cuisine": tag, "rank": ids.index(ours) + 1 if ours in ids else None, "of": total or len(ids),
+                   "checked": len(ids), "top": [x["name"] for x in found[:3]]}
+            cache.set(key, row, RANK_FRESH)
+        rows.append(row)
+    return Response({"rows": rows})
+
+
 @api_view(["POST"])
 def locations(request, brand_id, outlet_id, platform):
     """{q}: the app's own address search, from near the outlet when we know where it is."""

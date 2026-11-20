@@ -43,6 +43,21 @@ class Zomato:
         return (dish["name"] if dish else q), listed.get("total"), named + listed["restaurants"]
 
     @staticmethod
+    def ranked(spot, q, pages=3):
+        """What the app lists for a cuisine, in the app's order: (total, [{res_id, name}]). Up to `pages` pages of 10."""
+        dish = next((h for h in zomato.suggest(spot, q) if h["search"] and not h["res_id"]), None)
+        if not dish:
+            return None, []
+        out, total = [], None
+        for page in range(1, pages + 1):
+            got = zomato.search_restaurants(spot, q, page=page, search=dish["search"])
+            total = got.get("total")
+            out += [{"res_id": r["res_id"], "name": r["name"]} for r in got["restaurants"] if r["res_id"] and not r.get("is_ad")]
+            if not got.get("has_more"):
+                break
+        return total, out
+
+    @staticmethod
     def names(spot, text):
         return [(h["res_id"], h["name"].strip()) for h in zomato.suggest(spot, text) if h["res_id"]]
 
