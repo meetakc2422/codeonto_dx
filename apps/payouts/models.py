@@ -132,3 +132,24 @@ class DiningPayoutTransaction(models.Model):
         db_table = "dining_payout_transactions"
         constraints = [models.UniqueConstraint(fields=["transaction_id", "res_id"], name="uniq_dining_payout_tx")]
         indexes = [models.Index(fields=["res_id", "occurred_at"]), models.Index(fields=["outlet", "settlement_status"])]
+
+
+class DiningAdLine(models.Model):
+    """One line of the dining report's "Additions & deductions" sheet: an ad charge (deduction) or credit (addition) on a
+    campaign and order, with its settlement status."""
+
+    res_id = models.CharField(max_length=32)
+    outlet = models.ForeignKey("outlets.BrandOutlet", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    kind = models.CharField(max_length=12)  # ADDITION | DEDUCTION
+    campaign_id = models.CharField(max_length=40, blank=True)
+    order_id = models.CharField(max_length=60, blank=True)
+    line_date = models.DateField(null=True, blank=True)
+    settlement_status = models.CharField(max_length=50, blank=True)
+    utr_number = models.CharField(max_length=100, blank=True)
+    amount = models.DecimalField(max_digits=12, decimal_places=2)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "dining_ad_lines"
+        constraints = [models.UniqueConstraint(fields=["res_id", "kind", "campaign_id", "order_id", "line_date", "amount"], name="uniq_dining_ad_line")]
+        indexes = [models.Index(fields=["res_id", "line_date"]), models.Index(fields=["campaign_id"])]

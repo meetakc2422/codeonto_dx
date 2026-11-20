@@ -11,7 +11,7 @@ from rest_framework.response import Response
 from apps.outlets.access import get_brand, in_scope, outlet_ids
 from apps.outlets.models import BrandOutlet
 
-from .models import DiningPayoutTransaction as Tx
+from .models import DiningAdLine as Ad, DiningPayoutTransaction as Tx
 
 ZERO = Decimal("0")
 PAID = {"SETTLED", "PAID", "PROCESSED", "COMPLETED"}
@@ -36,6 +36,17 @@ def brand_dining_payouts(request, brand_id):
     if end:
         qs = qs.filter(occurred_at__date__lte=end)
 
+    ads = Ad.objects.filter(outlet__in=outlets)
+    if start:
+        ads = ads.filter(line_date__gte=start)
+    if end:
+        ads = ads.filter(line_date__lte=end)
+    campaign = request.query_params.get("campaign")
+    if campaign:  # the lines behind one campaign
+        sel = ads.filter(campaign_id=campaign)
+        return Response({"ad_lines": [{"order": a.order_id, "date": a.line_date, "kind": a.kind, "amount": _f(a.amount), "status": a.settlement_status,
+                                       "utr": a.utr_number, "outlet": a.outlet.display_name if a.outlet else a.res_id}
+                                      for a in sel.select_related("outlet__brand").order_by("-line_date")[:500]], "count": sel.count()})
     utr, status, of = request.query_params.get("utr"), request.query_params.get("status"), request.query_params.get("of")
     if utr or status or of:  # the bills behind one settlement (bank reference), one status (e.g. PENDING) or one outlet
         sel = qs.filter(utr_number=utr) if utr else qs.filter(settlement_status__iexact=status) if status else qs.filter(outlet_id=of)
@@ -67,4 +78,15 @@ def brand_dining_payouts(request, brand_id):
     recent = [{"id": t.transaction_id, "outlet": t.outlet.display_name if t.outlet else t.res_id, "at": t.occurred_at, "type": t.transaction_type,
                "bill": _f(t.bill_amount), "discount_type": t.discount_type, "commission": _f(t.commission_amount), "net": _f(t.net_receivable),
                "status": t.settlement_status, "utr": t.utr_number} for t in qs.select_related("outlet__brand").order_by("-occurred_at")[:100]]
-    return Response({"has_dining": bool(outlets), "summary": totals(qs), "by_status": dict(by_status), "outlets": rows, "settlements": settlements, "recent": recent})
+    deducted = _f(ads.filter(kind="DEDUCTION").aggregate(x=Sum("amount"))["x"])
+    credited = _f(ads.filter(kind="ADDITION").aggregate(x=Sum("amount"))["x"])
+    ad_by_outlet = {r["outlet_id"]: r for r in ads.values("outlet_id").annotate(n=Count("id"), net=Sum("amount"))}
+    for row in rows:
+        a = ad_by_outlet.get(row["outlet_id"])
+        row["ads_net"] = _f(a["net"]) if a else 0.0
+        row["after_ads"] = round(row["net_receivable"] + row["ads_net"], 2)
+    campaigns = [{"campaign_id": r["campaign_id"], "lines": r["n"], "amount": _f(r["net"]), "first": r["a"], "last": r["b"]}
+                 for r in ads.values("campaign_id").annotate(n=Count("id"), net=Sum("amount"), a=Min("line_date"), b=Max("line_date")).order_by("net")[:100]]
+    ads_block = {"deducted": deducted, "credited": credited, "net": round(deducted + credited, 2), "lines": ads.count(), "campaigns": campaigns,
+                 "after_ads": round(_f(qs.aggregate(x=Sum("net_receivable"))["x"]) + deducted + credited, 2)}
+    return Response({"has_dining": bool(outlets), "ads": ads_block, "summary": totals(qs), "by_status": dict(by_status), "outlets": rows, "settlements": settlements, "recent": recent})

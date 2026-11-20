@@ -119,6 +119,55 @@ def parse_report(path: str) -> list[dict]:
     return out
 
 
+ADS_SHEET, ADS_HEADER_ROW = "Additions & deductions", 4
+
+
+def parse_ads(path: str) -> list[dict]:
+    """Ad charges and credits from the report's 'Additions & deductions' sheet (empty list if the sheet is missing)."""
+    from openpyxl import load_workbook
+
+    wb = load_workbook(path, read_only=True, data_only=True)
+    if ADS_SHEET not in wb.sheetnames:
+        wb.close()
+        return []
+    out, names = [], None
+    for n, row in enumerate(wb[ADS_SHEET].iter_rows(values_only=True), 1):
+        if n < ADS_HEADER_ROW:
+            continue
+        if n == ADS_HEADER_ROW:
+            names = [_str(c).lower() for c in row]
+            continue
+        r = dict(zip(names, row))
+        rid, amount = _id(r.get("res id")), _num(r.get("amount"))
+        if not rid or amount is None or r.get("s.no.") in (None, ""):
+            continue
+        when = _when(r.get("date"))
+        out.append({"res_id": rid, "kind": _str(r.get("type")).upper(), "campaign_id": _id(r.get("campaign id")), "order_id": _str(r.get("order id")),
+                    "line_date": when.date() if when else None, "settlement_status": _str(r.get("settlement status")),
+                    "utr_number": _str(r.get("utr number / reference id")) or _str(r.get("utr number / reference")), "amount": amount})
+    wb.close()
+    return out
+
+
+AD_COLS = ["res_id", "kind", "campaign_id", "order_id", "line_date", "settlement_status", "utr_number", "amount"]
+
+
+def save_ads(rows: list[dict], only: set[str] | None = None) -> int:
+    if only:
+        rows = [r for r in rows if r["res_id"] in only]
+    unique = {(r["res_id"], r["kind"], r["campaign_id"], r["order_id"], r["line_date"], r["amount"]): r for r in rows}
+    if not unique:
+        return 0
+    with db.transaction() as cur:
+        cur.execute("SELECT zomato_res_id AS res_id, id FROM brand_outlets WHERE zomato_res_id IS NOT NULL")
+        outlet = {str(x["res_id"]): x["id"] for x in cur.fetchall()}
+        cur.executemany(f"""INSERT INTO dining_ad_lines (outlet_id, {', '.join(AD_COLS)}, updated_at) VALUES (%s, {', '.join(['%s'] * len(AD_COLS))}, now())
+                            ON CONFLICT (res_id, kind, campaign_id, order_id, line_date, amount) DO UPDATE SET outlet_id = EXCLUDED.outlet_id,
+                            settlement_status = EXCLUDED.settlement_status, utr_number = EXCLUDED.utr_number, updated_at = now()""",
+                        [(outlet.get(r["res_id"]), *[r[c] for c in AD_COLS]) for r in unique.values()])
+    return len(unique)
+
+
 COLS = ["res_id", "transaction_id", "occurred_at", "transaction_type", "kind", "bill_amount", "cover_charge", "discount_type",
         "instant_discount", "promo_share", "commissionable_amount", "commission_pct", "commission_amount", "tax_on_commission",
         "tips", "adjustment_type", "adjustment", "net_receivable", "settlement_status", "settlement_date", "utr_number", "remarks"]
@@ -245,8 +294,9 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     for f in files:
         rows = parse_report(f)
         n = save(rows, only)
+        ads = save_ads(parse_ads(f), only)
         saved += n
-        log.info("zomato dining_payouts: %s: %d of its %d lines are for these outlets", os.path.basename(f), n, len(rows))
+        log.info("zomato dining_payouts: %s: %d of its %d bills and %d ad lines are for these outlets", os.path.basename(f), n, len(rows), ads)
     log.info("zomato dining_payouts: %d reports of %d expected, %d bills saved", len(files), expected, saved)
     return len(files) >= expected
 
@@ -259,14 +309,15 @@ if __name__ == "__main__":
         total = 0
         for f in files:
             n = save(parse_report(f), only or None)
+            ads = save_ads(parse_ads(f), only or None)
             total += n
-            print(f"{os.path.basename(f)}: saved {n}")
+            print(f"{os.path.basename(f)}: saved {n} bills and {ads} ad lines")
         print(f"{len(files)} reports found, {total} bills saved")
     elif len(sys.argv) >= 3 and sys.argv[1] == "load":
         only = set()
         if "--res-id" in sys.argv:
             only = {x.strip() for x in sys.argv[sys.argv.index("--res-id") + 1].split(",") if x.strip()}
         rows = parse_report(sys.argv[2])
-        print(f"{len(rows)} lines in the report; saved {save(rows, only or None)}" + (f" for {len(only)} outlets" if only else ""))
+        print(f"{len(rows)} lines in the report; saved {save(rows, only or None)} bills and {save_ads(parse_ads(sys.argv[2]), only or None)} ad lines" + (f" for {len(only)} outlets" if only else ""))
     else:
         print("usage: python -m zomato.dining_payouts load <report.xlsx> [--res-id 111,222]")
