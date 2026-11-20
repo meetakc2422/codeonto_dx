@@ -735,6 +735,18 @@ async function renderModule(page, module) {
     .filter((s) => s.points.length);
 
   const funnel = module === "marketplace_funnel" ? funnelCard(kpiRes.kpis) : "";
+  // one day selected: a lone dot on a chart says nothing, so show the day's number (and each platform's share of it) instead
+  const single = trend.length <= 1;
+  const singleDay = () => {
+    const top = Math.max(...platformSeries.map((s) => Math.abs(s.points.at(-1)?.value ?? 0)), 0) || 1;
+    return `<div class="single-day" style="padding:6px 4px 2px">
+      <div class="muted" style="font-size:13px">${trend[0] ? new Date(trend[0].date).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "long", year: "numeric" }) : ""}</div>
+      <div style="font-size:34px;font-weight:700;margin:2px 0 16px">${trend[0] ? fmt(trend[0].value, meta.unit, false) : "—"}</div>
+      ${platformSeries.length > 1 ? platformSeries.map((s) => { const v = s.points.at(-1)?.value; return `<div class="funnel-row" style="grid-template-columns:90px 1fr 110px">
+        <span>${esc(s.platform.name)}</span><div><div class="funnel-bar" style="width:${v == null ? 0 : Math.max(4, Math.abs(v) / top * 100)}%;background:${PLATFORM_COLORS[s.platform.code] || "#408fca"}"></div></div>
+        <b style="text-align:right">${v == null ? "—" : fmt(v, meta.unit, false)}</b></div>`; }).join("") : ""}
+      <p class="muted" style="margin:14px 0 0;font-size:13px">One day selected. Pick a longer period to see how it moves over time.</p></div>`;
+  };
   page.innerHTML = `
     ${kpiCards(kpiRes.kpis, module)}
     ${funnel}
@@ -743,7 +755,7 @@ async function renderModule(page, module) {
         <h3>${esc(meta.name)} trend</h3>
         <div class="tabs">${modKpis.map((k) => `<button class="tab ${k.code === meta.code ? "active" : ""}" data-kpi="${k.code}">${esc(k.name)}</button>`).join("")}</div>
       </div>
-      <div class="chart-box"><canvas id="cTrend"></canvas></div>
+      ${single ? singleDay() : `<div class="chart-box"><canvas id="cTrend"></canvas></div>`}
     </div>
     <div class="card" style="margin-top:16px">
       <div class="card-head"><h3>Outlets ranked by ${esc(meta.name)}</h3><span class="muted">${meta.higher_is_better ? "higher is better" : "lower is better"}</span></div>
@@ -757,7 +769,7 @@ async function renderModule(page, module) {
         return { label: s.platform.name, data: trend.map((p) => byDate[p.date] ?? null), color: PLATFORM_COLORS[s.platform.code], fill: false };
       })
     : [{ label: meta.name, data: trend.map((p) => p.value) }];
-  lineChart($("#cTrend"), labels, datasets, meta.unit);
+  if (!single) lineChart($("#cTrend"), labels, datasets, meta.unit);
 
   page.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => {
     location.hash = `#/${module}?kpi=${b.dataset.kpi}`;
