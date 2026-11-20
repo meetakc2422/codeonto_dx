@@ -151,6 +151,7 @@ api = [
     path("instagram/connections/<int:pk>/sync", instagram.sync),
     path("clients/<int:client_id>/instagram", instagram.client_connections),
     path("clients/<int:client_id>/instagram/feed", instagram.feed),
+    path("clients/<int:client_id>/instagram/search", instagram.search),
     path("assistant/chat", assistant.chat),
     path("google/connections/<int:pk>", google_oauth.disconnect),
     path("google/connections/<int:pk>/sync", google_oauth.sync),

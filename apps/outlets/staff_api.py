@@ -104,6 +104,12 @@ def client_ids(request, client_id, platform):
     if request.method == "POST":
         ids = [str(i) for i in request.data.get("ids") or []]
         op = request.data.get("op")
+        if op == "dining":  # staff mark an id as a dine-in listing or not (Zomato only)
+            if not hasattr(model, "is_dining"):
+                return Response({"detail": "Only Zomato ids can be marked as dining."}, status=400)
+            on = bool(request.data.get("value"))
+            done = model.objects.filter(pk__in=ids).update(is_dining=on)
+            return Response({"done": done, "message": f"{done} id{'' if done == 1 else 's'} marked {'dining' if on else 'not dining'}"})
         if not ids or op not in ("assign", "remove"):
             return Response({"detail": "Send op (assign/remove) and ids"}, status=400)
         if op == "assign":
@@ -131,6 +137,6 @@ def client_ids(request, client_id, platform):
     for o in page:
         bo = getattr(o, "brand_outlet", None) if qp.get("scope") == "owned" else None
         rows.append({"id": getattr(o, pk), "name": o.name, "extra": getattr(o, extra), "city": o.city,
-                     "is_active": o.is_active, "store": f"{bo.brand} · {bo.outlet_name}" if bo else None})
+                     "is_active": o.is_active, "is_dining": getattr(o, "is_dining", None), "store": f"{bo.brand} · {bo.outlet_name}" if bo else None})
     return Response({"total": page.paginator.count, "page": page.number, "pages": page.paginator.num_pages,
                      "extra_label": extra.title(), "results": rows})

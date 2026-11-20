@@ -77,6 +77,7 @@ class CatalogOutlet(models.Model):
 class ZomatoOutlet(CatalogOutlet):
     res_id = models.CharField("Zomato res ID", max_length=32, primary_key=True)
     area = models.CharField(max_length=160, blank=True)
+    is_dining = models.BooleanField(default=False, db_default=False, help_text="A dine-in listing, not the delivery one")
 
     class Meta(CatalogOutlet.Meta):
         db_table = "zomato_outlets"

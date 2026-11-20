@@ -30,7 +30,7 @@ from .models import InstagramConnection, InstagramPost
 logger = logging.getLogger(__name__)
 GRAPH = "https://graph.facebook.com/v21.0"
 DIALOG = "https://www.facebook.com/v21.0/dialog/oauth"
-SCOPES = "instagram_basic,instagram_manage_comments,instagram_manage_insights,pages_show_list,pages_read_engagement"
+SCOPES = "instagram_basic,instagram_manage_comments,instagram_manage_insights,pages_show_list"
 STATE_SALT, STATE_MAX_AGE = "instagram-oauth", 600
 LOCAL_HOSTS = {"localhost", "127.0.0.1"}
 OWN_POSTS, COMMENT_POSTS = 15, 8  # recent posts read per sync, and how many of those get their comments read
@@ -82,9 +82,12 @@ def connect(request):
     nonce = secrets.token_urlsafe(16)
     request.session["instagram_oauth_nonce"] = nonce
     state = signing.dumps({"c": client.id, "u": request.user.id, "n": nonce}, salt=STATE_SALT)
-    return Response({"url": DIALOG + "?" + urlencode({
-        "client_id": settings.META_APP_ID, "redirect_uri": _redirect_uri(request), "response_type": "code",
-        "scope": SCOPES, "state": state})})
+    params = {"client_id": settings.META_APP_ID, "redirect_uri": _redirect_uri(request), "response_type": "code", "state": state}
+    if settings.META_LOGIN_CONFIG_ID:  # Login for Business takes a configuration instead of a scope list
+        params["config_id"] = settings.META_LOGIN_CONFIG_ID
+    else:
+        params["scope"] = SCOPES
+    return Response({"url": DIALOG + "?" + urlencode(params)})
 
 
 def _back(result: str, reason: str = "") -> HttpResponseRedirect:
@@ -119,6 +122,8 @@ def callback(request):
         return _back("error", str(e))
     except Exception as e:
         return _back("error", str(getattr(e, "detail", e)))
+    logger.warning("Instagram connect: Facebook returned %d Page(s): %s", len(pages.get("data", [])),
+                   [(pg.get("name"), "instagram linked" if pg.get("instagram_business_account") else "no instagram") for pg in pages.get("data", [])])
     found = 0
     for page in pages.get("data", []):
         ig = page.get("instagram_business_account")
@@ -198,7 +203,7 @@ def sync(request, pk):
     c = _own(request, pk)
     new = sync_connection(c)
     if c.status == "error":
-        raise ValidationError(c.last_error or "Instagram could not be read")
+        return Response({"detail": c.last_error or "Instagram could not be read"}, status=400)
     return Response({"new": new})
 
 
@@ -221,3 +226,46 @@ def feed(request, client_id):
     return Response({"posts": [{
         "id": p.id, "kind": p.kind, "account": p.connection.username, "username": p.username, "text": p.text, "permalink": p.permalink or p.parent_permalink,
         "media_type": p.media_type, "likes": p.likes, "comments": p.comments, "posted_at": p.posted_at} for p in qs[:100]]})
+
+
+POST_FIELDS = "id,caption,media_type,permalink,timestamp,like_count,comments_count"
+
+
+def _card(m: dict, who: str = "") -> dict:
+    return {"username": who or m.get("username", ""), "text": m.get("caption", ""), "permalink": m.get("permalink", ""), "likes": m.get("like_count") or 0,
+            "comments": m.get("comments_count") or 0, "media_type": m.get("media_type", ""), "posted_at": m.get("timestamp")}
+
+
+@api_view(["POST"])
+def search(request, client_id):
+    """{type: "hashtag"|"username", q}  ->  public posts for a hashtag, or a public Business/Creator account's profile and recent posts.
+    Runs through the client's first connected Instagram account."""
+    client = access.get_client(request.user, client_id)
+    q = (request.data.get("q") or "").strip().lstrip("#@").lower()
+    kind = request.data.get("type")
+    if not q or kind not in ("hashtag", "username"):
+        return Response({"detail": "Enter a hashtag or a username."}, status=400)
+    c = InstagramConnection.objects.filter(client=client, status="connected").exclude(token_enc="").first()
+    if not c:
+        return Response({"detail": "Connect an Instagram account first."}, status=400)
+    token = crypto.decrypt(c.token_enc)
+    try:
+        if kind == "hashtag":
+            hid = (_get("ig_hashtag_search", token, user_id=c.ig_user_id, q=q).get("data") or [{}])[0].get("id")
+            if not hid:
+                return Response({"type": kind, "q": q, "posts": [], "detail": "Instagram found nothing for that hashtag."})
+            top = _get(f"{hid}/top_media", token, user_id=c.ig_user_id, fields=POST_FIELDS, limit=25).get("data", [])
+            recent = _get(f"{hid}/recent_media", token, user_id=c.ig_user_id, fields=POST_FIELDS, limit=25).get("data", [])
+            return Response({"type": kind, "q": q, "top": [_card(m) for m in top], "recent": [_card(m) for m in recent]})
+        d = _get(c.ig_user_id, token, fields="business_discovery.username(%s){username,name,biography,followers_count,follows_count,media_count,"
+                 "media.limit(12){%s}}" % (q, POST_FIELDS)).get("business_discovery") or {}
+        posts = [_card(m, d.get("username", q)) for m in (d.get("media") or {}).get("data", [])]
+        avg = lambda k: round(sum(p[k] for p in posts) / len(posts), 1) if posts else 0
+        return Response({"type": kind, "q": q, "profile": {k: d.get(k) for k in ("username", "name", "biography", "followers_count", "follows_count", "media_count")},
+                         "avg_likes": avg("likes"), "avg_comments": avg("comments"), "posts": posts})
+    except InstagramError as e:
+        if "Public Content Access" in str(e):
+            return Response({"detail": "Hashtag search needs Meta's approval for 'Instagram Public Content Access' (an app review). Username lookups work now."}, status=400)
+        if kind == "username" and ("Invalid user" in str(e) or "does not exist" in str(e)):
+            return Response({"detail": f"We couldn't read @{q}. It must be a public Business or Creator account, spelled exactly as on Instagram. Personal and private accounts can't be read."}, status=400)
+        return Response({"detail": str(e)}, status=400)

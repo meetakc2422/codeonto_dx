@@ -2873,6 +2873,8 @@ async function renderInstagramCard(page, clientId) {
         ${canEdit ? `<button class="btn light" data-igsync="${c.id}">Sync now</button><button class="btn light" data-igoff="${c.id}">Disconnect</button>` : ""}</div>`).join("")}
     ${canEdit ? `<button class="btn blue" id="igConnect" ${info.configured ? "" : "disabled"}>${info.connections.length ? "Connect another account" : "Connect Instagram"}</button>
       ${info.configured ? "" : `<p class="muted" style="margin:8px 0 0">Not set up yet: ask SocialSpork to add the Meta keys.</p>`}` : ""}
+    ${info.connections.length ? `<form id="igSearch" class="comp-search" style="margin-top:14px"><select name="type"><option value="hashtag">Hashtag</option><option value="username">Competitor username</option></select>
+      <input name="q" placeholder="e.g. ramen, or a restaurant's Instagram name"><button class="btn blue">Search Instagram</button></form><div id="igResults"></div>` : ""}
     <div id="igFeed"></div>`;
   const after = $(".google-card") || page.firstElementChild;
   after.insertAdjacentElement("afterend", card);
@@ -2891,7 +2893,26 @@ async function renderInstagramCard(page, clientId) {
     try { await api(`/instagram/connections/${b.dataset.igoff}`, {}, { method: "DELETE" }); toast("Instagram disconnected"); render(); }
     catch (err) { toast(userMessage(err)); }
   }));
+  $("#igSearch")?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const f = e.currentTarget, out = $("#igResults");
+    out.innerHTML = `<small class="muted">Searching…</small>`;
+    try { out.innerHTML = igResults(await api(`/clients/${clientId}/instagram/search`, {}, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ type: f.type.value, q: f.q.value }) })); }
+    catch (err) { out.innerHTML = `<small class="muted">${esc(userMessage(err))}</small>`; }
+  });
   if (info.connections.length) loadInstagramFeed(clientId, "tag");
+}
+
+function igRows(list) {
+  return list.length ? `<table class="tbl"><thead><tr><th>Who</th><th>What</th><th>Likes</th><th>Comments</th><th>When</th></tr></thead><tbody>${list.map((p) => `<tr>
+    <td>${p.username ? `@${esc(p.username)}` : ""}</td><td><small>${esc((p.text || "").slice(0, 160))}</small> ${p.permalink ? `<a href="${esc(p.permalink)}" target="_blank" rel="noopener">open</a>` : ""}</td>
+    <td>${esc(p.likes)}</td><td>${esc(p.comments)}</td><td><small class="muted">${p.posted_at ? timeAgo(p.posted_at) : ""}</small></td></tr>`).join("")}</tbody></table>` : `<p class="muted">No posts.</p>`;
+}
+
+function igResults(d) {
+  if (d.type === "hashtag") return d.detail ? `<p class="muted">${esc(d.detail)}</p>` : `<h4 style="margin:14px 0 6px">Top posts for #${esc(d.q)}</h4>${igRows(d.top)}<h4 style="margin:14px 0 6px">Recent posts</h4>${igRows(d.recent)}`;
+  const p = d.profile || {};
+  return `<div style="margin:14px 0 6px"><b>@${esc(p.username)}</b> ${p.name ? `· ${esc(p.name)}` : ""}<br><small class="muted">${esc(p.followers_count ?? "?")} followers · ${esc(p.media_count ?? "?")} posts · avg ${esc(d.avg_likes)} likes and ${esc(d.avg_comments)} comments on the last ${d.posts.length}</small></div>${igRows(d.posts)}`;
 }
 
 async function loadInstagramFeed(clientId, kind) {
@@ -3953,6 +3974,7 @@ async function renderClient(page, clientId) {
         <input type="checkbox" value="${esc(r.id)}" ${locked ? "disabled" : ""} ${s.state.sel.has(r.id) ? "checked" : ""}>
         <span><b>${esc(r.name)}</b> <span class="muted">${esc([r.extra, r.city].filter(Boolean).join(", "))}</span>
           ${r.store ? `<br><small class="muted">used by ${esc(r.store)}</small>` : ""}${r.is_active ? "" : '<br><small class="warn">inactive</small>'}</span>
+        ${r.is_dining == null ? "" : `<button type="button" class="btn light" data-dining="${esc(r.id)}" data-on="${r.is_dining ? 1 : 0}" title="Mark this id as a dine-in listing">${r.is_dining ? "Dining ✓" : "Dining"}</button>`}
         <code>${esc(r.id)}</code></label>`;
     }).join("") : `<p class="muted" style="padding:10px">${s.state.q ? "Nothing matches." : key === "avail" ? "No unassigned IDs left." : "No IDs assigned yet. Pick from the left."}</p>`;
     s.pager.innerHTML = res.pages > 1 ? `<button class="btn light" data-pg="-1" ${res.page <= 1 ? "disabled" : ""}>‹</button>
@@ -3963,6 +3985,12 @@ async function renderClient(page, clientId) {
     let t;
     $(`#${key}Search`).value = s.state.q;
     $(`#${key}Search`).addEventListener("input", (e) => { clearTimeout(t); t = setTimeout(() => { s.state.q = e.target.value.trim(); s.state.page = 1; load(key); }, 250); });
+    s.list.addEventListener("click", async (e) => {
+      const b = e.target.closest("[data-dining]"); if (!b) return;
+      e.preventDefault();
+      try { await apiJSON(`/staff/clients/${clientId}/ids/${clientView.platform}`, "POST", { op: "dining", ids: [b.dataset.dining], value: b.dataset.on !== "1" }); load(key); }
+      catch (err) { toast(userMessage(err)); }
+    });
     s.list.addEventListener("change", (e) => { const cb = e.target; if (cb.type !== "checkbox") return; cb.checked ? s.state.sel.add(cb.value) : s.state.sel.delete(cb.value); updateBtn(s); });
     s.all.addEventListener("change", () => { s.list.querySelectorAll("input:not(:disabled)").forEach((cb) => { cb.checked = s.all.checked; cb.checked ? s.state.sel.add(cb.value) : s.state.sel.delete(cb.value); }); updateBtn(s); });
     s.pager.addEventListener("click", (e) => { const b = e.target.closest("[data-pg]"); if (!b) return; s.state.page += Number(b.dataset.pg); load(key); });

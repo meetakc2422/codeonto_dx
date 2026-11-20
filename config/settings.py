@@ -165,6 +165,7 @@ GOOGLE_OAUTH_REDIRECT_URI = env("GOOGLE_OAUTH_REDIRECT_URI")
 GOOGLE_TOKEN_KEY = env("GOOGLE_TOKEN_KEY")
 META_APP_ID = env("META_APP_ID", "")
 META_APP_SECRET = env("META_APP_SECRET", "")
+META_LOGIN_CONFIG_ID = env("META_LOGIN_CONFIG_ID", "")  # Facebook Login for Business: the Configuration that lists the permissions
 COLLECTOR_DIR = env("COLLECTOR_DIR", str(BASE_DIR / "collector"))
 
 # AI assistant (read-only): its own database role, a signing secret for per-client scope, and the model

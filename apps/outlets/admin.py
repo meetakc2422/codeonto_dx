@@ -103,7 +103,9 @@ class CatalogAdmin(admin.ModelAdmin):
 
 @admin.register(ZomatoOutlet)
 class ZomatoOutletAdmin(CatalogAdmin):
-    list_display = ["res_id", "name", "area", "city", "client", "is_active", "mapped_to", "account"]
+    list_display = ["res_id", "name", "area", "city", "client", "is_dining", "is_active", "mapped_to", "account"]
+    list_editable = ["is_dining"]
+    list_filter = [*CatalogAdmin.list_filter, "is_dining"]
     search_fields = ["res_id", "name", "area", "city"]
 
 
