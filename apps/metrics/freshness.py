@@ -43,9 +43,11 @@ def brand_freshness(request, brand_id):
     now = timezone.now()
     out = []
     for key, label, model, field, limit_hours, platforms in SOURCES:
-        qs = in_scope(model.objects.filter(outlet__brand_id=brand.id), request.user)
+        # one grouped query per source (the latest of each platform), not one per source and platform: each reads the table once
+        qs = in_scope(model.objects.filter(outlet__brand_id=brand.id, platform_id__in=platforms), request.user)
+        latest = {r["platform_id"]: r["m"] for r in qs.order_by().values("platform_id").annotate(m=Max(field))}
         for platform in platforms:
-            last = _aware(qs.filter(platform_id=platform).aggregate(m=Max(field))["m"])
+            last = _aware(latest.get(platform))
             age = round((now - last).total_seconds() / 3600, 1) if last else None
             out.append({"key": key, "label": label, "platform": platform, "last_at": last, "age_hours": age,
                         "limit_hours": limit_hours,
