@@ -166,7 +166,10 @@ ASSISTANT_MAX_STEPS = int(env("ASSISTANT_MAX_STEPS", "8"))
 ASSISTANT_MESSAGES_PER_HOUR = int(env("ASSISTANT_MESSAGES_PER_HOUR", "40"))
 
 # Google Places API (New): competitor lookup. A plain API key, separate from the Business Profile OAuth client
-GOOGLE_API_KEY = env("GOOGLE_API_KEY", "")
+GOOGLE_API_KEY = env("GOOGLE_API_KEY", "")  # the Places key: apps/competition reads it from settings
+# Google's Gemini client reads this same variable and prefers it over GEMINI_API_KEY ("Both ... are set. Using GOOGLE_API_KEY"),
+# which would send the assistant's calls out with the Places key. Settings already holds the value, so take it out of the environment.
+os.environ.pop("GOOGLE_API_KEY", None)
 # Maps JavaScript API key for the competition map. It is sent to browsers, so restrict it to this site's domains
 GOOGLE_MAPS_BROWSER_KEY = env("GOOGLE_MAPS_BROWSER_KEY", "")
 # Zomato customer-app session (headers) for competitor lookup; refresh with `manage.py zomato_app_session`
