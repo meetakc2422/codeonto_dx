@@ -236,7 +236,7 @@ def ranking(request, brand_id, outlet_id, platform):
                 return _error(e)
             ids = [x["res_id"] for x in found]
             row = {"cuisine": tag, "rank": ids.index(ours) + 1 if ours in ids else None, "of": total or len(ids),
-                   "checked": len(ids), "top": [x["name"] for x in found[:3]]}
+                   "checked": len(ids), "top": [x["name"] for x in (found[:ids.index(ours)] if ours in ids else found)[:3]]}
             cache.set(key, row, RANK_FRESH)
         rows.append(row)
     return Response({"rows": rows})

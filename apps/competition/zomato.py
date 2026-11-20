@@ -246,7 +246,7 @@ def suggest(place: dict, text: str) -> list[dict]:
     return out
 
 
-def search_restaurants(place: dict, query: str, count: int = 10, page: int = 1, search: dict | None = None) -> dict:
+def search_restaurants(place: dict, query: str, count: int = 10, page: int = 1, search: dict | None = None, postback: str | None = None) -> dict:
     """Restaurants Zomato shows at a confirmed location (from location_details). Pass a suggestion's `search`
     to get exactly what the app shows for that dish or cuisine; without it Zomato ignores the keyword.
     Returns {total, has_more, restaurants: [...]}; ads are kept and flagged, as they hold real places too."""
@@ -256,6 +256,8 @@ def search_restaurants(place: dict, query: str, count: int = 10, page: int = 1, 
     body = {"as_input_query": query, "keyword": name, "as_entity_name": name, "request_type": "initial" if page == 1 else "load_more",
             "count": count, "page_index": str(page), "deeplink_filters": filters, "load_more": True, "is_gold_mode_on": False,
             "deeplink_flags": "as_load_more_flow,as_leader_state", "location": _search_location(place)}
+    if postback:
+        body["postback_params"] = postback
     if search.get("tracking_params"):
         body["tracking_params"] = search["tracking_params"]
     if search.get("previous_search_id"):
@@ -263,7 +265,7 @@ def search_restaurants(place: dict, query: str, count: int = 10, page: int = 1, 
     r = post("gateway/search/v1/get_search_results", body, place["lat"], place["lng"], place["city_id"])
     found = [_restaurant(item[kind]) for item in r.get("results", [])
              for kind in [(item.get("layout_config") or {}).get("snippet_type", "")] if kind.startswith("v2_res_snippet") and kind in item]
-    return {"total": r.get("total_results"), "has_more": r.get("has_more"), "restaurants": found}
+    return {"total": r.get("total_results"), "has_more": r.get("has_more"), "restaurants": found, "postback": r.get("postback_params")}
 
 
 def _place_params(place: dict) -> dict:

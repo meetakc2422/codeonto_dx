@@ -3290,7 +3290,7 @@ async function loadCuisineRanking(outletId, box, spot) {
     const p = await api(`${zBase(outletId)}/ranking`, spot ? { spot: JSON.stringify(spot) } : {});
     if (!slot.isConnected) return;
     if (!p.rows?.length) { slot.innerHTML = p.detail ? `<small class="muted">${esc(p.detail)}</small>` : ""; return; }
-    slot.innerHTML = `<div class="comp-cuisine-head"><b>Your rank by cuisine</b> <small class="muted">in ${zName()}'s own list at this spot, first ${p.rows[0].checked || 30} shown</small></div>
+    slot.innerHTML = `<div class="comp-cuisine-head"><b>Your rank by cuisine</b> <small class="muted">in ${zName()}'s own list at this spot, first ~30 checked</small></div>
       <table class="tbl"><thead><tr><th>Cuisine</th><th>Your rank</th><th>Ahead of you</th></tr></thead><tbody>${p.rows.map((r) =>
         `<tr><td>${esc(r.cuisine)}</td><td>${r.rank ? `<b>#${r.rank}</b> <small class="muted">of ${esc(r.of)}</small>` : `<span class="muted">not in top ${esc(r.checked)}</span>`}</td><td><small>${r.top.map(esc).join(", ")}</small></td></tr>`).join("")}</tbody></table>`;
   } catch (x) { if (slot.isConnected) slot.innerHTML = `<small class="muted">The ranking couldn't be loaded right now.</small>`; }
