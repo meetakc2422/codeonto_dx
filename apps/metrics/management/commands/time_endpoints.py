@@ -33,6 +33,7 @@ class Command(BaseCommand):
     def add_arguments(self, p):
         p.add_argument("--brand", default="Sample Kitchen Co", help="the brand's name")
         p.add_argument("--days", type=int, default=30)
+        p.add_argument("--slow", type=float, default=0, help="for calls slower than this many seconds, also print their 3 slowest queries (e.g. 0.3)")
 
     def handle(self, *a, **o):
         brand = Brand.objects.filter(name__iexact=o["brand"]).first()
@@ -57,4 +58,7 @@ class Command(BaseCommand):
                 dt = time.time() - t
             total += dt
             self.stdout.write(f"{name:22} {r.status_code:>6} {dt:8.2f} {len(q):>8} {len(r.content) / 1024:7.0f}")
+            if o["slow"] and dt >= o["slow"]:
+                for x in sorted(q.captured_queries, key=lambda x: -float(x["time"]))[:3]:
+                    self.stdout.write(f"      {float(x['time']):.2f}s  {' '.join(x['sql'].split())[:110]}")
         self.stdout.write(f"\nTotal {total:.1f} s for {len(CALLS)} calls, one after another")

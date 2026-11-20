@@ -53,8 +53,30 @@ def expected_loss(rate: dict[str, float], out_since: datetime, now: datetime, pr
             "low": round(high * LOW_FACTOR) if high is not None else None}
 
 
+CACHE_SECONDS = 120  # the figures move slowly; a short shared cache keeps repeat views fast (the stock-outs summary already used 120 s)
+
+
+def _cached(key_parts, compute):
+    """compute() once per key per CACHE_SECONDS, shared by every worker through Django's cache."""
+    import hashlib
+
+    from django.core.cache import cache
+
+    key = "loss:" + hashlib.md5(repr(key_parts).encode()).hexdigest()
+    hit = cache.get(key)
+    if hit is None:
+        hit = compute()
+        cache.set(key, hit, CACHE_SECONDS)
+    return hit
+
+
 def best_sellers(outlet_ids, today: date, platform=None) -> dict[int, set[str]]:
-    """{outlet: item names}: the items making up most of the outlet's units over the window (on one platform when given)."""
+    """{outlet: item names}: the items making up most of the outlet's units over the window (on one platform when given). Cached for a
+    couple of minutes: the stock-outs summary, the item scorecard and the lists all ask for the same thing."""
+    return _cached(("best", tuple(sorted(outlet_ids)), today, platform), lambda: _best_sellers(outlet_ids, today, platform))
+
+
+def _best_sellers(outlet_ids, today: date, platform=None) -> dict[int, set[str]]:
     since = today - timedelta(days=WINDOW_DAYS)
     by_outlet = defaultdict(list)
     qs = OrderLine.objects.filter(outlet_id__in=outlet_ids, status__in=SOLD, order_date__gte=since, order_date__lt=today)
@@ -288,6 +310,13 @@ def _period_loss_one(platform, episodes: list[StockOut], start: date, end: date,
 
 
 def period_loss(episodes: list[StockOut], start: date, end: date, now: datetime, long_cutoff: datetime) -> dict:
+    """Cached for a couple of minutes by the period and the stock-outs it covers (their ids and when each came back), so the item scorecard
+    and the stock-outs summary share one result."""
+    key = ("period", start, end, tuple(sorted((e.id, e.restored_at) for e in episodes)))
+    return _cached(key, lambda: _period_loss(episodes, start, end, now, long_cutoff))
+
+
+def _period_loss(episodes: list[StockOut], start: date, end: date, now: datetime, long_cutoff: datetime) -> dict:
     """The same across platforms: each platform's stock-outs are valued with that platform's own orders (a Zomato stock-out
     never borrows Swiggy's sales), then dishes, mealtimes and totals are added up."""
     by_platform = defaultdict(list)

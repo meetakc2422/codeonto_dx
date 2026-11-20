@@ -1,6 +1,7 @@
 """Django settings for the Codeonto dashboard. Values come from .env (see .env.example)."""
 
 import os
+import sys
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -97,6 +98,12 @@ DATABASES = {
 }
 # Read-only pipeline database used by the catalog sync / import commands
 PIPELINE_DATABASE_URL = env("PIPELINE_DATABASE_URL", "postgresql://localhost:5432/dashboard_v1")
+
+# A cache every gunicorn worker shares (files on this machine, no extra service). The default in-memory cache is per worker, so a repeat
+# request often lands on a worker that has not seen the answer. Tests keep the in-memory one so they never read an old run's answers.
+CACHES = {"default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}} if "test" in sys.argv else {
+    "default": {"BACKEND": "django.core.cache.backends.filebased.FileBasedCache", "LOCATION": env("CACHE_DIR", "/var/tmp/socialspork-cache"),
+                "TIMEOUT": 120, "OPTIONS": {"MAX_ENTRIES": 2000}}}
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
