@@ -9,3 +9,10 @@ pillow>=11
 rembg[cpu]==2.0.86
 sqlglot==30.26.0
 requests>=2.31
+
+# AI assistant
+langgraph==1.2.18
+langchain-core>=1.7.3
+langchain-anthropic==1.7.7
+langchain-google-genai==4.5.0
+sqlglot>=30

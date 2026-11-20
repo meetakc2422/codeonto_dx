@@ -129,6 +129,7 @@ ZOMATO_BASE_URL = env("ZOMATO_BASE_URL", "https://api.zomato.com/merchant-gw/web
 ZOMATO_COOKIE_FILE = env("ZOMATO_COOKIE_FILE")
 SWIGGY_SESSION_FILE = env("SWIGGY_SESSION_FILE")
 ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY")
+GEMINI_API_KEY = env("GEMINI_API_KEY")  # optional second model for the assistant (Google Gemini)
 
 # Password reset links: where they point (empty = the address the request came in on), and how long they last
 DASHBOARD_URL = env("DASHBOARD_URL")
@@ -156,6 +157,9 @@ COLLECTOR_DIR = env("COLLECTOR_DIR", str(BASE_DIR / "collector"))
 ASSISTANT_DATABASE_URL = env("ASSISTANT_DATABASE_URL")
 ASSISTANT_SCOPE_SECRET = env("ASSISTANT_SCOPE_SECRET")
 ASSISTANT_MODEL = env("ASSISTANT_MODEL", "claude-sonnet-5-5")
+ASSISTANT_PROVIDER = env("ASSISTANT_PROVIDER", "anthropic")  # "anthropic" or "gemini": the one tried first
+ASSISTANT_GEMINI_MODEL = env("ASSISTANT_GEMINI_MODEL", "gemini-2.5-flash")
+ASSISTANT_FALLBACK = env("ASSISTANT_FALLBACK", "true").lower() == "true"  # when the first model errors, try the other one if its key is set
 ASSISTANT_MAX_ROWS = int(env("ASSISTANT_MAX_ROWS", "200"))
 ASSISTANT_STATEMENT_TIMEOUT_MS = int(env("ASSISTANT_STATEMENT_TIMEOUT_MS", "8000"))
 ASSISTANT_MAX_STEPS = int(env("ASSISTANT_MAX_STEPS", "8"))

@@ -1,3 +1,4 @@
+import logging
 import time
 import uuid
 from datetime import timedelta
@@ -30,8 +31,8 @@ def chat(request):
         return Response({"detail": "Write a question first"}, status=400)
     if len(message) > 2000:
         return Response({"detail": "Please keep the question under 2000 characters"}, status=400)
-    if not settings.ANTHROPIC_API_KEY or not settings.ASSISTANT_DATABASE_URL or not settings.ASSISTANT_SCOPE_SECRET:
-        # setup steps are for us, not the client: ANTHROPIC_API_KEY in .env, then `manage.py setup_assistant_role`
+    if not (settings.ANTHROPIC_API_KEY or settings.GEMINI_API_KEY) or not settings.ASSISTANT_DATABASE_URL or not settings.ASSISTANT_SCOPE_SECRET:
+        # setup steps are for us, not the client: ANTHROPIC_API_KEY (and/or GEMINI_API_KEY) in .env, then `manage.py setup_assistant_role`
         return Response({"detail": "Not configured yet", "code": "not_configured"}, status=503)
     recent = AssistantLog.objects.filter(user=request.user, created_at__gte=timezone.now() - timedelta(hours=1)).count()
     if recent >= settings.ASSISTANT_MESSAGES_PER_HOUR:
@@ -53,10 +54,17 @@ def chat(request):
     started = time.time()
     log = AssistantLog(user=request.user, client_id=client_id, question=message)
     try:
-        from .graph import ask
+        from .graph import ask, make_llm, providers
         # the outlets are part of the key so a thread can't recall answers from outlets the manager has since lost
         scope = "" if outlet_ids is None else ",".join(map(str, sorted(outlet_ids)))
-        answer, trace = ask(message, f"{request.user.id}:{scope}:{thread_id}", client_id, who, page, outlet_ids=outlet_ids)
+        for i, provider in enumerate(providers()):  # the preferred model first; the other one only if that one errors
+            try:
+                answer, trace = ask(message, f"{request.user.id}:{scope}:{thread_id}", client_id, who, page, llm=make_llm(provider), outlet_ids=outlet_ids)
+                break
+            except Exception as e:
+                if i == len(providers()) - 1:
+                    raise
+                logging.getLogger(__name__).warning("assistant: %s failed (%s: %s); trying the next model", provider, type(e).__name__, str(e)[:200])
         log.answer, log.queries = answer, [{k: v for k, v in q.items() if k != "rows"} for q in trace]
     except Exception as e:
         log.error = f"{type(e).__name__}: {e}"[:1000]

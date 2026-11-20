@@ -24,7 +24,21 @@ MODEL_ROWS = 60       # rows the model sees per query (the user sees more in the
 CELL_CHARS = 300
 
 
-def make_llm():
+def providers() -> list[str]:
+    """The models that have a key, the preferred one (ASSISTANT_PROVIDER) first; the other follows when fallback is on."""
+    keys = {"anthropic": settings.ANTHROPIC_API_KEY, "gemini": settings.GEMINI_API_KEY}
+    first = settings.ASSISTANT_PROVIDER if settings.ASSISTANT_PROVIDER in keys else "anthropic"
+    order = [first] + ([p for p in keys if p != first] if settings.ASSISTANT_FALLBACK else [])
+    return [p for p in order if keys[p]]
+
+
+def make_llm(provider: str | None = None):
+    provider = provider or (providers() or ["anthropic"])[0]
+    if provider == "gemini":
+        from langchain_google_genai import ChatGoogleGenerativeAI
+
+        return ChatGoogleGenerativeAI(model=settings.ASSISTANT_GEMINI_MODEL, google_api_key=settings.GEMINI_API_KEY, temperature=0,
+                                      max_output_tokens=2500, timeout=90)
     from langchain_anthropic import ChatAnthropic
 
     return ChatAnthropic(model=settings.ASSISTANT_MODEL, api_key=settings.ANTHROPIC_API_KEY, temperature=0,
