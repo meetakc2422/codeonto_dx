@@ -2813,7 +2813,7 @@ async function renderSetup(page, { creating = false } = {}) {
     setup.bulkSelected.clear(); setup.dirty = true; $("#bulkPanel").hidden = true; renderOutletRows();
   });
   renderOutletRows();
-  if (!creating && brand) renderGoogleCard(page, brand.client_id);
+  if (!creating && brand) { renderGoogleCard(page, brand.client_id); renderInstagramCard(page, brand.client_id); }
 }
 
 // "Connect with Google": the client links their own Business Profile; no manager invite needed.
@@ -2855,6 +2855,65 @@ async function renderGoogleCard(page, clientId) {
     catch (err) { toast(userMessage(err)); }
   }));
 }
+
+// Instagram listening: connect the outlets' Business accounts, then see who tagged them and what people comment
+async function renderInstagramCard(page, clientId) {
+  let info;
+  try { info = await api(`/clients/${clientId}/instagram`); } catch { return; }
+  const canEdit = Boolean(state.me.can_edit);
+  const card = document.createElement("div");
+  card.className = "card";
+  card.style.marginBottom = "16px";
+  card.innerHTML = `
+    <div class="card-head"><h3>Instagram</h3></div>
+    <p class="muted" style="margin:0 0 12px">Connect your Instagram Business account (linked to a Facebook Page). We then show posts that tag you, your own posts and the comments on them. We never post or change anything.</p>
+    ${info.connections.map((c) => `<div class="g-conn">
+        <span class="g-email"><b>@${esc(c.username || "account")}</b><small class="muted">${c.followers != null ? `${esc(c.followers)} followers · ` : ""}${c.synced_at ? `synced ${timeAgo(c.synced_at)}` : "not synced yet"}</small></span>
+        <span class="status ${c.status === "connected" ? "replied" : "pending"}" title="${esc(c.error || "")}">${c.status === "connected" ? "connected" : "needs attention"}</span>
+        ${canEdit ? `<button class="btn light" data-igsync="${c.id}">Sync now</button><button class="btn light" data-igoff="${c.id}">Disconnect</button>` : ""}</div>`).join("")}
+    ${canEdit ? `<button class="btn blue" id="igConnect" ${info.configured ? "" : "disabled"}>${info.connections.length ? "Connect another account" : "Connect Instagram"}</button>
+      ${info.configured ? "" : `<p class="muted" style="margin:8px 0 0">Not set up yet: ask SocialSpork to add the Meta keys.</p>`}` : ""}
+    <div id="igFeed"></div>`;
+  const after = $(".google-card") || page.firstElementChild;
+  after.insertAdjacentElement("afterend", card);
+  $("#igConnect")?.addEventListener("click", async (e) => {
+    e.currentTarget.disabled = true;
+    try { location.href = (await api("/instagram/connect", { client_id: clientId })).url; }
+    catch (err) { toast(userMessage(err)); e.currentTarget.disabled = false; }
+  });
+  card.querySelectorAll("[data-igsync]").forEach((b) => b.addEventListener("click", async () => {
+    b.disabled = true; b.textContent = "Syncing…";
+    try { const r = await api(`/instagram/connections/${b.dataset.igsync}/sync`, {}, { method: "POST" }); toast(`${r.new} new item${r.new === 1 ? "" : "s"}`); render(); }
+    catch (err) { toast(userMessage(err)); b.disabled = false; b.textContent = "Sync now"; }
+  }));
+  card.querySelectorAll("[data-igoff]").forEach((b) => b.addEventListener("click", async () => {
+    if (!confirm("Disconnect this Instagram account? What we already saved stays.")) return;
+    try { await api(`/instagram/connections/${b.dataset.igoff}`, {}, { method: "DELETE" }); toast("Instagram disconnected"); render(); }
+    catch (err) { toast(userMessage(err)); }
+  }));
+  if (info.connections.length) loadInstagramFeed(clientId, "tag");
+}
+
+async function loadInstagramFeed(clientId, kind) {
+  const box = $("#igFeed");
+  if (!box) return;
+  const tabs = [["tag", "Tagged you"], ["comment", "Comments"], ["own", "Your posts"]];
+  const d = await api(`/clients/${clientId}/instagram/feed`, { kind });
+  box.innerHTML = `<div class="tabs" style="margin:14px 0 8px">${tabs.map(([k, l]) => `<button class="${k === kind ? "active" : ""}" data-igtab="${k}">${l}</button>`).join("")}</div>
+    ${d.posts.length ? `<table class="tbl"><thead><tr><th>Who</th><th>What</th><th>Likes</th><th>When</th></tr></thead><tbody>${d.posts.map((p) => `<tr>
+      <td>@${esc(p.username || p.account)}</td><td><small>${esc((p.text || "").slice(0, 160))}</small> ${p.permalink ? `<a href="${esc(p.permalink)}" target="_blank" rel="noopener">open</a>` : ""}</td>
+      <td>${esc(p.likes)}</td><td><small class="muted">${p.posted_at ? timeAgo(p.posted_at) : ""}</small></td></tr>`).join("")}</tbody></table>`
+      : `<p class="muted">Nothing yet. Press "Sync now" to read from Instagram.</p>`}`;
+  box.querySelectorAll("[data-igtab]").forEach((b) => b.addEventListener("click", () => loadInstagramFeed(clientId, b.dataset.igtab)));
+}
+
+function instagramReturnNotice() {
+  const q = new URLSearchParams(location.hash.split("?")[1] || "");
+  if (!q.get("instagram")) return;
+  toast(q.get("instagram") === "connected" ? "Instagram connected. Press Sync now to read it." : `Instagram connection failed: ${q.get("reason") || "try again"}`);
+  history.replaceState(null, "", "#/setup");
+}
+setTimeout(instagramReturnNotice, 800);
 
 function catalogLabel(item) {
   return `${item.name} · ${item.area || item.city || ""} (${item.id})`;

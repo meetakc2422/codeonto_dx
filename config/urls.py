@@ -30,7 +30,7 @@ from apps.payouts import api as payouts
 from apps.billing import api as billing
 from apps.listings import api as listings
 from apps.alerts import api as alerts
-from apps.integrations import google_oauth
+from apps.integrations import google_oauth, instagram
 from apps.assistant import api as assistant
 from apps.competition import api as competition
 from apps.competition import market_api, market_export, photos
@@ -145,6 +145,12 @@ api = [
     path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/restaurants/<str:res_id>/images/edit", photos.edit_photos),
     path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/restaurants/<str:res_id>/images/edit/<str:job>", photos.edit_photos_zip),
     path("google/connect", google_oauth.connect),
+    path("instagram/connect", instagram.connect),
+    path("instagram/callback", instagram.callback),
+    path("instagram/connections/<int:pk>", instagram.disconnect),
+    path("instagram/connections/<int:pk>/sync", instagram.sync),
+    path("clients/<int:client_id>/instagram", instagram.client_connections),
+    path("clients/<int:client_id>/instagram/feed", instagram.feed),
     path("assistant/chat", assistant.chat),
     path("google/connections/<int:pk>", google_oauth.disconnect),
     path("google/connections/<int:pk>/sync", google_oauth.sync),

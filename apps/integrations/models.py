@@ -99,3 +99,51 @@ class SessionRefresh(models.Model):
         n += cls.objects.filter(status=cls.RUNNING, started_at__lt=cutoff).update(
             status=cls.FAILED, finished_at=now, error="The request didn't finish in 15 minutes; the worker may have stopped.")
         return n
+
+
+class InstagramConnection(models.Model):
+    """A client's Instagram Business account, linked through Facebook Login ("Connect Instagram"). The Page access token
+    (it does not expire) is stored encrypted."""
+
+    client = models.ForeignKey("outlets.Client", on_delete=models.CASCADE, related_name="instagram_connections")
+    ig_user_id = models.CharField(max_length=40)
+    username = models.CharField(max_length=100, blank=True)
+    followers = models.IntegerField(null=True, blank=True)
+    page_id = models.CharField(max_length=40, blank=True)
+    token_enc = models.TextField(blank=True)
+    status = models.CharField(max_length=10, default="connected")  # connected | error | revoked
+    last_error = models.CharField(max_length=300, blank=True)
+    connected_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    connected_at = models.DateTimeField(auto_now_add=True)
+    synced_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "instagram_connections"
+        constraints = [models.UniqueConstraint(fields=["client", "ig_user_id"], name="uniq_instagram_connection")]
+
+    def __str__(self):
+        return f"{self.client} · @{self.username}"
+
+
+class InstagramPost(models.Model):
+    """Something on Instagram about a connected account: a post that tags it, one of its own posts, or a comment on one."""
+
+    KINDS = [("tag", "Tagged post"), ("own", "Own post"), ("comment", "Comment"), ("hashtag", "Hashtag post")]
+
+    connection = models.ForeignKey(InstagramConnection, on_delete=models.CASCADE, related_name="posts")
+    kind = models.CharField(max_length=10, choices=KINDS)
+    ext_id = models.CharField(max_length=60)
+    username = models.CharField(max_length=100, blank=True)
+    text = models.TextField(blank=True)
+    permalink = models.URLField(max_length=300, blank=True)
+    parent_permalink = models.URLField(max_length=300, blank=True)
+    media_type = models.CharField(max_length=20, blank=True)
+    likes = models.IntegerField(default=0)
+    comments = models.IntegerField(default=0)
+    posted_at = models.DateTimeField(null=True)
+    seen_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "instagram_posts"
+        constraints = [models.UniqueConstraint(fields=["connection", "kind", "ext_id"], name="uniq_instagram_post")]
+        ordering = ["-posted_at"]

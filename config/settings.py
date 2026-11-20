@@ -163,6 +163,8 @@ GOOGLE_CLIENT_ID = env("GOOGLE_CLIENT_ID")
 GOOGLE_CLIENT_SECRET = env("GOOGLE_CLIENT_SECRET")
 GOOGLE_OAUTH_REDIRECT_URI = env("GOOGLE_OAUTH_REDIRECT_URI")
 GOOGLE_TOKEN_KEY = env("GOOGLE_TOKEN_KEY")
+META_APP_ID = env("META_APP_ID", "")
+META_APP_SECRET = env("META_APP_SECRET", "")
 COLLECTOR_DIR = env("COLLECTOR_DIR", str(BASE_DIR / "collector"))
 
 # AI assistant (read-only): its own database role, a signing secret for per-client scope, and the model
