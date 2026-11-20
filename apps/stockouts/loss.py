@@ -106,11 +106,12 @@ def _top_sellers_out_one(active: list[StockOut], now: datetime, platform) -> dic
     top = best_sellers({s.outlet_id for s in active}, today, platform)
     since = today - timedelta(days=WINDOW_DAYS)
     episodes = defaultdict(set)  # (outlet, item) -> days it was out
-    for e in StockOut.objects.filter(outlet_id__in=list(top), platform_id=platform, log_date__gte=since - timedelta(days=60)):
-        end = (e.restored_at or now).astimezone(IST).date()
-        d = max(e.log_date, since)
+    for outlet_id, item_name, log_date, restored_at in (StockOut.objects.filter(outlet_id__in=list(top), platform_id=platform, log_date__gte=since - timedelta(days=60))
+                                                        .values_list("outlet_id", "item_name", "log_date", "restored_at")):  # plain tuples: no model object per row
+        end = (restored_at or now).astimezone(IST).date()
+        d = max(log_date, since)
         while d <= end:
-            episodes[(e.outlet_id, e.item_name)].add(d)
+            episodes[(outlet_id, item_name)].add(d)
             d += timedelta(days=1)
     merged: dict[str, dict] = {}
     for s in active:
@@ -223,14 +224,17 @@ def _period_loss_one(platform, episodes: list[StockOut], start: date, end: date,
     window = {since + timedelta(days=i) for i in range((today - since).days)}
 
     out_days = defaultdict(set)  # days each item was out in the learning window: not normal demand
-    for e in StockOut.objects.filter(outlet_id__in=outlets, platform_id=platform, log_date__gte=since - timedelta(days=60)):
-        if (e.outlet_id, e.item_name) in pairs:
-            d, last = max(e.log_date, since), (e.restored_at or now).astimezone(IST).date()
+    for outlet_id, item_name, log_date, restored_at in (StockOut.objects.filter(outlet_id__in=outlets, item_name__in={i for _, i in pairs}, platform_id=platform,
+                                                                                log_date__gte=since - timedelta(days=60))
+                                                        .values_list("outlet_id", "item_name", "log_date", "restored_at")):
+        if (outlet_id, item_name) in pairs:
+            d, last = max(log_date, since), (restored_at or now).astimezone(IST).date()
             while d <= last:
-                out_days[(e.outlet_id, e.item_name)].add(d)
+                out_days[(outlet_id, item_name)].add(d)
                 d += timedelta(days=1)
     sold = defaultdict(list)  # (outlet, item) -> [(meal, day, units)]
-    for r in (OrderLine.objects.filter(outlet_id__in=outlets, platform_id=platform, status__in=SOLD, order_date__gte=since, order_date__lt=today)
+    for r in (OrderLine.objects.filter(outlet_id__in=outlets, item_name__in={i for _, i in pairs}, platform_id=platform, status__in=SOLD,
+                                       order_date__gte=since, order_date__lt=today)  # only the best sellers that went out: the other dishes are never used
               .values("outlet_id", "item_name", "mealtime", "order_date").annotate(u=Sum("quantity"))):
         if (r["outlet_id"], r["item_name"]) in pairs:
             sold[(r["outlet_id"], r["item_name"])].append((r["mealtime"], r["order_date"], float(r["u"])))
