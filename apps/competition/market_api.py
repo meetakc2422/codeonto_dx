@@ -14,6 +14,7 @@ from . import zomato
 from .api import MAX_TRACKED, _outlet
 from .markets import INDIA, MARKETS
 from .models import MarketCompetitor, MarketRestaurant, MarketSnapshot, MarketSpot
+from .errors import upstream_error
 
 PROFILE_FRESH = timedelta(days=7)  # cuisines and hours of a listing rarely change
 MENU_FRESH = timedelta(hours=6)  # only spares a second read when Compare follows straight after opening
@@ -26,7 +27,7 @@ def _market(platform):
 
 
 def _error(e):
-    return Response({"detail": str(e)}, status=502)
+    return upstream_error(e)
 
 
 def _area(outlet, m):

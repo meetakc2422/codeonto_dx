@@ -47,6 +47,16 @@ export const authStorage = {
   },
 };
 
+// What a person may read when a request fails: a sentence the server wrote for people, else a plain one.
+// Status codes, "Request failed with status code 500" and exception text stay out of the screen.
 export function errorText(e: any): string {
-  return e?.response?.data?.detail || e?.message || 'Something went wrong';
+  const detail = e?.response?.data?.detail;
+  if (typeof detail === 'string' && detail.trim()) return detail;
+  if (!e?.response) return "We couldn't reach SocialSpork. Check your internet connection and try again.";
+  const status = e.response.status;
+  if (status === 403) return "You don't have access to this.";
+  if (status === 404) return "We couldn't find that.";
+  if (status === 429) return 'Too many requests. Please wait a moment and try again.';
+  if (status >= 500) return 'Something went wrong on our side. Please try again in a moment.';
+  return "That didn't work. Please try again.";
 }

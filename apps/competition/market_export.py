@@ -15,6 +15,7 @@ from .api import _outlet
 from .models import MarketCompetitor, MarketRestaurant, MarketSpot
 from .export_dashboard import add_dashboard
 from .market_api import _area, _insights, _market, load_menu, our_res_id
+from .errors import upstream_error
 
 IST = ZoneInfo("Asia/Kolkata")
 MATCH_AT = 0.6  # share of the dishes' distinctive words they must have in common to count as the same dish
@@ -96,7 +97,7 @@ def export(request, brand_id, outlet_id, platform):
     try:
         rows = _restaurants(mk, outlet, ids, with_us=request.query_params.get("us", "1") != "0")
     except mk.Error as e:
-        return Response({"detail": str(e)}, status=502)
+        return upstream_error(e)
     if not rows:
         return Response({"detail": f"Nothing to export yet: compare with at least one {mk.name} restaurant first."}, status=400)
     ins = {r.res_id: _insights(r) for _, r, _ in rows}

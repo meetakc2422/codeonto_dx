@@ -90,3 +90,14 @@ class ZomatoResInfo(SimpleTestCase):
     def test_an_empty_answer_gives_empty_fields(self):
         r = zomato.parse_res_info({})
         self.assertEqual((r["cuisines"], r["timings"], r["open_text"]), ([], [], ""))
+
+
+class UpstreamErrorTests(SimpleTestCase):
+    def test_a_platform_failure_shows_one_plain_sentence_and_no_internals(self):
+        from .errors import FRIENDLY, upstream_error
+
+        res = upstream_error(Exception("HTTPSConnectionPool(host='api.zomato.com', port=443): Max retries exceeded; set GOOGLE_API_KEY in .env"))
+        self.assertEqual(res.status_code, 502)
+        self.assertEqual(res.data["detail"], FRIENDLY)
+        self.assertNotIn("zomato.com", str(res.data))
+        self.assertNotIn(".env", str(res.data))

@@ -14,11 +14,9 @@ from .rollups import rollup_review_metrics
 # latest value in the window, then sums counts or averages everything else, weighted by each row's weight (1 unless
 # set, so a plain average; listing_rating carries its number of ratings so the brand rating is a weighted average).
 _AGG_SQL = """
-WITH base AS (
-  SELECT k.code, k.name, k.unit, k.aggregation, k.higher_is_better, m.code AS module, k.sort_order, md.outlet_id,
-         md.metric_date, md.value, COALESCE(md.weight, 1) AS w,
-         ROW_NUMBER() OVER (PARTITION BY k.id, md.outlet_id, md.platform {date_part}
-                            ORDER BY md.metric_date DESC) AS rn
+WITH src AS (
+  -- narrow rows only (ids, numbers): the names and units are joined on after the sums, so the database never sorts text for every daily row
+  SELECT md.kpi_id, k.aggregation, (k.unit = 'count') AS is_count, md.outlet_id, md.platform, md.metric_date, md.value, COALESCE(md.weight, 1) AS w
   FROM metric_daily md
   JOIN kpis k ON k.id = md.kpi_id
   JOIN modules m ON m.id = k.module_id
@@ -30,25 +28,33 @@ WITH base AS (
     AND (%(platform)s::text IS NULL OR md.platform = %(platform)s)
     AND (%(module)s::text IS NULL OR m.code = %(module)s)
     AND (%(kpi)s::text IS NULL OR k.code = %(kpi)s)
+), base AS (
+  -- only the 'last' KPIs need each outlet's newest day numbered (rn = 1)
+  SELECT src.*, 1 AS rn FROM src WHERE aggregation <> 'last'
+  UNION ALL
+  SELECT src.*, ROW_NUMBER() OVER (PARTITION BY kpi_id, outlet_id, platform {date_part} ORDER BY metric_date DESC) AS rn FROM src WHERE aggregation = 'last'
+), agg AS (
+  SELECT kpi_id{date_select}{outlet_select},
+    CASE aggregation
+      WHEN 'sum'          THEN SUM(value)
+      WHEN 'avg'          THEN AVG(value)
+      WHEN 'weighted_avg' THEN SUM(value * w) / NULLIF(SUM(w), 0)
+      WHEN 'max'          THEN MAX(value)
+      WHEN 'min'          THEN MIN(value)
+      WHEN 'last'         THEN CASE WHEN is_count THEN SUM(value) FILTER (WHERE rn = 1)
+                                    ELSE SUM(value * w) FILTER (WHERE rn = 1) / NULLIF(SUM(w) FILTER (WHERE rn = 1), 0) END
+    END AS value
+  FROM base
+  GROUP BY kpi_id, aggregation, is_count{date_select}{outlet_select}
 )
-SELECT code, name, unit, higher_is_better, module {date_select}{outlet_select},
-  CASE aggregation
-    WHEN 'sum'          THEN SUM(value)
-    WHEN 'avg'          THEN AVG(value)
-    WHEN 'weighted_avg' THEN SUM(value * w) / NULLIF(SUM(w), 0)
-    WHEN 'max'          THEN MAX(value)
-    WHEN 'min'          THEN MIN(value)
-    WHEN 'last'         THEN CASE WHEN unit = 'count' THEN SUM(value) FILTER (WHERE rn = 1)
-                                  ELSE SUM(value * w) FILTER (WHERE rn = 1) / NULLIF(SUM(w) FILTER (WHERE rn = 1), 0) END
-  END AS value
-FROM base
-GROUP BY code, name, unit, aggregation, higher_is_better, module, sort_order {date_select}{outlet_select}
-ORDER BY module, sort_order {date_select}{outlet_select}
+SELECT k.code, k.name, k.unit, k.higher_is_better, m.code AS module {date_select}{outlet_select}, agg.value
+FROM agg JOIN kpis k ON k.id = agg.kpi_id JOIN modules m ON m.id = k.module_id
+ORDER BY m.code, k.sort_order {date_select}{outlet_select}
 """
 
 
 def _aggregate(by_date: bool, by_outlet: bool = False, **params) -> list[dict]:
-    sql = _AGG_SQL.format(date_part=", md.metric_date" if by_date else "",
+    sql = _AGG_SQL.format(date_part=", metric_date" if by_date else "",
                           date_select=", metric_date" if by_date else "", outlet_select=", outlet_id" if by_outlet else "")
     params = {"outlet_id": None, "platform": None, "module": None, "kpi": None, "allowed": None, **params}
     if isinstance(params["outlet_id"], int):  # one outlet passed directly (leaderboard): the SQL takes a list
@@ -89,12 +95,13 @@ def brand_kpis(request, brand_id):
     current = _aggregate(False, brand_id=brand_id, start=start, end=end, **f)
     previous = {r["code"]: r["value"] for r in
                 _aggregate(False, brand_id=brand_id, start=start - span, end=start - timedelta(days=1), **f)}
-    with connection.cursor() as cur:  # which platforms actually supply each KPI in this window
-        cur.execute("""SELECT k.code, array_agg(DISTINCT md.platform ORDER BY md.platform)
-                       FROM metric_daily md JOIN kpis k ON k.id = md.kpi_id JOIN brand_outlets bo ON bo.id = md.outlet_id
-                       WHERE bo.brand_id = %(b)s AND md.metric_date BETWEEN %(s)s AND %(e)s
-                         AND (%(o)s::bigint[] IS NULL OR md.outlet_id = ANY(%(o)s::bigint[])) AND (%(p)s::text IS NULL OR md.platform = %(p)s)
-                         AND (%(a)s::bigint[] IS NULL OR md.outlet_id = ANY(%(a)s::bigint[]))
+    with connection.cursor() as cur:  # which platforms actually supply each KPI in this window (an EXISTS per KPI and platform: it stops at the first row)
+        cur.execute("""SELECT k.code, array_agg(p.code ORDER BY p.code)
+                       FROM kpis k CROSS JOIN platforms p
+                       WHERE EXISTS (SELECT 1 FROM metric_daily md JOIN brand_outlets bo ON bo.id = md.outlet_id
+                                     WHERE md.kpi_id = k.id AND md.platform = p.code AND bo.brand_id = %(b)s AND md.metric_date BETWEEN %(s)s AND %(e)s
+                                       AND (%(o)s::bigint[] IS NULL OR md.outlet_id = ANY(%(o)s::bigint[])) AND (%(p)s::text IS NULL OR md.platform = %(p)s)
+                                       AND (%(a)s::bigint[] IS NULL OR md.outlet_id = ANY(%(a)s::bigint[])))
                        GROUP BY k.code""", {"b": brand_id, "s": start, "e": end, "o": f["outlet_id"], "p": f["platform"], "a": f["allowed"]})
         platforms = {code: [p for p in plats if p] for code, plats in cur.fetchall()}
     for r in current:

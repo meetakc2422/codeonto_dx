@@ -11,6 +11,7 @@ from apps.outlets.models import BrandOutlet
 
 from . import places
 from .models import Competitor, OutletPlace, PlaceSnapshot
+from .errors import upstream_error
 
 MODULE = "competitors"
 MAX_TRACKED = 10
@@ -48,7 +49,7 @@ def _outlet(request, brand_id, outlet_id, edit=False) -> BrandOutlet:
 
 
 def _places_error(e):
-    return Response({"detail": str(e)}, status=502)
+    return upstream_error(e)
 
 
 @api_view(["GET"])

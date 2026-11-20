@@ -74,16 +74,36 @@ function apiFetch(url, opts = {}) {
   return fetch(url, { cache: "no-store", ...opts, headers, credentials: "same-origin" });
 }
 
+// What a person may read when a request fails: a sentence the server wrote for people, else a plain one for the kind of failure.
+// Status codes, "Internal Server Error" and exception text stay out of the page (they go to the browser console).
+function friendlyStatus(status, body) {
+  if (typeof body?.detail === "string" && body.detail.trim()) return body.detail;
+  if (status === 403) return "You don't have access to this.";
+  if (status === 404) return "We couldn't find that.";
+  if (status === 409) return "That changed in the meantime. Please refresh and try again.";
+  if (status === 429) return "Too many requests. Please wait a moment and try again.";
+  if (status >= 500) return "Something went wrong on our side. Please try again in a moment.";
+  return "That didn't work. Please try again.";
+}
+const userError = (message, extra = {}) => Object.assign(new Error(message), { friendly: true }, extra);
+// Any error shown to a person goes through this: ours are worded for people; anything else (a bug, a library) is hidden.
+function userMessage(e) {
+  if (e && e.friendly) return e.message;
+  console.error(e);
+  return "Something went wrong. Please refresh the page and try again.";
+}
+
 async function api(path, params = {}, opts = {}) {
   const url = new URL(API + path, location.origin);
   Object.entries(params).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
-  const res = await apiFetch(url, opts);
-  if (res.status === 401 && path !== "/auth/me") { showLogin(); throw new Error("Please log in"); }
+  let res;
+  try { res = await apiFetch(url, opts); }
+  catch (e) { console.error(e); throw userError("We couldn't reach SocialSpork. Check your internet connection and try again.", { status: 0 }); }
+  if (res.status === 401 && path !== "/auth/me") { showLogin(); throw userError("Please log in"); }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    const err = new Error(typeof body.detail === "string" ? body.detail : `${res.status} ${res.statusText}`);
-    err.status = res.status; err.body = body;
-    throw err;
+    console.error(`${res.status} ${res.statusText} from ${path}`);
+    throw userError(friendlyStatus(res.status, body), { status: res.status, body });
   }
   return res.json();
 }
@@ -363,14 +383,14 @@ async function render() {
     if (!state.me.is_staff) { location.hash = "#/overview"; return; }
     $("#filters").style.display = "none";
     try { await renderSessions(page); }
-    catch (e) { page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(e.message)}</p></div>`; }
+    catch (e) { page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(userMessage(e))}</p></div>`; }
     return;
   }
   if (route === "reply_service") {
     if (!state.me.is_staff) { location.hash = "#/overview"; return; }
     $("#filters").style.display = "none";
     try { await renderReplyService(page); }
-    catch (e) { page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(e.message)}</p></div>`; }
+    catch (e) { page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(userMessage(e))}</p></div>`; }
     return;
   }
   if (route === "clients") {
@@ -380,7 +400,7 @@ async function render() {
       if (routeParam()) await renderClient(page, Number(routeParam()));
       else await renderClients(page);
     } catch (e) {
-      page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(e.message)}</p></div>`;
+      page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(userMessage(e))}</p></div>`;
     }
     return;
   }
@@ -397,7 +417,7 @@ async function render() {
     if (!state.me.can_manage || !clientId) { location.hash = state.me.is_staff ? "#/clients" : "#/overview"; return; }
     $("#filters").style.display = "none";
     try { await renderAlertSettings(page, clientId); }
-    catch (e) { page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(e.message)}</p></div>`; }
+    catch (e) { page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(userMessage(e))}</p></div>`; }
     return;
   }
   if (route === "team") {
@@ -407,7 +427,7 @@ async function render() {
     try {
       await renderTeam(page, clientId);
     } catch (e) {
-      page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(e.message)}</p></div>`;
+      page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(userMessage(e))}</p></div>`;
     }
     return;
   }
@@ -420,7 +440,7 @@ async function render() {
     try {
       await renderBilling(page, clientId);
     } catch (e) {
-      page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(e.message)}</p></div>`;
+      page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(userMessage(e))}</p></div>`;
     }
     return;
   }
@@ -482,7 +502,7 @@ async function render() {
     else if (state.config.kpis.some((k) => k.module === route)) await renderModule(page, route);
     else renderComingSoon(page, route);
   } catch (e) {
-    page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(e.message)}</p></div>`;
+    page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(userMessage(e))}</p></div>`;
   }
 }
 
@@ -929,7 +949,7 @@ async function contactClick(e) {
   try {
     const { phone } = await apiJSON(`/reviews/${r.id}/contact`, "POST", { action: "view" });
     box.outerHTML = contactBox(r, phone);
-  } catch (err) { toast(err.message); view.disabled = false; }
+  } catch (err) { toast(userMessage(err)); view.disabled = false; }
   return true;
 }
 
@@ -947,14 +967,14 @@ function bindReviewTable(list) {
       sendBtn.textContent = "Sending…";
       try {
         const res = await apiJSON(`/reviews/${detail.dataset.detail}/replies`, "POST", { body, send: true, source: body === suggestReply(reviewRows.get(detail.dataset.detail)) ? "template" : "manual" });
-        if (!res.sent && !res.queued) throw new Error(res.error || "Zomato did not accept the reply");
+        if (!res.sent && !res.queued) throw userError(res.error || "Zomato did not accept the reply");
         const r = { ...reviewRows.get(detail.dataset.detail), latest_reply: body, queued: !!res.queued };
         if (res.sent) r.reply_status = "replied"; else if (r.reply_status === "pending") r.reply_status = "drafted";
         reviewRows.set(String(r.id), r);
         list.querySelector(`.cp-row[data-id="${r.id}"]`).outerHTML = reviewTableRow(r);
         detail.outerHTML = reviewDetail(r);
         toast(res.sent ? "Posted to Zomato" : "Queued: it will be posted to Zomato shortly");
-      } catch (err) { toast(err.message); sendBtn.disabled = false; sendBtn.textContent = label; }
+      } catch (err) { toast(userMessage(err)); sendBtn.disabled = false; sendBtn.textContent = label; }
       return;
     }
     const btn = e.target.closest("[data-reply]");
@@ -971,7 +991,7 @@ function bindReviewTable(list) {
         list.querySelector(`.cp-row[data-id="${r.id}"]`).outerHTML = reviewTableRow(r);
         detail.outerHTML = reviewDetail(r);
         toast("Draft saved");
-      } catch (err) { toast(err.message); btn.disabled = false; }
+      } catch (err) { toast(userMessage(err)); btn.disabled = false; }
       return;
     }
     const row = e.target.closest(".cp-row");
@@ -1008,7 +1028,7 @@ function bindReplyBoxes(root) {
       card.querySelector(".reply-box").insertAdjacentHTML("beforebegin", `<div class="latest-reply">${esc(body)}</div>`);
       card.querySelector("textarea").value = "";
       toast("Draft saved");
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(userMessage(e)); }
     btn.disabled = false;
   }));
 }
@@ -1140,7 +1160,7 @@ function bindComplaints(list) {
       list.querySelector(`.cp-row[data-id="${c.id}"]`).outerHTML = complaintRow(c);
       if (open) open.outerHTML = complaintDetail(c);
       toast("Saved");
-    } catch (e) { toast(e.message); }
+    } catch (e) { toast(userMessage(e)); }
   };
   list.addEventListener("change", (e) => {
     const sel = e.target.closest("[data-status]");
@@ -1392,7 +1412,7 @@ async function renderCheckout(plan, clientId, page) {
       billingView.choosing = null;
       toast("Request sent. Our team will contact you to complete payment.");
       renderBilling(page, clientId);
-    } catch (err) { toast(err.message); e.target.disabled = false; }
+    } catch (err) { toast(userMessage(err)); e.target.disabled = false; }
   });
 }
 
@@ -1421,7 +1441,7 @@ function wireStaffBilling(page, clientId) {
       await apiJSON(`/clients/${clientId}/billing`, "PATCH", { ...f, close_requests: f.close_requests === "on" });
       toast("Plan saved");
       renderBilling(page, clientId);
-    } catch (err) { toast(err.message); }
+    } catch (err) { toast(userMessage(err)); }
   });
 }
 
@@ -1628,7 +1648,7 @@ async function renderReconciliation(page) {
   page.querySelectorAll("[data-line]").forEach((b) => b.addEventListener("click", async () => {
     b.disabled = true;
     try { await apiJSON(`/brands/${state.brandId}/payouts/line-types/${b.dataset.line}`, "POST", { kind: b.dataset.kind }); toast("Saved"); renderReconciliation(page); }
-    catch (e) { toast(e.message); b.disabled = false; }
+    catch (e) { toast(userMessage(e)); b.disabled = false; }
   }));
   page.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { payoutFilters.view = b.dataset.view; renderReconciliation(page); }));
   if (statements) wireStatementBlocks(page, statements.groups);
@@ -1717,17 +1737,17 @@ async function renderAlertSettings(page, clientId) {
       if (scope !== "all" && !body.brand_ids.length && !body.outlet_ids.length) { err.textContent = `Tick at least one ${scope === "brands" ? "brand" : "outlet"}, or choose All outlets.`; return; }
       e.target.disabled = true;
       try { await apiJSON(id ? `${base}/${id}` : base, id ? "PUT" : "POST", body); toast("Saved"); renderAlertSettings(page, clientId); }
-      catch (x) { err.textContent = x.message; e.target.disabled = false; }
+      catch (x) { err.textContent = userMessage(x); e.target.disabled = false; }
     });
     el.querySelector("[data-test]")?.addEventListener("click", async (e) => {
       e.target.disabled = true;
       try { await apiJSON(`${base}/${id}/test`, "POST", {}); toast("Test queued: the collector sends it on its next check, within about 5 minutes."); }
-      catch (x) { err.textContent = x.message; }
+      catch (x) { err.textContent = userMessage(x); }
       e.target.disabled = false;
     });
     el.querySelector("[data-del]")?.addEventListener("click", async () => {
       if (!confirm("Remove this recipient? They stop getting alerts.")) return;
-      try { await api(`${base}/${id}`, {}, { method: "DELETE" }); toast("Removed"); renderAlertSettings(page, clientId); } catch (x) { err.textContent = x.message; }
+      try { await api(`${base}/${id}`, {}, { method: "DELETE" }); toast("Removed"); renderAlertSettings(page, clientId); } catch (x) { err.textContent = userMessage(x); }
     });
     el.querySelector("[data-cancel]")?.addEventListener("click", () => el.remove());
   };
@@ -1824,11 +1844,11 @@ async function renderReplyService(page) {
     }));
     page.querySelectorAll("[data-rs-del]").forEach((b) => b.addEventListener("click", async () => {
       if (!confirm("Remove this outlet? Nothing more will be sent for it.")) return;
-      try { await apiJSON(`/staff/reply-service/${b.dataset.rsDel}`, "DELETE", {}); toast("Removed"); renderReplyService(page); } catch (err) { toast(err.message); }
+      try { await apiJSON(`/staff/reply-service/${b.dataset.rsDel}`, "DELETE", {}); toast("Removed"); renderReplyService(page); } catch (err) { toast(userMessage(err)); }
     }));
   };
   const save = async (body, done) => {
-    try { await apiJSON("/staff/reply-service", "POST", body); toast(done); renderReplyService(page); } catch (err) { toast(err.message); }
+    try { await apiJSON("/staff/reply-service", "POST", body); toast(done); renderReplyService(page); } catch (err) { toast(userMessage(err)); }
   };
   $("#rsFind").addEventListener("input", draw);
   $("#rsSave").addEventListener("click", () => {
@@ -1867,7 +1887,7 @@ async function renderSessions(page) {
       await apiJSON(`/staff/sessions/${b.dataset.login}/refresh`, "POST", {});
       toast(`Logging in to ${b.dataset.label} again. This takes a minute or two.`);
     } catch (err) {
-      toast(err.status === 409 ? "Someone already started a refresh for this login" : `Couldn't start: ${err.message}`);
+      toast(err.status === 409 ? "Someone already started a refresh for this login" : `Couldn't start: ${userMessage(err)}`);
     }
     renderSessions(page);
     checkSessionAlerts();
@@ -1879,7 +1899,7 @@ async function renderSessions(page) {
       await apiJSON(`/staff/sessions/${b.dataset.sync}/sync-outlets`, "POST", {});
       toast(`Reading the outlets of ${b.dataset.label}. This takes a minute or two.`);
     } catch (err) {
-      toast(err.status === 409 ? "A request for this login is already in progress" : `Couldn't start: ${err.message}`);
+      toast(err.status === 409 ? "A request for this login is already in progress" : `Couldn't start: ${userMessage(err)}`);
     }
     renderSessions(page);
   }));
@@ -1903,7 +1923,7 @@ async function renderSessions(page) {
       try {
         await apiJSON("/staff/sessions", "POST", { platform, kind, account_id: id ? Number(id) : null, text: m.querySelector("#sessText").value });
         m.remove(); toast("Session saved"); renderSessions(page);
-      } catch (err) { m.querySelector("#sessErr").textContent = err.message; e.target.disabled = false; }
+      } catch (err) { m.querySelector("#sessErr").textContent = userMessage(err); e.target.disabled = false; }
     });
   }));
 }
@@ -2006,7 +2026,7 @@ async function togglePayoutDetail(tr, id) {
   try {
     d = await api(`/brands/${state.brandId}/payouts/cycles/${id}`);
   } catch (e) {
-    row.innerHTML = `<td colspan="8" class="muted">${esc(e.message)}</td>`;
+    row.innerHTML = `<td colspan="8" class="muted">${esc(userMessage(e))}</td>`;
     return;
   }
   const label = (code) => d.issue_labels[code] || code;
@@ -2542,12 +2562,12 @@ async function exportStockOuts(btn) {
     Object.entries(filterParams({ status: stockFilters.status, mealtime: stockFilters.meal, q: stockFilters.q,
       outlet_id: stockFilters.outlet || state.locationId })).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
     const res = await apiFetch(url);
-    if (!res.ok) throw new Error(`Export failed (${res.status})`);
+    if (!res.ok) throw userError("The file couldn't be made right now. Please try again in a moment.");
     const a = document.createElement("a");
     a.href = URL.createObjectURL(await res.blob());
     a.download = `stock-outs_${new Date().toISOString().slice(0, 10)}.xlsx`;
     a.click(); URL.revokeObjectURL(a.href);
-  } catch (e) { toast(e.message); }
+  } catch (e) { toast(userMessage(e)); }
   btn.disabled = false; btn.textContent = label;
 }
 
@@ -2819,7 +2839,7 @@ async function renderGoogleCard(page, clientId) {
   $("#googleConnect")?.addEventListener("click", async (e) => {
     e.currentTarget.disabled = true;
     try { location.href = (await api("/google/connect", { client_id: clientId })).url; }
-    catch (err) { toast(err.message); e.currentTarget.disabled = false; }
+    catch (err) { toast(userMessage(err)); e.currentTarget.disabled = false; }
   });
   card.querySelectorAll("[data-gsync]").forEach((b) => b.addEventListener("click", async () => {
     b.disabled = true; b.textContent = "Syncing…";
@@ -2827,12 +2847,12 @@ async function renderGoogleCard(page, clientId) {
       await api(`/google/connections/${b.dataset.gsync}/sync`, {}, { method: "POST" });
       toast("Fetching this account's Google locations. They'll appear in the Google list in a minute.");
       setTimeout(() => render(), 45000);
-    } catch (err) { toast(err.message); b.disabled = false; b.textContent = "Sync locations"; }
+    } catch (err) { toast(userMessage(err)); b.disabled = false; b.textContent = "Sync locations"; }
   }));
   card.querySelectorAll("[data-disconnect]").forEach((b) => b.addEventListener("click", async () => {
     if (!confirm("Disconnect this Google account? Reviews and numbers already saved stay, but new ones stop arriving.")) return;
     try { await api(`/google/connections/${b.dataset.disconnect}`, {}, { method: "DELETE" }); toast("Google disconnected"); render(); }
-    catch (err) { toast(err.message); }
+    catch (err) { toast(userMessage(err)); }
   }));
 }
 
@@ -2861,7 +2881,7 @@ const normArea = (r) => (r.area || r.outlet_name || "").toLowerCase().replace(/[
 async function showLinkSuggestions() {
   if (setup.dirty && !confirm("Save or discard your unsaved outlet changes first? Suggestions are based on the saved outlets.")) return;
   let d;
-  try { d = await api(`/brands/${state.brandId}/outlets/link-suggestions`); } catch (e) { toast(e.message); return; }
+  try { d = await api(`/brands/${state.brandId}/outlets/link-suggestions`); } catch (e) { toast(userMessage(e)); return; }
   document.querySelector(".link-modal")?.remove();
   const m = document.createElement("div");
   m.className = "link-modal";
@@ -3078,7 +3098,7 @@ async function saveBrand(creating) {
     $("#brandSelect").value = id;
     toast(creating ? "Brand created. Now add its outlets." : "Brand saved");
     await loadBrand(id);
-  } catch (e) { toast(e.message); }
+  } catch (e) { toast(userMessage(e)); }
   btn.disabled = false;
 }
 
@@ -3092,7 +3112,7 @@ async function archiveBrand() {
     if (!state.brands.length) { state.config = null; return render(); }
     $("#brandSelect").value = state.brands[0].id;
     await loadBrand(state.brands[0].id);
-  } catch (e) { toast(e.message); }
+  } catch (e) { toast(userMessage(e)); }
 }
 
 async function saveOutlets(moveConflicts) {
@@ -3116,11 +3136,11 @@ async function saveOutlets(moveConflicts) {
       if (confirm(`These IDs are already used in another store of this client:\n\n${list}\n\nMove them to this store? All their history (reviews, payouts, uptime, stock-outs, metrics) moves too.`)) return saveOutlets(true);
       return;
     }
-    if (!res.ok) throw new Error(body.detail || res.statusText);
+    if (!res.ok) throw userError(friendlyStatus(res.status, body), { status: res.status, body });
     toast(`Saved ${body.saved} outlet${body.saved === 1 ? "" : "s"}${body.deleted ? `, deleted ${body.deleted}` : ""}`);
     setup.dirty = false;
     await loadBrand(state.brandId);
-  } catch (e) { toast(e.message); }
+  } catch (e) { toast(userMessage(e)); }
   btn.disabled = false;
 }
 
@@ -3161,7 +3181,7 @@ function loadMaps(key) {
     const tag = document.createElement("script");
     tag.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly&callback=__mapsInit`;
     tag.async = true;
-    tag.onerror = () => { mapsReady = null; reject(new Error("Couldn't load Google Maps")); };
+    tag.onerror = () => { mapsReady = null; reject(userError("The map couldn't be loaded. Please try again in a moment.")); };
     document.head.appendChild(tag);
   });
   return mapsReady;
@@ -3256,7 +3276,7 @@ async function loadMarketCuisines(outletId) {
       form.q.value = b.dataset.cuisine;
       form.requestSubmit();
     };
-  } catch (x) { if ($("#zCuisines")) box.innerHTML = `<small class="muted">Couldn't read the cuisines: ${esc(x.message)}</small>`; }
+  } catch (x) { if ($("#zCuisines")) box.innerHTML = `<small class="muted">The cuisines couldn't be loaded right now. Please try again in a moment.</small>`; }
 }
 
 async function renderMarketComp(page, outletId) {
@@ -3303,7 +3323,7 @@ async function renderMarketComp(page, outletId) {
     </div>
     <div id="zDetail"></div>`;
 
-  const err = (e) => { $("#zError").textContent = e.message; };
+  const err = (e) => { $("#zError").textContent = userMessage(e); };
   loadMarketCuisines(outletId);
   const track = async (r, on) => {
     try { await apiJSON(`${zBase(outletId)}/track`, "POST", { res_id: r.res_id, tracked: on, name: r.name, distance_km: r.distance_km, delivery_time: r.delivery_time, spot: zPeek(outletId)?.spot }); render(); return true; }
@@ -3350,12 +3370,12 @@ async function renderMarketComp(page, outletId) {
     a.textContent = "Preparing your report… this can take a minute";
     try {
       const res = await apiFetch(new URL(a.href, location.origin));
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      if (!res.ok) throw userError("The file couldn't be made right now. Please try again in a moment.");
       const name = /filename="?([^";]+)"?/.exec(res.headers.get("Content-Disposition") || "")?.[1] || `${state.compTab}-competition.xlsx`;
       const f = document.createElement("a");
       f.href = URL.createObjectURL(await res.blob()); f.download = name; f.click(); URL.revokeObjectURL(f.href);
       toast("Report downloaded");
-    } catch (x) { toast(x.message); }
+    } catch (x) { toast(userMessage(x)); }
     delete a.dataset.busy; a.classList.remove("disabled"); a.textContent = label;
   });
   page.querySelectorAll("[data-zuntrack]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); track({ res_id: b.dataset.zuntrack }, false); }));
@@ -3411,7 +3431,7 @@ function renderMarketArea(page, outletId, current, peek = false) {
       $("#zResults").innerHTML = found.length ? found.map((f, i) => `<div class="comp-result">
           <span><strong>${esc(f.title)}</strong><small class="muted">${esc(f.address)}</small></span><span></span>
           <button class="btn blue" data-zpick="${i}">${peek ? "Look from here" : "Use this"}</button></div>`).join("") : '<p class="muted">No match. Try the area and city.</p>';
-    } catch (x) { $("#zError").textContent = x.message; }
+    } catch (x) { $("#zError").textContent = userMessage(x); }
   });
   $("#zResults").addEventListener("click", async (e) => {
     const b = e.target.closest("[data-zpick]");
@@ -3423,7 +3443,7 @@ function renderMarketArea(page, outletId, current, peek = false) {
       else await apiJSON(`${zBase(outletId)}/area`, "POST", { pick });
       render();
     }
-    catch (x) { $("#zError").textContent = x.message; b.disabled = false; }
+    catch (x) { $("#zError").textContent = userMessage(x); b.disabled = false; }
   });
 }
 
@@ -3454,7 +3474,7 @@ function photoEditor(outletId, r) {
       ["logo_pos", "logo_size", "logo_opacity", "size", "dish_size", "pos_x", "pos_y", "tilt"].forEach((k) => fd.append(k, form[k].value));
       return fd;
     };
-    const fail = async (res) => { const b = await res.json().catch(() => ({})); throw new Error(b.detail || `${res.status} ${res.statusText}`); };
+    const fail = async (res) => { const b = await res.json().catch(() => ({})); throw userError(friendlyStatus(res.status, b), { status: res.status, body: b }); };
     $("#phError").textContent = ""; go.disabled = true;
     try {
       let failed = 0;
@@ -3471,7 +3491,7 @@ function photoEditor(outletId, r) {
       const a = Object.assign(document.createElement("a"), { href: url, download: (res.headers.get("content-disposition") || "").match(/filename="(.+)"/)?.[1] || "photos.zip" });
       a.click(); setTimeout(() => URL.revokeObjectURL(url), 5000);
       if (failed) $("#phError").textContent = `${failed} photos couldn't be edited; their names are in could-not-edit.txt in the zip.`;
-    } catch (x) { $("#phError").textContent = x.message; }
+    } catch (x) { $("#phError").textContent = userMessage(x); }
     go.disabled = false; go.textContent = "Edit and download";
   });
 }
@@ -3484,7 +3504,7 @@ async function showMarketRestaurant(outletId, resId, track, refresh = false) {
   let r;
   const spot = zPeek(outletId)?.spot;
   try { r = await api(`${zBase(outletId)}/restaurants/${encodeURIComponent(resId)}`, spot ? { spot: JSON.stringify(spot) } : {}); }
-  catch (e) { box.innerHTML = `<div class="card" style="margin-top:16px"><p class="login-error">${esc(e.message)}</p></div>`; return; }
+  catch (e) { box.innerHTML = `<div class="card" style="margin-top:16px"><p class="login-error">${esc(userMessage(e))}</p></div>`; return; }
   const ins = r.insights || {};
   const cats = Object.entries(ins.by_category || {});
   box.innerHTML = `<div class="card" style="margin-top:16px">
@@ -3605,7 +3625,7 @@ async function renderGoogleComp(page) {
       <div id="compResults"></div>
     </div>`;
 
-  const err = (e) => { $("#compError").textContent = e.message; };
+  const err = (e) => { $("#compError").textContent = userMessage(e); };
   let mapP = Promise.resolve(null);
   const show = (list) => {
     mapP.then((m) => m?.addSuggestions(list));
@@ -3643,12 +3663,12 @@ async function renderGoogleComp(page) {
           : '<p class="muted">Google has no review summary for this place yet.</p>'}
         ${r.reviews.map((v) => `<div class="comp-review"><span>${v.rating != null ? `${v.rating} ★` : ""} <strong>${esc(v.author)}</strong> <small class="muted">${esc(v.when)}</small></span>
           <p>${esc(v.text)}</p></div>`).join("")}`;
-    } catch (e) { cell.innerHTML = `<p class="login-error">${esc(e.message)}</p>`; }
+    } catch (e) { cell.innerHTML = `<p class="login-error">${esc(userMessage(e))}</p>`; }
   }));
   $("#relocate").addEventListener("click", () => renderLocate(page, o));
   if ($("#compMap")) {
     mapP = drawCompMap($("#compMap"), d.maps_key, me, comps, (pid) => trackBtn(pid, true))
-      .catch((e) => { $("#compMap").innerHTML = `<p class="muted" style="padding:16px">${esc(e.message)}</p>`; return null; });
+      .catch((e) => { $("#compMap").innerHTML = `<p class="muted" style="padding:16px">${esc(userMessage(e))}</p>`; return null; });
   }
 }
 
@@ -3688,7 +3708,7 @@ async function renderLocate(page, o) {
           <span class="num">${gRating(p)}<small class="muted">${inr.format(p.rating_count || 0)} ratings</small></span>
           <button class="btn blue" data-pick="${esc(p.place_id)}">This is us</button></div>`).join("")
         : `<p class="muted">No match. Try the outlet's name with its area or street.</p>`;
-    } catch (e) { $("#compError").textContent = e.message; $("#compResults").innerHTML = ""; }
+    } catch (e) { $("#compError").textContent = userMessage(e); $("#compResults").innerHTML = ""; }
   };
   $("#locSearch").addEventListener("submit", (e) => { e.preventDefault(); run(e.target.q.value.trim()); });
   $("#compResults").addEventListener("click", async (e) => {
@@ -3696,7 +3716,7 @@ async function renderLocate(page, o) {
     if (!b) return;
     b.disabled = true;
     try { await apiJSON(`/brands/${state.brandId}/competition/${o.outlet_id}/locate`, "POST", { place_id: b.dataset.pick }); render(); }
-    catch (x) { $("#compError").textContent = x.message; b.disabled = false; }
+    catch (x) { $("#compError").textContent = userMessage(x); b.disabled = false; }
   });
   run("");
 }
@@ -3759,7 +3779,7 @@ async function renderClients(page) {
       const c = await apiJSON("/staff/clients", "POST", Object.fromEntries(new FormData(e.target)));
       toast(`${c.name} created. Now assign its IDs.`);
       location.hash = `#/clients/${c.id}`;
-    } catch (err) { toast(err.message); }
+    } catch (err) { toast(userMessage(err)); }
   });
 }
 
@@ -3834,7 +3854,7 @@ async function renderClient(page, clientId) {
     try {
       await apiJSON(`/staff/clients/${clientId}`, "PATCH", { ...Object.fromEntries(f), is_active: f.get("is_active") === "on" });
       toast("Client saved"); renderClient(page, clientId);
-    } catch (err) { toast(err.message); }
+    } catch (err) { toast(userMessage(err)); }
   });
 
   // ids
@@ -3874,7 +3894,7 @@ async function renderClient(page, clientId) {
       try {
         const res = await apiJSON(`/staff/clients/${clientId}/ids/${clientView.platform}`, "POST", { op: key === "avail" ? "assign" : "remove", ids: [...s.state.sel] });
         toast(res.message); s.state.sel.clear(); renderClient(page, clientId);
-      } catch (err) { toast(err.message); }
+      } catch (err) { toast(userMessage(err)); }
     });
   }
   $("#idTabs").addEventListener("click", (e) => {
@@ -3952,7 +3972,7 @@ function showLogin() {
       await api("/auth/me").catch(() => null);  // sets the CSRF cookie
       await apiJSON("/auth/login", "POST", { username: f.get("username"), password: f.get("password") });
       location.reload();
-    } catch (err) { $("#loginError").textContent = err.message; }
+    } catch (err) { $("#loginError").textContent = userMessage(err); }
   });
 }
 
@@ -3982,7 +4002,7 @@ function showOtp(identifier = "") {
       const btn = e.target.querySelector('[type="submit"]'); btn.disabled = true;
       const who = new FormData(e.target).get("identifier").trim();
       try { await apiJSON("/auth/otp/request", "POST", { identifier: who }); showOtp(who); }
-      catch (err) { $("#loginError").textContent = err.message; btn.disabled = false; }
+      catch (err) { $("#loginError").textContent = userMessage(err); btn.disabled = false; }
     });
     return;
   }
@@ -3993,7 +4013,7 @@ function showOtp(identifier = "") {
   $("#otpResend").addEventListener("click", async (e) => {
     e.target.disabled = true;
     try { await apiJSON("/auth/otp/request", "POST", { identifier }); toast("If you can ask for another one, a new code is on its way (one a minute)."); }
-    catch (err) { toast(err.message); }
+    catch (err) { toast(userMessage(err)); }
     setTimeout(() => { e.target.disabled = false; }, 60000);
   });
   $("#loginForm").addEventListener("submit", async (e) => {
@@ -4003,7 +4023,7 @@ function showOtp(identifier = "") {
       await api("/auth/me").catch(() => null);  // sets the CSRF cookie
       await apiJSON("/auth/otp/verify", "POST", { identifier, code: new FormData(e.target).get("code") });
       location.reload();
-    } catch (err) { $("#loginError").textContent = err.message; btn.disabled = false; }
+    } catch (err) { $("#loginError").textContent = userMessage(err); btn.disabled = false; }
   });
 }
 
@@ -4020,7 +4040,7 @@ function showForgot() {
       form.querySelector("label").remove();
       btn.remove();
       form.querySelector(".login-note").textContent = "If that login has an email address, a reset link is on its way. It expires in 1 hour, so check your spam folder if you don't see it.";
-    } catch (err) { $("#loginError").textContent = err.message; btn.disabled = false; }
+    } catch (err) { $("#loginError").textContent = userMessage(err); btn.disabled = false; }
   });
 }
 
@@ -4040,7 +4060,7 @@ function showReset(uid, token) {
       form.querySelectorAll("label").forEach((l) => l.remove());
       btn.remove();
       form.querySelector("h2").insertAdjacentHTML("afterend", '<p class="login-note">Your password has been changed. You can sign in with it now.</p>');
-    } catch (err) { error.textContent = err.message; btn.disabled = false; }
+    } catch (err) { error.textContent = userMessage(err); btn.disabled = false; }
   });
 }
 
@@ -4106,7 +4126,7 @@ function renderProfile(page) {
       await apiJSON("/auth/password", "POST", { current_password: f.get("current"), new_password: f.get("next") });
       form.reset();
       toast("Password updated");
-    } catch (err) { error.textContent = err.message; }
+    } catch (err) { error.textContent = userMessage(err); }
     btn.disabled = false;
   });
 }
@@ -4214,7 +4234,7 @@ async function renderTeam(page, clientId) {
       const u = await apiJSON(`/clients/${clientId}/team`, "POST", { ...f, outlet_ids: pickedOutlets(form) });
       toast(`Login ${u.username} created`);
       renderTeam(page, clientId);
-    } catch (err) { $("#memberError").textContent = err.message; }
+    } catch (err) { $("#memberError").textContent = userMessage(err); }
   });
 
   // the outlet picker opens in a row under the login; a new manager must pick outlets before the role is saved
@@ -4232,7 +4252,7 @@ async function renderTeam(page, clientId) {
         await apiJSON(`/clients/${clientId}/team/${u.id}`, "PATCH", { role, outlet_ids: pickedOutlets(edit) });
         toast("Outlets updated");
         renderTeam(page, clientId);
-      } catch (err) { toast(err.message); }
+      } catch (err) { toast(userMessage(err)); }
     });
   };
 
@@ -4264,7 +4284,7 @@ async function renderTeam(page, clientId) {
         await apiJSON(`/clients/${clientId}/team/${u.id}`, "PATCH", { password: f.get("next") });
         toast("Password changed");
         edit.remove();
-      } catch (err) { error.textContent = err.message; save.disabled = false; }
+      } catch (err) { error.textContent = userMessage(err); save.disabled = false; }
     });
   };
 
@@ -4281,7 +4301,7 @@ async function renderTeam(page, clientId) {
         await api(`/clients/${clientId}/team/${u.id}`, {}, { method: "DELETE" });
         toast("Login deleted");
         renderTeam(page, clientId);
-      } catch (err) { toast(err.message); }
+      } catch (err) { toast(userMessage(err)); }
     });
   };
 
@@ -4292,14 +4312,14 @@ async function renderTeam(page, clientId) {
     tr.querySelector("[data-role]").addEventListener("change", async (e) => {
       if (e.target.value === "manager") return openPicker(tr, u, "manager");
       try { await apiJSON(url, "PATCH", { role: e.target.value }); toast("Role updated"); }
-      catch (err) { toast(err.message); }
+      catch (err) { toast(userMessage(err)); }
       renderTeam(page, clientId);
     });
     tr.querySelector("[data-outlets]")?.addEventListener("click", () => openPicker(tr, u, "manager"));
     tr.querySelector("[data-pass]").addEventListener("click", () => openPassword(tr, u));
     tr.querySelector("[data-delete]")?.addEventListener("click", () => openDelete(tr, u));
     tr.querySelector("[data-toggle]").addEventListener("click", async () => {
-      try { await apiJSON(url, "PATCH", { is_active: !u.is_active }); renderTeam(page, clientId); } catch (err) { toast(err.message); }
+      try { await apiJSON(url, "PATCH", { is_active: !u.is_active }); renderTeam(page, clientId); } catch (err) { toast(userMessage(err)); }
     });
   });
 }
@@ -4330,7 +4350,7 @@ async function previewCsv(file) {
   try {
     const res = await apiJSON(`/brands/${state.brandId}/outlets/import`, "POST", { csv: csvState.text, commit: false });
     renderCsvResult(res);
-  } catch (e) { $("#csvResult").innerHTML = `<p class="login-error">${esc(e.message)}</p>`; }
+  } catch (e) { $("#csvResult").innerHTML = `<p class="login-error">${esc(userMessage(e))}</p>`; }
 }
 
 function renderCsvResult(res) {
@@ -4359,7 +4379,7 @@ async function saveCsv() {
     if (!res.committed) return renderCsvResult(res);
     toast(`Saved ${res.summary.rows} stores (${res.summary.create} new, ${res.summary.update} updated)`);
     await loadBrand(state.brandId);
-  } catch (e) { toast(e.message); $("#csvSave").disabled = false; }
+  } catch (e) { toast(userMessage(e)); $("#csvSave").disabled = false; }
 }
 
 // ---------- boot ----------
@@ -4486,7 +4506,7 @@ $("#fullscreenBtn").addEventListener("click", () => {
 });
 window.addEventListener("hashchange", render);
 
-boot().catch((e) => { $("#page").innerHTML = `<div class="card empty-state"><h3>Something went wrong</h3><p>${esc(e.message)}</p></div>`; });
+boot().catch((e) => { $("#page").innerHTML = `<div class="card empty-state"><h3>Something went wrong</h3><p>${esc(userMessage(e))}</p></div>`; });
 
 
 // ---------- AI assistant (read-only chat) ----------
@@ -4585,9 +4605,9 @@ async function sendAsk(text) {
     try { sessionStorage.setItem("ss_ask_thread", res.thread_id); } catch { /* */ }
     $("#askThinking").outerHTML = `<div class="ask-msg bot">${askMarkdown(res.answer)}${askQueries(res.queries)}</div>`;
   } catch (e) {
-    $("#askThinking").outerHTML = e.message === "Not configured yet"
+    $("#askThinking").outerHTML = e.body?.code === "not_configured"
       ? `<div class="ask-msg bot muted">The assistant isn't configured yet.</div>`
-      : `<div class="ask-msg bot err">${esc(e.message)}</div>`;
+      : `<div class="ask-msg bot err">${esc(userMessage(e))}</div>`;
   }
   assistant.busy = false; $("#askSend").disabled = false;
   box.scrollTop = box.scrollHeight;

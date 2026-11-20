@@ -27,12 +27,12 @@ def configured() -> bool:
 
 def _call(method: str, path: str, fields: list[str], body: dict | None = None) -> dict:
     if not configured():
-        raise PlacesError("Google Places isn't set up yet: add GOOGLE_API_KEY to the server's .env.")
+        raise PlacesError("Nearby places can't be searched right now. Please try again later.")
     headers = {"X-Goog-Api-Key": settings.GOOGLE_API_KEY, "X-Goog-FieldMask": ",".join(fields)}
     try:
         resp = httpx.request(method, f"{BASE}/{path}", headers=headers, json=body, timeout=20)
     except httpx.HTTPError as e:
-        raise PlacesError(f"Couldn't reach Google Places: {e}") from e
+        raise PlacesError("Nearby places can't be searched right now. Please try again in a moment.") from e
     if resp.status_code != 200:
         msg = resp.json().get("error", {}).get("message", resp.text[:200]) if resp.content else resp.reason_phrase
         raise PlacesError(f"Google Places said: {msg}")
