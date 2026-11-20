@@ -24,7 +24,8 @@ class OrderLine(models.Model):
     class Meta:
         db_table = "order_lines"
         constraints = [models.UniqueConstraint(fields=["platform", "order_id", "item_name"], name="uniq_order_line")]
-        indexes = [models.Index(fields=["outlet", "placed_at"]), models.Index(fields=["outlet", "item_name", "order_date"])]
+        indexes = [models.Index(fields=["outlet", "placed_at"]), models.Index(fields=["outlet", "item_name", "order_date"]),
+                   models.Index(fields=["outlet", "order_date"], name="order_lines_outlet_date")]
 
     def __str__(self):
         return f"{self.quantity} x {self.item_name} · {self.order_id}"

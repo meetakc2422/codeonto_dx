@@ -119,6 +119,50 @@ def price_of(outlet_id: int, item: str, platform=None) -> float | None:
     return float(p) if p is not None else None
 
 
+def prices_for(pairs: set, platform=None) -> dict:
+    """{(outlet, item): price} for many items in two queries instead of two per item. Same rule as price_of: the latest price in
+    the item sales report, else the latest priced order."""
+    if not pairs:
+        return {}
+    outlets, names = {o for o, _ in pairs}, {i for _, i in pairs}
+    out = {}
+    for model, field, when in ((ItemSalesDaily, "-day", "unit_price__gt"), (OrderLine, "-placed_at", "unit_price__gt")):
+        todo = pairs - set(out)
+        if not todo:
+            break
+        qs = model.objects.filter(outlet_id__in={o for o, _ in todo}, item_name__in={i for _, i in todo}, **{when: 0})
+        if platform:
+            qs = qs.filter(platform_id=platform)
+        for o, i, p in qs.order_by("outlet_id", "item_name", field).distinct("outlet_id", "item_name").values_list("outlet_id", "item_name", "unit_price"):
+            if (o, i) in todo:
+                out[(o, i)] = float(p)
+    return out
+
+
+def rates_for(pairs: set, today: date, out_days: dict, platform=None) -> dict:
+    """{(outlet, item): ({meal: units per in-stock day}, in-stock days)} for many items in one query (same as meal_rates per item)."""
+    since = today - timedelta(days=WINDOW_DAYS)
+    window = {since + timedelta(days=i) for i in range((today - since).days)}
+    sold = defaultdict(list)
+    qs = OrderLine.objects.filter(outlet_id__in={o for o, _ in pairs}, item_name__in={i for _, i in pairs}, status__in=SOLD,
+                                  order_date__gte=since, order_date__lt=today)
+    for r in (qs.filter(platform_id=platform) if platform else qs).values("outlet_id", "item_name", "mealtime", "order_date").annotate(u=Sum("quantity")):
+        if (r["outlet_id"], r["item_name"]) in pairs:
+            sold[(r["outlet_id"], r["item_name"])].append((r["mealtime"], r["order_date"], float(r["u"])))
+    out = {}
+    for key in pairs:
+        days = window - out_days.get(key, set())
+        if not days:
+            out[key] = ({}, 0)
+            continue
+        per = defaultdict(float)
+        for meal, day, u in sold[key]:
+            if day in days:
+                per[meal] += u
+        out[key] = ({m: u / len(days) for m, u in per.items()}, len(days))
+    return out
+
+
 def _top_sellers_out_one(active: list[StockOut], now: datetime, platform) -> dict:
     """The currently out items that are best sellers, with what they have cost so far today.
     -> {"items": [{item_name, outlets, since, units, low, high, price, enough_history}], "low": ₹, "high": ₹}"""
@@ -136,11 +180,13 @@ def _top_sellers_out_one(active: list[StockOut], now: datetime, platform) -> dic
             episodes[(outlet_id, item_name)].add(d)
             d += timedelta(days=1)
     merged: dict[str, dict] = {}
-    for s in active:
-        if s.item_name not in top.get(s.outlet_id, ()):
-            continue
-        rate, n = meal_rates(s.outlet_id, s.item_name, today, episodes.get((s.outlet_id, s.item_name), set()), platform)
-        price = price_of(s.outlet_id, s.item_name, platform)
+    best = [s for s in active if s.item_name in top.get(s.outlet_id, ())]
+    pairs = {(s.outlet_id, s.item_name) for s in best}
+    rates = rates_for(pairs, today, episodes, platform) if pairs else {}
+    prices = prices_for(pairs, platform)
+    for s in best:
+        rate, n = rates[(s.outlet_id, s.item_name)]
+        price = prices.get((s.outlet_id, s.item_name))
         enough = n >= MIN_DAYS
         loss = expected_loss(rate, s.first_detected_at, now, price) if enough else {"units": None, "high": None, "low": None}
         m = merged.setdefault(s.item_name, {"item_name": s.item_name, "outlets": 0, "since": s.first_detected_at, "units": 0.0, "low": 0, "high": 0,
@@ -260,15 +306,13 @@ def _period_loss_one(platform, episodes: list[StockOut], start: date, end: date,
               .values("outlet_id", "item_name", "mealtime", "order_date").annotate(u=Sum("quantity"))):
         if (r["outlet_id"], r["item_name"]) in pairs:
             sold[(r["outlet_id"], r["item_name"])].append((r["mealtime"], r["order_date"], float(r["u"])))
-    price = {}
-    for o, i, p in (OrderLine.objects.filter(outlet_id__in=outlets, platform_id=platform, unit_price__gt=0, order_date__gte=since).order_by("-placed_at")
+    price = {}  # the latest priced order of each item in the window (one row per item, not every order line)
+    for o, i, p in (OrderLine.objects.filter(outlet_id__in=outlets, item_name__in={i for _, i in pairs}, platform_id=platform, unit_price__gt=0, order_date__gte=since)
+                    .order_by("outlet_id", "item_name", "-placed_at").distinct("outlet_id", "item_name")
                     .values_list("outlet_id", "item_name", "unit_price")):
-        if (o, i) in pairs and (o, i) not in price:
+        if (o, i) in pairs:
             price[(o, i)] = float(p)
-    for o, i in pairs - set(price):  # no priced order lately: the item sales report has it
-        p = price_of(o, i, platform)
-        if p is not None:
-            price[(o, i)] = p
+    price.update(prices_for(pairs - set(price), platform))  # no priced order lately: the item sales report has it
 
     rates = {}
     for key in pairs:

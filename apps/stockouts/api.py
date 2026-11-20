@@ -252,11 +252,13 @@ def stock_outs_summary(request, brand_id):
               .values("mealtime").annotate(count=Count("id"))):
         meal_out[MEAL_LABELS.get(r["mealtime"], r["mealtime"])] += r["count"]
     end = date.fromisoformat(qp["end"]) if qp.get("end") else date.today()
-    meal_state = _meal_state(list(qs.exclude(is_active=True, first_detected_at__lt=_long_cutoff())), start, end)
-    losses = _losses(list(qs), qp)
+    rows = list(qs)  # one fetch, used for the meal counts, the hours and the per-item totals below
+    cutoff = _long_cutoff()
+    meal_state = _meal_state([r for r in rows if not (r.is_active and r.first_detected_at and r.first_detected_at < cutoff)], start, end)
+    losses = _losses(rows, qp)
     lost = [v[1] for v in losses.values() if v[1] is not None]
     by_item = defaultdict(lambda: {"lost": 0.0, "hours": 0.0, "outlets": set(), "out_now": 0})
-    for s in qs:
+    for s in rows:
         hours, loss = losses[s.id]
         d = by_item[s.item_name]
         d["lost"] += loss or 0
