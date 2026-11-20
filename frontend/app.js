@@ -49,6 +49,11 @@ const MODULE_PRIMARY = {
   stock_outs: "stock_out_items", listings: "listing_rating", tickets: "open_tickets",
 };
 
+// The five marketplace pages are one "Performance" entry in the sidebar, with a tab for each (see addPerfTabs).
+const PERF_TABS = [["marketplace_sales", "Sales"], ["marketplace_ops", "Delivery & ops"], ["marketplace_funnel", "Customer funnel"],
+  ["marketplace_ads", "Ads"], ["marketplace_discounts", "Discounts & offers"]];
+const PERF_CODES = PERF_TABS.map(([c]) => c);
+
 const state = {
   brands: [], brandId: null, config: null, locations: [],
   locationId: "", platform: "", days: 30, custom: null, charts: [],
@@ -248,8 +253,14 @@ function renderSidebar() {
     const HIDDEN_NAV = ["ai_replies", "reports", "alerts"];  // taken off the sidebar for now
     const common = mods.filter((m) => m.scope === "common" && !HIDDEN_NAV.includes(m.code));
     const industry = mods.filter((m) => m.scope === "industry");
+    // Reconciliation first (the most important), then one Performance entry for the five marketplace pages, then the rest
+    const perf = industry.filter((m) => PERF_CODES.includes(m.code));
+    const perfLink = perf.length ? `<a class="nav-item ${PERF_CODES.includes(route) ? "active" : ""}" href="#/${perf[0].code}" title="Performance">
+      ${icon("marketplace_sales")}<span>Performance</span>${perf.every((m) => m.locked) ? `<em class="soon locked-badge">${icon("lock")}Upgrade</em>` : ""}</a>` : "";
+    const aggregator = [...industry.filter((m) => m.code === "reconciliation").map(link), perfLink,
+      ...industry.filter((m) => m.code !== "reconciliation" && !PERF_CODES.includes(m.code)).map(link)].join("");
     html += `<div class="nav-group">Reputation</div>${common.map(link).join("")}` +
-      (industry.length ? `<div class="nav-group">Aggregator management</div>${industry.map(link).join("")}` : "");
+      (industry.length ? `<div class="nav-group">Aggregator management</div>${aggregator}` : "");
   } else {
     html += navLink("overview", "Overview");
   }
@@ -480,7 +491,7 @@ async function render() {
 
   const isSetup = route === "setup";
   $("#filters").style.display = isSetup ? "none" : "";
-  $("#pageTitle").textContent = isSetup ? "Brands & Outlets" : moduleName(route);
+  $("#pageTitle").textContent = isSetup ? "Brands & Outlets" : PERF_CODES.includes(route) ? "Performance" : moduleName(route);
   $("#pageSub").textContent = isSetup
     ? "Name your brand and map each outlet to its Google, Zomato and Swiggy listing"
     : `${state.config.brand.name} · ${outletsLabel().replace(/ \(\d+\)$/, "")} · ${periodLabel()}`;
@@ -501,9 +512,20 @@ async function render() {
     else if (route === "competitors") await renderCompetition(page);
     else if (state.config.kpis.some((k) => k.module === route)) await renderModule(page, route);
     else renderComingSoon(page, route);
+    if (PERF_CODES.includes(route)) addPerfTabs(page, route);
   } catch (e) {
     page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(userMessage(e))}</p></div>`;
   }
+}
+
+// Tabs across the top of the Performance pages: one per marketplace page the brand has.
+function addPerfTabs(page, route) {
+  const have = new Set(state.config.modules.filter((m) => !m.locked).map((m) => m.code));
+  const tabs = PERF_TABS.filter(([code]) => have.has(code));
+  if (tabs.length < 2) return;
+  page.insertAdjacentHTML("afterbegin", `<div class="segmented perf-tabs" style="margin-bottom:16px;flex-wrap:wrap">${tabs.map(([code, label]) =>
+    `<button data-go="${code}" class="${code === route ? "active" : ""}">${label}</button>`).join("")}</div>`);
+  page.querySelectorAll(".perf-tabs [data-go]").forEach((b) => { b.onclick = () => { location.hash = `#/${b.dataset.go}`; }; });
 }
 
 function sparkline(points, tone = "#d9480f") {
