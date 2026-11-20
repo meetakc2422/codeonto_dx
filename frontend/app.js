@@ -315,7 +315,7 @@ async function loadBrand(id) {
     return { id: o.id, name, label, city: o.city, resId, zomato: o.zomato || "", swiggy: o.swiggy || "", google: o.google || "",
              search: [name, o.outlet_name, o.city, o.zomato, o.swiggy].filter(Boolean).join(" ").toLowerCase() };
   }).sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name));
-  $("#brandIndustry").textContent = config.brand.industry_name;
+  $("#brandIndustry").textContent = config.brand.industry_name + (config.brand.is_demo ? " · SAMPLE DATA" : "");
   renderFilters();
   const route = currentRoute();
   if (!["setup", "clients", "profile", "team", "billing"].includes(route) && !config.modules.some((m) => m.code === route)) location.hash = "#/overview";

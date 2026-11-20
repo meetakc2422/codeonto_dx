@@ -20,7 +20,7 @@ from .models import Brand, BrandOutlet, Client
 
 def _brand_json(b: Brand) -> dict:
     return {"id": b.id, "name": b.name, "client_id": b.client_id, "client": b.client.name,
-            "industry_code": b.industry.code, "industry_name": b.industry.name, "is_active": b.is_active}
+            "industry_code": b.industry.code, "industry_name": b.industry.name, "is_active": b.is_active, "is_demo": b.client.is_demo}
 
 
 def _outlet_json(o: BrandOutlet) -> dict:

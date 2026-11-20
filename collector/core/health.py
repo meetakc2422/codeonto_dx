@@ -29,7 +29,8 @@ def find_gaps(cur, yesterday) -> list[dict]:
         cur.execute(f"""SELECT t.{outlet_col} AS outlet_id, t.{plat_col} AS platform, max(t.{date_col}) AS last_day,
                                b.name AS brand, bo.outlet_name, bo.area
                         FROM {table} t JOIN brand_outlets bo ON bo.id = t.{outlet_col} JOIN brands b ON b.id = bo.brand_id
-                        WHERE bo.is_active AND t.{date_col} >= %s AND t.{plat_col} = ANY(%s)
+                        JOIN clients c ON c.id = b.client_id
+                        WHERE bo.is_active AND NOT c.is_demo AND t.{date_col} >= %s AND t.{plat_col} = ANY(%s)
                         GROUP BY t.{outlet_col}, t.{plat_col}, b.name, bo.outlet_name, bo.area""", (since, list(platforms)))
         for r in cur.fetchall():
             if r["last_day"] < yesterday:

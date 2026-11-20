@@ -168,10 +168,12 @@ def leaderboard(request, brand_id, kpi_code):
     kpi = get_object_or_404(Kpi, code=kpi_code)
     brand = get_brand(request.user, brand_id)
     start, end = _range(request)
-    rows = []
-    for o in in_scope(brand.outlets.filter(is_active=True), request.user, "id"):
-        agg = _aggregate(False, brand_id=brand_id, start=start, end=end, outlet_id=o.id, kpi=kpi_code)
-        rows.append({"id": o.id, "name": o.display_name.split(" · ", 1)[-1], "city": o.city, "value": agg[0]["value"] if agg else None})
+    limit = outlet_limit(request.user)
+    # one query for every outlet's figure (it used to be one query per outlet)
+    values = {r["outlet_id"]: r["value"] for r in _aggregate(False, by_outlet=True, brand_id=brand_id, start=start, end=end, kpi=kpi_code,
+                                                             allowed=None if limit is None else sorted(limit))}
+    rows = [{"id": o.id, "name": o.display_name.split(" · ", 1)[-1], "city": o.city, "value": values.get(o.id)}
+            for o in in_scope(brand.outlets.filter(is_active=True), request.user, "id")]
     sign = -1 if kpi.higher_is_better else 1
     rows.sort(key=lambda r: (r["value"] is None, sign * (r["value"] or 0)))
     return Response(rows)

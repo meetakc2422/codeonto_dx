@@ -121,6 +121,7 @@ class Client(TimeStamped):
     contact_email = models.EmailField(blank=True)
     contact_phone = models.CharField(max_length=30, blank=True)
     is_active = models.BooleanField(default=True)
+    is_demo = models.BooleanField(default=False, db_default=False, help_text="A sample client with made-up data, for demos and load tests. The collector and the data-health emails skip it")
 
     class Meta:
         db_table = "clients"
