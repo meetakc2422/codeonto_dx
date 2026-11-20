@@ -131,6 +131,7 @@ REST_FRAMEWORK = {
     # and apps.outlets.access limits what each user sees.
     "DEFAULT_AUTHENTICATION_CLASSES": ["apps.outlets.authentication.SessionAuth", "apps.outlets.mobile_auth.MobileTokenAuth"],  # session first: it decides the 401 answer
     "DEFAULT_PERMISSION_CLASSES": ["rest_framework.permissions.IsAuthenticated"],
+    "EXCEPTION_HANDLER": "config.exception_handler.handler",  # the competition pages answer an unexpected failure with a plain 502, not a bare 500
 }
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 14  # stay logged in for two weeks
 CSRF_COOKIE_HTTPONLY = False  # the dashboard reads it to send X-CSRFToken

@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 from django.conf import settings
 from django.utils import timezone
+from .errors import send_with_retry
 
 log = logging.getLogger(__name__)
 
@@ -96,7 +97,7 @@ def call(method: str, url: str, lat: float, lng: float, city_id: str = "", city:
     h = {**_headers(), "latitude": str(lat), "longitude": str(lng), "current-latitude": str(lat), "current-longitude": str(lng),
          "encoded-location-context": _location_context(lat, lng, city_id, city)}
     try:
-        resp = httpx.request(method, url, headers=h, params=params, json=body, timeout=TIMEOUT)
+        resp = send_with_retry(lambda: httpx.request(method, url, headers=h, params=params, json=body, timeout=TIMEOUT))
     except httpx.HTTPError as e:
         raise SwiggyAppError(f"Couldn't reach Swiggy: {e}") from e
     if resp.status_code in (401, 403):

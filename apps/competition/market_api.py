@@ -8,6 +8,7 @@ from datetime import date, datetime, timedelta
 from django.http import Http404
 from django.utils import timezone
 from rest_framework.decorators import api_view
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from . import zomato
@@ -39,7 +40,10 @@ def _spot(request, outlet, m):
     """Where to look from: a temporary spot the page passes (?spot= or body "spot", from peek) or the outlet's own."""
     raw = request.data.get("spot") if request.method == "POST" else request.query_params.get("spot")
     if raw:
-        spot = json.loads(raw) if isinstance(raw, str) else raw
+        try:
+            spot = json.loads(raw) if isinstance(raw, str) else raw
+        except ValueError:
+            raise ValidationError("That location isn't valid. Please pick it again.")
         if isinstance(spot, dict) and {"lat", "lng", "city_id"} <= spot.keys():
             return {k: spot.get(k) for k in m.SPOT_KEYS}
     return _area(outlet, m)

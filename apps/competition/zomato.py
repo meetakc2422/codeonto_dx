@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urlparse
 import httpx
 from django.conf import settings
 from django.utils import timezone
+from .errors import send_with_retry
 
 log = logging.getLogger(__name__)
 
@@ -95,12 +96,10 @@ def post(path: str, body: dict, lat: float, lng: float, city_id: int | None = No
     if location_token:
         h["x-location-token"] = location_token
     url = path if path.startswith("http") else f"{HOST}/{path}" if path.startswith("gateway/") else f"{BASE}/{path}"
+    if form:
+        h["content-type"] = "application/x-www-form-urlencoded"
     try:
-        if form:
-            h["content-type"] = "application/x-www-form-urlencoded"
-            resp = httpx.post(url, headers=h, params=params, data=body, timeout=TIMEOUT)
-        else:
-            resp = httpx.post(url, headers=h, params=params, json=body, timeout=TIMEOUT)
+        resp = send_with_retry(lambda: httpx.post(url, headers=h, params=params, **({"data": body} if form else {"json": body}), timeout=TIMEOUT))
     except httpx.HTTPError as e:
         raise ZomatoAppError(f"Couldn't reach Zomato: {e}") from e
     if resp.status_code == 403 and "akamai" in (resp.headers.get("server") or "").lower():
@@ -109,7 +108,10 @@ def post(path: str, body: dict, lat: float, lng: float, city_id: int | None = No
         raise ZomatoAppError(f"Zomato rejected the app session ({resp.status_code}). Refresh it with `manage.py zomato_app_session`.")
     if resp.status_code != 200:
         raise ZomatoAppError(f"Zomato answered {resp.status_code}")
-    return resp.json()
+    try:
+        return resp.json()
+    except ValueError as e:  # a block page or an error page with a 200: Swiggy's call already handled this, Zomato's let it crash
+        raise ZomatoAppError("Zomato sent something that isn't JSON (it may be blocking this server)") from e
 
 
 def _snippets(resp: dict):

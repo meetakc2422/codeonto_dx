@@ -101,3 +101,90 @@ class UpstreamErrorTests(SimpleTestCase):
         self.assertEqual(res.data["detail"], FRIENDLY)
         self.assertNotIn("zomato.com", str(res.data))
         self.assertNotIn(".env", str(res.data))
+
+
+import httpx  # noqa: E402
+
+from . import errors  # noqa: E402
+
+
+def _resp(status, text="{}", headers=None):
+    return httpx.Response(status, text=text, headers=headers or {}, request=httpx.Request("POST", "https://example.test"))
+
+
+class ZomatoCallIsRobust(SimpleTestCase):
+    """Zomato's answers change without warning: none of these may crash a page."""
+
+    def setUp(self):
+        patcher = mock.patch.object(zomato, "_headers", return_value={})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        slept = mock.patch.object(errors.time, "sleep")
+        slept.start()
+        self.addCleanup(slept.stop)
+
+    def post(self):
+        return zomato.post("x", {}, 28.6, 77.3)
+
+    def test_an_answer_that_is_not_json_is_our_error_not_a_crash(self):
+        with mock.patch.object(zomato.httpx, "post", return_value=_resp(200, "<html>Access Denied</html>")):
+            with self.assertRaises(zomato.ZomatoAppError):
+                self.post()
+
+    def test_one_network_failure_is_retried(self):
+        calls = [httpx.ConnectTimeout("slow"), _resp(200, '{"ok": 1}')]
+        with mock.patch.object(zomato.httpx, "post", side_effect=calls) as post:
+            self.assertEqual(self.post(), {"ok": 1})
+        self.assertEqual(post.call_count, 2)
+
+    def test_a_busy_answer_is_retried_once_then_reported(self):
+        with mock.patch.object(zomato.httpx, "post", return_value=_resp(503)) as post:
+            with self.assertRaises(zomato.ZomatoAppError):
+                self.post()
+        self.assertEqual(post.call_count, 2)
+
+    def test_a_refused_session_is_not_retried(self):
+        with mock.patch.object(zomato.httpx, "post", return_value=_resp(401)) as post:
+            with self.assertRaises(zomato.ZomatoAppError):
+                self.post()
+        self.assertEqual(post.call_count, 1)
+
+    def test_two_network_failures_give_our_error(self):
+        with mock.patch.object(zomato.httpx, "post", side_effect=httpx.ConnectTimeout("slow")):
+            with self.assertRaises(zomato.ZomatoAppError):
+                self.post()
+
+
+class UnexpectedFailuresOnCompetitionPages(SimpleTestCase):
+    """Anything unexpected on a competition page is a plain 502 and is logged in full; the rest of the API behaves as before."""
+
+    class Req:
+        def __init__(self, path):
+            self.path, self.method = path, "GET"
+
+    def test_an_unexpected_error_on_a_competition_page_is_a_plain_502(self):
+        from config.exception_handler import handler
+
+        with self.assertLogs("config.exception_handler", level="ERROR") as logs:
+            res = handler(KeyError("name"), {"request": self.Req("/api/brands/1/competition/2/zomato/cuisines")})
+        self.assertEqual(res.status_code, 502)
+        self.assertEqual(res.data["detail"], errors.FRIENDLY)
+        self.assertIn("competition request failed", logs.output[0])
+
+    def test_other_pages_keep_djangos_normal_behaviour(self):
+        from config.exception_handler import handler
+
+        self.assertIsNone(handler(KeyError("name"), {"request": self.Req("/api/brands/1/kpis")}))
+
+    def test_login_and_not_found_answers_pass_through(self):
+        from django.http import Http404
+
+        from config.exception_handler import handler
+
+        res = handler(Http404("nope"), {"request": self.Req("/api/brands/1/competition/2/zomato/cuisines")})
+        self.assertEqual(res.status_code, 404)
+
+    def test_it_is_wired_in(self):
+        from django.conf import settings
+
+        self.assertEqual(settings.REST_FRAMEWORK["EXCEPTION_HANDLER"], "config.exception_handler.handler")
