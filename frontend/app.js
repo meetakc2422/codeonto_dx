@@ -736,6 +736,8 @@ function funnelCard(kpis) {
 
 // ---------- reviews inbox ----------
 const reviewFilters = { rating: "", status: "", q: "", contact: "", topic: "", offset: 0 };
+const reviewUi = { topicsAll: false, outletsAll: false };  // the topic and outlet lists show the top few until asked for all
+const REVIEW_TOP_TOPICS = 6, REVIEW_TOP_OUTLETS = 5;
 
 let reviewRows = new Map();
 const RATING_BAND = { 1: "neg", 2: "neg", 3: "mid", 4: "pos", 5: "pos" };
@@ -747,42 +749,44 @@ async function renderReviews(page) {
   const short = (n) => n.split(" · ").slice(1).join(" · ") || n;
   const pct = (n, of = s.total) => (of ? `${Math.round((n / of) * 100)}%` : "—");
   const meter = (n, max) => `<span class="cp-meter"><i style="width:${(n / Math.max(1, max)) * 100}%"></i></span>`;
-  const stat = (label, value, tone = "") => `<div class="cp-stat ${tone}"><span>${label}</span><b>${value}</b></div>`;
+  const stat = (label, value, tone = "", sub = "") => `<div class="cp-stat ${tone}"><span>${label}</span><b>${value}</b>${sub ? `<small class="muted" style="display:block;font-size:12px;margin-top:2px">${sub}</small>` : ""}</div>`;
   const avg = (v) => (v == null ? "—" : `<span class="rv-avg ${v < 3.5 ? "cp-bad" : v < 4 ? "cp-warn" : ""}">${v.toFixed(2)} ★</span>`);
   const maxStar = Math.max(1, ...s.by_rating.map((r) => r.count));
   const maxPlat = Math.max(1, ...s.by_platform.map((r) => r.count));
   const maxNeg = Math.max(1, ...s.by_outlet.map((r) => r.negative));
+  const allTopics = (s.by_topic?.topics || []).filter((t) => t.count).sort((a, b) => (b.slug === "food_safety" && b.negative) - (a.slug === "food_safety" && a.negative) || b.negative - a.negative || b.count - a.count);
+  const topicList = reviewUi.topicsAll ? allTopics : allTopics.filter((t, i) => i < REVIEW_TOP_TOPICS || t.slug === reviewFilters.topic);
+  const outletList = reviewUi.outletsAll ? s.by_outlet : s.by_outlet.slice(0, REVIEW_TOP_OUTLETS);
   page.innerHTML = `
     <div class="card cp-stats">
       ${stat("Reviews", inr.format(s.total))}${stat("Avg rating", s.avg_rating != null ? `${s.avg_rating} ★` : "—")}
-      ${stat("Negative (1–2★)", inr.format(s.negative), s.negative ? "bad" : "")}${stat("Pending", inr.format(s.pending), s.pending ? "warn" : "")}
-      ${stat("Replied", inr.format(s.replied), "ok")}${stat("Response rate", pct(s.replied))}
+      ${stat("Negative (1–2★)", inr.format(s.negative), s.negative ? "bad" : "")}${stat("Pending reply", inr.format(s.pending), s.pending ? "warn" : "", `${inr.format(s.replied)} replied · ${pct(s.replied)}`)}
     </div>
     ${s.by_topic?.topics?.some((t) => t.count) ? `<div class="card cp-card rv-topics">
       <div class="cp-head"><h3>What customers talk about</h3><span class="muted">${reviewFilters.topic ? "click again to clear" : "click a topic to filter the reviews"}${s.by_topic.no_text ? ` · ${inr.format(s.by_topic.no_text)} rated with no text` : ""}</span></div>
-      <div class="rv-topic-row">${s.by_topic.topics.filter((t) => t.count).sort((a, b) => (b.slug === "food_safety" && b.negative) - (a.slug === "food_safety" && a.negative) || b.negative - a.negative || b.count - a.count).map((t) =>
-        `<button type="button" class="rv-topic ${t.slug === "food_safety" ? "danger" : ""} ${reviewFilters.topic === t.slug ? "on" : ""}" data-topic="${t.slug}" title="${t.count} review${t.count === 1 ? "" : "s"} mention this, ${t.negative} of them 1–2★">${esc(t.label)} <b>${inr.format(t.count)}</b>${t.negative ? `<small>${inr.format(t.negative)} negative</small>` : ""}</button>`).join("")}</div></div>` : ""}
-    ${s.total ? `<div class="cp-grid rv-grid">
+      <div class="rv-topic-row">${topicList.map((t) =>
+        `<button type="button" class="rv-topic ${t.slug === "food_safety" ? "danger" : ""} ${reviewFilters.topic === t.slug ? "on" : ""}" data-topic="${t.slug}" title="${t.count} review${t.count === 1 ? "" : "s"} mention this, ${t.negative} of them 1–2★">${esc(t.label)} <b>${inr.format(t.count)}</b>${t.negative ? `<small>${inr.format(t.negative)} negative</small>` : ""}</button>`).join("")}${allTopics.length > REVIEW_TOP_TOPICS ? `<button type="button" class="btn light" data-more="topicsAll">${reviewUi.topicsAll ? "Show fewer" : `Show all ${allTopics.length}`}</button>` : ""}</div></div>` : ""}
+    ${s.total ? `<div class="cp-grid rv-grid ${s.by_platform.length > 1 ? "" : "two"}">
       <div class="card cp-card"><div class="cp-head"><h3>By rating</h3><span class="muted">click to filter</span></div>
         <table class="cp-table"><thead><tr><th>Stars</th><th class="num">#</th><th class="num">Share</th><th></th></tr></thead><tbody>
         ${s.by_rating.map((r) => `<tr class="cp-click ${reviewFilters.rating === RATING_BAND[r.stars] ? "on" : ""}" data-band="${RATING_BAND[r.stars] || ""}">
           <td>${stars(r.stars)}</td><td class="num"><b>${inr.format(r.count)}</b></td><td class="num muted">${pct(r.count)}</td>
           <td class="cp-mcell">${meter(r.count, maxStar)}</td></tr>`).join("")}
         </tbody></table></div>
-      <div class="card cp-card"><div class="cp-head"><h3>By platform</h3></div>
+      ${s.by_platform.length > 1 ? `<div class="card cp-card"><div class="cp-head"><h3>By platform</h3></div>
         <table class="cp-table"><thead><tr><th>Platform</th><th class="num">#</th><th class="num">Avg</th><th></th></tr></thead><tbody>
         ${s.by_platform.map((r) => `<tr><td>${platformPill(r.platform)}</td><td class="num"><b>${inr.format(r.count)}</b></td>
           <td class="num">${avg(r.avg_rating)}</td><td class="cp-mcell">${meter(r.count, maxPlat)}</td></tr>`).join("")}
-        </tbody></table></div>
+        </tbody></table></div>` : ""}
       <div class="card cp-card rv-wide"><div class="cp-head"><h3>By outlet</h3><span class="muted">most negative first · click to filter</span></div>
         <div class="cp-scroll"><table class="cp-table"><thead><tr><th>Outlet</th><th class="num">#</th><th class="num">Avg</th>
           <th class="num">1–2★</th><th></th><th class="num">Pending</th></tr></thead><tbody>
-        ${s.by_outlet.map((r) => `<tr class="cp-click" data-outlet="${r.outlet_id}">
+        ${outletList.map((r) => `<tr class="cp-click" data-outlet="${r.outlet_id}">
           <td class="cp-ellip" title="${esc(names.get(r.outlet_id) || "")}">${esc(short(names.get(r.outlet_id) || `Outlet ${r.outlet_id}`))}</td>
           <td class="num">${inr.format(r.count)}</td><td class="num">${avg(r.avg_rating)}</td>
           <td class="num ${r.negative ? "cp-bad" : "muted"}">${inr.format(r.negative)}</td><td class="cp-mcell">${meter(r.negative, maxNeg)}</td>
           <td class="num ${r.pending ? "cp-warn" : "muted"}">${inr.format(r.pending)}</td></tr>`).join("")}
-        </tbody></table></div></div>
+        </tbody></table></div>${s.by_outlet.length > REVIEW_TOP_OUTLETS ? `<button type="button" class="btn light" data-more="outletsAll" style="margin-top:8px">${reviewUi.outletsAll ? "Show fewer" : `Show all ${s.by_outlet.length}`}</button>` : ""}</div>
     </div>` : ""}
     <div class="card cp-card">
       <div class="toolbar cp-toolbar">
@@ -813,6 +817,7 @@ async function renderReviews(page) {
   page.querySelectorAll("[data-outlet]").forEach((r) => r.addEventListener("click", () => {
     state.locationId = r.dataset.outlet; showSelectedOutlet(); render();
   }));
+  page.querySelectorAll("[data-more]").forEach((b) => b.addEventListener("click", () => { reviewUi[b.dataset.more] = !reviewUi[b.dataset.more]; render(); }));
   $("#moreBtn").addEventListener("click", () => loadReviews(false));
   bindReviewTable($("#reviewList"));
   await loadReviews(true);

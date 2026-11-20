@@ -644,7 +644,8 @@ a.ov-fix-row:hover { background: #faf6f2; }
 
 /* reviews: dense layout (shares the cp- classes) */
 .rv-grid { grid-template-columns: minmax(260px, 1fr) minmax(260px, 1fr) minmax(420px, 2fr); }
-@media (max-width: 1100px) { .rv-grid { grid-template-columns: 1fr; } }
+.rv-grid.two { grid-template-columns: minmax(260px, 1fr) minmax(420px, 2fr); }  /* only one platform: its card is left out */
+@media (max-width: 1100px) { .rv-grid, .rv-grid.two { grid-template-columns: 1fr; } }
 .rv-grid .cp-scroll { max-height: 200px; }
 .rv-text { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .rv-chip { display: inline-block; min-width: 44px; text-align: center; font-weight: 600; font-size: 12px; padding: 1px 6px; border-radius: 6px; }
