@@ -38,7 +38,7 @@ def make_llm(provider: str | None = None):
         from langchain_google_genai import ChatGoogleGenerativeAI
 
         return ChatGoogleGenerativeAI(model=settings.ASSISTANT_GEMINI_MODEL, google_api_key=settings.GEMINI_API_KEY, temperature=0,
-                                      max_output_tokens=1500, timeout=90)
+                                      max_output_tokens=settings.ASSISTANT_GEMINI_MAX_TOKENS, timeout=90)
     from langchain_anthropic import ChatAnthropic
 
     return ChatAnthropic(model=settings.ASSISTANT_MODEL, api_key=settings.ANTHROPIC_API_KEY, temperature=0,
@@ -104,8 +104,13 @@ def build_graph(client_id, system_prompt, trace: list, llm=None, outlet_ids=None
     return g.compile(checkpointer=MEMORY)
 
 
-def ask(message: str, thread_key: str, client_id, who: str, page: str, llm=None, outlet_ids=None) -> tuple[str, list]:
-    """Run one turn. Returns (answer text, trace of the queries that were run)."""
+class EmptyAnswer(Exception):
+    """The model finished without writing any text."""
+
+
+def ask(message: str, thread_key: str, client_id, who: str, page: str, llm=None, outlet_ids=None, strict: bool = False) -> tuple[str, list]:
+    """Run one turn. Returns (answer text, trace of the queries that were run). strict: raise EmptyAnswer instead of returning
+    the 'could not produce an answer' text, so the caller can try another model."""
     from langgraph.errors import GraphRecursionError
 
     trace: list = []
@@ -119,4 +124,11 @@ def ask(message: str, thread_key: str, client_id, who: str, page: str, llm=None,
     last = out["messages"][-1]
     text = last.content if isinstance(last.content, str) else "".join(
         b.get("text", "") for b in last.content if isinstance(b, dict) and b.get("type") == "text")
+    if not text.strip():
+        import logging
+
+        logging.getLogger(__name__).warning("assistant: empty answer (finish_reason=%s, usage=%s)",
+                                            (getattr(last, "response_metadata", None) or {}).get("finish_reason"), getattr(last, "usage_metadata", None))
+        if strict:
+            raise EmptyAnswer("the model wrote no answer")
     return text.strip() or "I could not produce an answer. Please rephrase the question.", trace

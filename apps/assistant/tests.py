@@ -75,3 +75,18 @@ class TurnTests(SimpleTestCase):
         answer, trace = graph.ask("hi", "t-1", None, "SocialSpork staff", "", llm=fake)
         self.assertEqual(answer, "Done.")
         self.assertIn("SocialSpork staff", fake.system.content)
+
+
+class EmptyAnswerFake(FakeModel):
+    def invoke(self, messages):
+        return AIMessage(content=[{"type": "thinking", "thinking": "..."}])  # no text block: what a model that ran out of tokens returns
+
+
+class EmptyAnswerTests(SimpleTestCase):
+    def test_empty_answer_gives_the_friendly_text(self):
+        answer, _ = graph.ask("hi", "t-2", None, "staff", "", llm=EmptyAnswerFake())
+        self.assertIn("could not produce an answer", answer)
+
+    def test_strict_raises_so_the_next_model_can_try(self):
+        with self.assertRaises(graph.EmptyAnswer):
+            graph.ask("hi", "t-3", None, "staff", "", llm=EmptyAnswerFake(), strict=True)

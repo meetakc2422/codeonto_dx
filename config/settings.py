@@ -158,7 +158,8 @@ ASSISTANT_DATABASE_URL = env("ASSISTANT_DATABASE_URL")
 ASSISTANT_SCOPE_SECRET = env("ASSISTANT_SCOPE_SECRET")
 ASSISTANT_MODEL = env("ASSISTANT_MODEL", "claude-sonnet-5-5")
 ASSISTANT_PROVIDER = env("ASSISTANT_PROVIDER", "anthropic")  # "anthropic" or "gemini": the one tried first
-ASSISTANT_GEMINI_MODEL = env("ASSISTANT_GEMINI_MODEL", "gemini-2.5-flash")
+ASSISTANT_GEMINI_MODEL = env("ASSISTANT_GEMINI_MODEL", "gemini-3.8-flash")  # Google retires models: on a 404 "no longer available", set this in .env
+ASSISTANT_GEMINI_MAX_TOKENS = int(env("ASSISTANT_GEMINI_MAX_TOKENS", "8192"))  # Gemini counts its hidden "thinking" in this limit: too small and the answer comes back empty
 ASSISTANT_FALLBACK = env("ASSISTANT_FALLBACK", "true").lower() == "true"  # when the first model errors, try the other one if its key is set
 ASSISTANT_MAX_ROWS = int(env("ASSISTANT_MAX_ROWS", "200"))
 ASSISTANT_STATEMENT_TIMEOUT_MS = int(env("ASSISTANT_STATEMENT_TIMEOUT_MS", "8000"))

@@ -59,7 +59,8 @@ def chat(request):
         scope = "" if outlet_ids is None else ",".join(map(str, sorted(outlet_ids)))
         for i, provider in enumerate(providers()):  # the preferred model first; the other one only if that one errors
             try:
-                answer, trace = ask(message, f"{request.user.id}:{scope}:{thread_id}", client_id, who, page, llm=make_llm(provider), outlet_ids=outlet_ids)
+                answer, trace = ask(message, f"{request.user.id}:{scope}:{thread_id}", client_id, who, page, llm=make_llm(provider), outlet_ids=outlet_ids,
+                                     strict=i < len(providers()) - 1)  # an empty answer from the first model goes to the next one
                 break
             except Exception as e:
                 if i == len(providers()) - 1:
@@ -67,6 +68,7 @@ def chat(request):
                 logging.getLogger(__name__).warning("assistant: %s failed (%s: %s); trying the next model", provider, type(e).__name__, str(e)[:200])
         log.answer, log.queries = answer, [{k: v for k, v in q.items() if k != "rows"} for q in trace]
     except Exception as e:
+        logging.getLogger(__name__).exception("assistant failed")  # the full error goes to the server log (journalctl), not only to the table
         log.error = f"{type(e).__name__}: {e}"[:1000]
         log.duration_ms = int((time.time() - started) * 1000)
         log.save()
