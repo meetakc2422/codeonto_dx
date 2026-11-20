@@ -65,3 +65,20 @@ def describe() -> dict:
     for r in rows:
         out.setdefault(r["table_name"], []).append(f"{r['column_name']} ({r['data_type']})")
     return out
+
+
+_SCHEMA = {"at": 0.0, "text": ""}
+
+
+def schema_text(max_age: float = 3600.0) -> str:
+    """The views and columns as compact text for the prompt, read at most once an hour. Empty when the database can't be read:
+    the model then falls back to the describe_schema tool."""
+    if _SCHEMA["text"] and time.time() - _SCHEMA["at"] < max_age:
+        return _SCHEMA["text"]
+    try:
+        from .prompt import compact_schema
+
+        _SCHEMA.update(at=time.time(), text=compact_schema(describe()))
+    except Exception:  # noqa: BLE001
+        return _SCHEMA["text"]
+    return _SCHEMA["text"]

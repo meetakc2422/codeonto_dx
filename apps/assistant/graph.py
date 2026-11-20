@@ -17,11 +17,11 @@ from langgraph.prebuilt import ToolNode, tools_condition
 
 from . import db
 from .guard import UnsafeSQL
-from .prompt import build
+from .prompt import parts
 
 MEMORY = MemorySaver()
-MODEL_ROWS = 60       # rows the model sees per query (the user sees more in the trace)
-CELL_CHARS = 300
+MODEL_ROWS = 40       # rows the model sees per query (the user sees more in the trace)
+CELL_CHARS = 150
 
 
 def providers() -> list[str]:
@@ -38,11 +38,11 @@ def make_llm(provider: str | None = None):
         from langchain_google_genai import ChatGoogleGenerativeAI
 
         return ChatGoogleGenerativeAI(model=settings.ASSISTANT_GEMINI_MODEL, google_api_key=settings.GEMINI_API_KEY, temperature=0,
-                                      max_output_tokens=2500, timeout=90)
+                                      max_output_tokens=1500, timeout=90)
     from langchain_anthropic import ChatAnthropic
 
     return ChatAnthropic(model=settings.ASSISTANT_MODEL, api_key=settings.ANTHROPIC_API_KEY, temperature=0,
-                         max_tokens=2500, timeout=90)
+                         max_tokens=1500, timeout=90)
 
 
 def _tools(client_id, trace: list, outlet_ids=None):
@@ -74,13 +74,24 @@ def _tools(client_id, trace: list, outlet_ids=None):
     return [describe_schema, run_sql]
 
 
-def build_graph(client_id, system_prompt: str, trace: list, llm=None, outlet_ids=None):
+def _system_message(llm, fixed: str, dynamic: str) -> SystemMessage:
+    """Claude: the fixed instructions + schema are marked cacheable (re-read at a tenth of the price on the next calls and
+    questions within a few minutes); the per-request part comes after it so it never breaks the cache. Others get plain text,
+    fixed part first (Gemini caches a repeated prefix by itself)."""
+    if type(llm).__name__ == "ChatAnthropic":
+        return SystemMessage(content=[{"type": "text", "text": fixed, "cache_control": {"type": "ephemeral"}}, {"type": "text", "text": dynamic}])
+    return SystemMessage(content=fixed + "\n" + dynamic)
+
+
+def build_graph(client_id, system_prompt, trace: list, llm=None, outlet_ids=None):
+    """system_prompt: (fixed text, per-request text), or one string."""
     tools = _tools(client_id, trace, outlet_ids)
-    model = (llm or make_llm()).bind_tools(tools)
-    system = SystemMessage(content=system_prompt)
+    llm = llm or make_llm()
+    model = llm.bind_tools(tools)
+    system = _system_message(llm, *system_prompt) if isinstance(system_prompt, tuple) else SystemMessage(content=system_prompt)
 
     def agent(state: MessagesState):
-        history = trim_messages(state["messages"], max_tokens=30, token_counter=len, strategy="last",
+        history = trim_messages(state["messages"], max_tokens=20, token_counter=len, strategy="last",
                                 start_on="human", include_system=False, allow_partial=False)
         return {"messages": [model.invoke([system, *history])]}
 
@@ -99,7 +110,7 @@ def ask(message: str, thread_key: str, client_id, who: str, page: str, llm=None,
 
     trace: list = []
     today = datetime.now(ZoneInfo("Asia/Kolkata")).strftime("%A %d %B %Y, %H:%M")
-    graph = build_graph(client_id, build(who, page, today, settings.ASSISTANT_MAX_ROWS), trace, llm, outlet_ids)
+    graph = build_graph(client_id, parts(who, page, today, settings.ASSISTANT_MAX_ROWS, db.schema_text()), trace, llm, outlet_ids)
     config = {"configurable": {"thread_id": thread_key}, "recursion_limit": 2 * settings.ASSISTANT_MAX_STEPS + 2}
     try:
         out = graph.invoke({"messages": [("user", message)]}, config)
