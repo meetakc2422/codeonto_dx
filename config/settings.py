@@ -24,6 +24,8 @@ def db_from_url(url: str) -> dict:
         "PASSWORD": u.password or "",
         "HOST": u.hostname or "localhost",
         "PORT": str(u.port or 5432),
+        "CONN_MAX_AGE": 300,  # reuse a connection for up to 5 minutes instead of reconnecting on every request
+        "CONN_HEALTH_CHECKS": True,  # reconnect if a reused connection has gone stale
     }
 
 

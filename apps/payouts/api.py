@@ -78,12 +78,13 @@ def payout_summary(request, brand_id):
     qs, _ = _filtered(request, brand_id)
     cycles = list(qs.only("status", "net_payout", "discrepancy", "expected_payout", "issues", "payout_date", "commissionable_total", "service_fee_total", "reconciled_at"))
     paid = [c for c in cycles if _is_paid(c.status)]
-    with_issues = [c for c in cycles if _issues(c)]
+    issues_of = {c.id: _issues(c) for c in cycles}  # worked out once per cycle, used below
+    with_issues = [c for c in cycles if issues_of[c.id]]
     commissionable = sum((c.commissionable_total or 0) for c in cycles)
     fees = sum((c.service_fee_total or 0) for c in cycles)
     counts: dict[str, int] = {}
     for c in cycles:
-        for code in _issues(c):
+        for code in issues_of[c.id]:
             counts[code] = counts.get(code, 0) + 1
     return Response({
         "cycles": len(cycles),
@@ -95,19 +96,22 @@ def payout_summary(request, brand_id):
         "carried_forward_total": _money(sum((c.net_payout or 0) for c in cycles if c.status.strip().upper() == "CARRIED FORWARD")),
         "reconciled": sum(1 for c in cycles if c.reconciled_at),
         "with_issues": len(with_issues),
-        "discrepancy_total": _money(sum(abs(c.discrepancy or 0) for c in cycles if "deductions_carried" not in _issues(c))),
-        "carried_total": _money(sum(-(c.expected_payout or 0) for c in cycles if "deductions_carried" in _issues(c))),
+        "discrepancy_total": _money(sum(abs(c.discrepancy or 0) for c in cycles if "deductions_carried" not in issues_of[c.id])),
+        "carried_total": _money(sum(-(c.expected_payout or 0) for c in cycles if "deductions_carried" in issues_of[c.id])),
         "take_rate": round(float(fees) / float(commissionable) * 100, 2) if commissionable else None,
         "issues": [{"code": k, "label": ISSUE_LABELS.get(k, k), "count": v} for k, v in sorted(counts.items(), key=lambda kv: -kv[1])],
         "new_lines": _new_lines(qs),
     })
 
 
-def _listed(request, brand_id) -> list[tuple]:
+def _listed(request, brand_id, light: bool = False) -> list[tuple]:
     """[(cycle, its json)] for the payouts the list shows with these filters (dates, outlets, platform, status, issue,
-    search), newest problems first. The list, the combined statement and the CSV all use this, so they always agree."""
+    search), newest problems first. The list, the combined statement and the CSV all use this, so they always agree.
+    light=True skips each payout's statement (the big `breakdown` JSON) for callers that only show the list."""
     qs, qp = _filtered(request, brand_id)
     qs = qs.select_related("outlet")
+    if light:
+        qs = qs.defer("breakdown")
     status = qp.get("status")
     if status == "paid":
         qs = qs.filter(status__iexact="PAID")
@@ -460,7 +464,7 @@ def payout_book(request, brand_id):
 @api_view(["GET"])
 def payout_cycles(request, brand_id):
     qp = request.query_params
-    rows = [r for _, r in _listed(request, brand_id)]
+    rows = [r for _, r in _listed(request, brand_id, light=True)]
     offset, limit = int(qp.get("offset", 0)), min(int(qp.get("limit", 100)), 500)
     return Response({"total": len(rows), "results": rows[offset:offset + limit]})
 

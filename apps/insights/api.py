@@ -157,8 +157,8 @@ def money_leaked(request, brand_id):
 
     episodes = list(scoped(OfflineEpisode.objects.filter(outlet__brand_id=brand_id, log_date__range=(start, end))))
     stockouts = list(scoped(StockOut.objects.filter(outlet__brand_id=brand_id, log_date__range=(start, end))))
-    outlet_ids = {e.outlet_id for e in episodes} | {s.outlet_id for s in stockouts}
-    model = SalesModel(outlet_ids, end) if outlet_ids else None
+    affected = {e.outlet_id for e in episodes} | {s.outlet_id for s in stockouts}
+    model = SalesModel(affected, end) if affected else None
 
     for e in episodes:
         o = by_outlet[e.outlet_id]
@@ -187,7 +187,7 @@ def money_leaked(request, brand_id):
     outlets = sorted(({"outlet_id": oid, "total": round(sum(v[k] for k in money)), **{k: round(x, 1) for k, x in v.items()},
                        "basis": model.basis.get(oid) if model else None}
                       for oid, v in by_outlet.items()), key=lambda o: (-o["total"], -o.get("stockout_hours", 0)))
-    estimated = [o for o in outlet_ids if model and model.basis[o].startswith("estimate")]
+    estimated = [o for o in affected if model and model.basis[o].startswith("estimate")]
 
     def notes(*parts):
         return "; ".join(p for p in parts if p)
@@ -214,7 +214,7 @@ def money_leaked(request, brand_id):
         "start": start, "end": end, "total": round(sum(c["amount"] for c in causes)),
         "causes": sorted(causes, key=lambda c: -c["amount"]),
         "stockouts": {"item_hours": round(sums["stockout_hours"], 1), "count": int(sums["stockouts_n"])},
-        "confidence": {"min_pattern_days": MIN_PATTERN_DAYS, "outlets": len(outlet_ids), "estimated_outlets": len(estimated)},
+        "confidence": {"min_pattern_days": MIN_PATTERN_DAYS, "outlets": len(affected), "estimated_outlets": len(estimated)},
         "by_outlet": outlets[:30],
     })
 
