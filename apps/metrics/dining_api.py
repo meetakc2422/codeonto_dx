@@ -24,6 +24,8 @@ def _dining_outlets(request, brand_id):
 def brand_dining(request, brand_id):
     get_brand(request.user, brand_id)
     outlets = list(_dining_outlets(request, brand_id))
+    if request.query_params.get("summary"):  # the sidebar only needs to know whether to show the link
+        return Response({"has_dining": bool(outlets)})
     out = []
     today = date.today().isoformat()
     for bo in outlets:

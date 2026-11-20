@@ -257,7 +257,8 @@ function renderSidebar() {
     const perf = industry.filter((m) => PERF_CODES.includes(m.code));
     const perfLink = perf.length ? `<a class="nav-item ${PERF_CODES.includes(route) ? "active" : ""}" href="#/${perf[0].code}" title="Performance">
       ${icon("marketplace_sales")}<span>Performance</span>${perf.every((m) => m.locked) ? `<em class="soon locked-badge">${icon("lock")}Upgrade</em>` : ""}</a>` : "";
-    const aggregator = [...industry.filter((m) => m.code === "reconciliation").map(link), perfLink,
+    const diningLink = state.hasDining ? navLink("dining", "Slots & offers") : "";
+    const aggregator = [...industry.filter((m) => m.code === "reconciliation").map(link), perfLink, diningLink,
       ...industry.filter((m) => m.code !== "reconciliation" && !PERF_CODES.includes(m.code)).map(link)].join("");
     html += `<div class="nav-group">Reputation</div>${common.map(link).join("")}` +
       (industry.length ? `<div class="nav-group">Aggregator management</div>${aggregator}` : "");
@@ -337,8 +338,9 @@ function renderFilters() {
 async function loadBrand(id) {
   state.brandId = id; store.set("ss_brand", id);
   state.locationId = ""; state.platform = "";
-  const [config, outlets] = await Promise.all([api(`/brands/${id}/config`), api(`/brands/${id}/outlets`)]);
+  const [config, outlets, dining] = await Promise.all([api(`/brands/${id}/config`), api(`/brands/${id}/outlets`), api(`/brands/${id}/dining`, { summary: 1 }).catch(() => ({}))]);
   state.config = config;
+  state.hasDining = Boolean(dining.has_dining);
   state.locations = outlets.outlets.map((o) => {
     const name = o.area || o.outlet_name;
     const label = o.area && o.area.toLowerCase() !== o.outlet_name.toLowerCase() ? `${o.outlet_name} · ${o.area}` : name;
@@ -349,7 +351,7 @@ async function loadBrand(id) {
   $("#brandIndustry").textContent = config.brand.industry_name + (config.brand.is_demo ? " · SAMPLE DATA" : "");
   renderFilters();
   const route = currentRoute();
-  if (!["setup", "clients", "profile", "team", "billing"].includes(route) && !config.modules.some((m) => m.code === route)) location.hash = "#/overview";
+  if (!["setup", "clients", "profile", "team", "billing", "dining"].includes(route) && !config.modules.some((m) => m.code === route)) location.hash = "#/overview";
   else render();
 }
 
@@ -491,7 +493,7 @@ async function render() {
 
   const isSetup = route === "setup";
   $("#filters").style.display = isSetup ? "none" : "";
-  $("#pageTitle").textContent = isSetup ? "Brands & Outlets" : PERF_CODES.includes(route) ? "Performance" : moduleName(route);
+  $("#pageTitle").textContent = isSetup ? "Brands & Outlets" : PERF_CODES.includes(route) ? "Performance" : route === "dining" ? "Slots & offers" : moduleName(route);
   $("#pageSub").textContent = isSetup
     ? "Name your brand and map each outlet to its Google, Zomato and Swiggy listing"
     : `${state.config.brand.name} · ${outletsLabel().replace(/ \(\d+\)$/, "")} · ${periodLabel()}`;
@@ -510,9 +512,10 @@ async function render() {
     else if (route === "alerts") await renderAlerts(page);
     else if (route === "listings") await renderListings(page);
     else if (route === "competitors") await renderCompetition(page);
+    else if (route === "dining") await renderDiningPage(page);
     else if (state.config.kpis.some((k) => k.module === route)) await renderModule(page, route);
     else renderComingSoon(page, route);
-    if (PERF_CODES.includes(route)) { addPerfTabs(page, route); addDiningToggle(page); }
+    if (PERF_CODES.includes(route)) addPerfTabs(page, route);
   } catch (e) {
     page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(userMessage(e))}</p></div>`;
   }
@@ -528,25 +531,11 @@ function addPerfTabs(page, route) {
   page.querySelectorAll(".perf-tabs [data-go]").forEach((b) => { b.onclick = () => { location.hash = `#/${b.dataset.go}`; }; });
 }
 
-// Delivery | Dining switch at the top of the Performance pages, shown only when an outlet has a dining id.
-async function addDiningToggle(page) {
-  let d;
-  try { d = await api(`/brands/${state.brandId}/dining`, { outlet_id: state.locationId }); } catch { return; }
-  if (!d.has_dining || !page.isConnected) return;
-  const bar = document.createElement("div");
-  bar.className = "segmented";
-  bar.style.cssText = "margin-bottom:16px;width:fit-content";
-  const mode = () => state.perfView || "delivery";
-  const paint = () => {
-    bar.innerHTML = `<button data-v="delivery" class="${mode() === "delivery" ? "active" : ""}">Delivery</button><button data-v="dining" class="${mode() === "dining" ? "active" : ""}">Dining</button>`;
-    page.querySelectorAll(":scope > :not(.perf-dining-bar):not(#diningView)").forEach((el) => { el.style.setProperty("display", mode() === "dining" ? "none" : "", mode() === "dining" ? "important" : ""); });
-    page.querySelector("#diningView")?.remove();
-    if (mode() === "dining") { const box = document.createElement("div"); box.id = "diningView"; page.appendChild(box); renderDiningView(box, d); }
-  };
-  bar.classList.add("perf-dining-bar");
-  bar.onclick = (e) => { const b = e.target.closest("[data-v]"); if (!b) return; state.perfView = b.dataset.v; paint(); };
-  page.insertAdjacentElement("afterbegin", bar);
-  paint();
+// Sidebar page "Slots & offers": dining offers and bookable slots, for brands that have a dining outlet.
+async function renderDiningPage(page) {
+  const d = await api(`/brands/${state.brandId}/dining`, { outlet_id: state.locationId });
+  page.innerHTML = `<div id="diningView"></div>`;
+  renderDiningView($("#diningView"), d);
 }
 
 function renderDiningView(box, d) {
