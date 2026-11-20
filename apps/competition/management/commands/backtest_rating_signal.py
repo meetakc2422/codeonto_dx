@@ -3,11 +3,15 @@
     python manage.py backtest_rating_signal                 # real outlets (sample clients are left out), 28-day windows over the last 120 days
     python manage.py backtest_rating_signal --window 14 --days 90
 
+(With --min-windows 1 and one window per outlet, it is a first look across outlets: each outlet's window is predicted from the other
+outlets' ratio, which is exactly what a competitor estimate would do.)
+
 For every outlet and platform it takes the rise in the rating count over a window and the orders delivered in the same window. It then
 predicts each outlet's orders from its rating rise using the median "orders per new rating" of the OTHER outlets only (an outlet is never
 used to predict itself, just as a competitor's own ratio is never known) and reports how far off those predictions are. Nothing is written.
 
-Rating counts: Zomato keeps it as the weight of the daily listing_rating figure; Swiggy as the daily rating_count figure."""
+Rating counts: the daily rating_count figure of each platform (kept since 6 Nov 2026; both platforms round big counts, so a short window
+on a big outlet shows no change and a longer window or smaller outlets measure better)."""
 
 import statistics
 from collections import defaultdict
@@ -71,34 +75,34 @@ class Command(BaseCommand):
         p.add_argument("--window", type=int, default=28, help="days per window")
         p.add_argument("--days", type=int, default=120, help="how far back to look")
         p.add_argument("--min-rise", type=int, default=5, help="ignore windows where the count rose by fewer ratings than this")
+        p.add_argument("--min-windows", type=int, default=4,
+                       help="windows an outlet needs to be used; 1 gives a first look across outlets with just one window each (e.g. --window 7 --days 12 --min-windows 1)")
 
     def handle(self, *a, **o):
         end = timezone.localdate()
         start = end - timedelta(days=o["days"])
         counts, orders = defaultdict(dict), defaultdict(dict)
         rows = (MetricDaily.objects.filter(outlet__brand__client__is_demo=False, metric_date__gte=start, platform_id__in=("zomato", "swiggy"),
-                                           kpi__code__in=("listing_rating", "rating_count", "delivered_orders"))
+                                           kpi__code__in=("rating_count", "delivered_orders"))
                 .values_list("outlet_id", "platform_id", "kpi__code", "metric_date", "value", "weight"))
         for outlet, platform, code, day, value, weight in rows:
             key = (outlet, platform)
             if code == "delivered_orders":
                 orders[key][day] = float(value)
-            elif code == "listing_rating" and platform == "zomato" and weight:
-                counts[key][day] = float(weight)  # Zomato: the number of ratings rides on the weight
-            elif code == "rating_count" and platform == "swiggy":
-                counts[key][day] = float(value)
+            elif code == "rating_count":
+                counts[key][day] = float(value)  # the daily rating count, both platforms (Zomato's listing_rating weight is a placeholder before 6 Nov 2026)
         per_platform = defaultdict(list)
         usable = defaultdict(int)
         for key in counts:
             if key not in orders:
                 continue
             samples = windows_for(counts[key], orders[key], start, end, o["window"], o["min_rise"])
-            if len(samples) >= 4:
+            if len(samples) >= o["min_windows"]:
                 usable[key[1]] += 1
                 per_platform[key[1]].append(samples)
         self.stdout.write(f"Windows of {o['window']} days over the last {o['days']} days, to {end}. Sample clients are left out.\n")
         if not per_platform:
-            self.stdout.write("Not enough history: need an outlet with at least 4 windows of both rating counts and delivered orders.")
+            self.stdout.write(f"Not enough history: need outlets with at least {o['min_windows']} window(s) of both rating counts and delivered orders.")
             return
         for platform, outlets in sorted(per_platform.items()):
             flat = [s for samples in outlets for s in samples]

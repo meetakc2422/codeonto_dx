@@ -45,16 +45,36 @@ class BacktestCommand(TestCase):
         ind = Industry.objects.first()
         today = timezone.localdate()
         kpi_orders = Kpi.objects.get(code="delivered_orders")
-        kpi_rating = Kpi.objects.get(code="listing_rating")
+        kpi_rating = Kpi.objects.get(code="rating_count")
         outlets = [(client, f"R{n}") for n in range(5)] + [(demo, "S0")]
         for cl, name in outlets:
             outlet = BrandOutlet.objects.create(brand=Brand.objects.get_or_create(client=cl, name=f"B{cl.name}", industry=ind)[0], outlet_name=name)
             for i in range(0, 130):
                 day = today - timedelta(days=129 - i)
                 MetricDaily.objects.create(outlet=outlet, platform_id="zomato", kpi=kpi_orders, metric_date=day, value=10, weight=1)
-                MetricDaily.objects.create(outlet=outlet, platform_id="zomato", kpi=kpi_rating, metric_date=day, value=4.1, weight=500 + i * 1.5)
+                MetricDaily.objects.create(outlet=outlet, platform_id="zomato", kpi=kpi_rating, metric_date=day, value=500 + i * 1.5, weight=1)
         out = StringIO()
         call_command("backtest_rating_signal", stdout=out)
         text = out.getvalue()
         self.assertIn("Zomato: 5 outlets", text)  # the sample client is not counted
         self.assertIn("typical error", text)
+
+
+class OneWindowPerOutlet(TestCase):
+    def test_a_first_look_across_outlets_needs_only_one_window_each(self):
+        from django.utils import timezone as tz
+        ind = Industry.objects.first()
+        today = tz.localdate()
+        kpi_orders, kpi_rating = Kpi.objects.get(code="delivered_orders"), Kpi.objects.get(code="rating_count")
+        brand = Brand.objects.create(client=Client.objects.create(name="One window", is_demo=False), name="OW", industry=ind)
+        for n in range(6):
+            outlet = BrandOutlet.objects.create(brand=brand, outlet_name=f"O{n}")
+            for i in range(0, 13):
+                day = today - timedelta(days=12 - i)
+                MetricDaily.objects.create(outlet=outlet, platform_id="swiggy", kpi=kpi_orders, metric_date=day, value=10 + n, weight=1)
+                MetricDaily.objects.create(outlet=outlet, platform_id="swiggy", kpi=kpi_rating, metric_date=day, value=300 + i * (1 + n / 5), weight=1)
+        default = StringIO(); call_command("backtest_rating_signal", "--window", "7", "--days", "12", stdout=default)
+        self.assertIn("Not enough history", default.getvalue())
+        first = StringIO(); call_command("backtest_rating_signal", "--window", "7", "--days", "12", "--min-windows", "1", stdout=first)
+        self.assertIn("Swiggy: 6 outlets", first.getvalue())
+        self.assertIn("typical error", first.getvalue())
