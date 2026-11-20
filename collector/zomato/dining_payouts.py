@@ -9,6 +9,7 @@ Run:  python run.py zomato dining_payouts --account paras --res-id 111,222 --sta
       A long range is split into windows of DINING_REPORT_DAYS (default 92, about a quarter), one email per window.
 Load a report you already have, without asking Zomato again:
       python -m zomato.dining_payouts load path/to/Consolidated_payout_report.xlsx [--res-id 111,222]
+      python -m zomato.dining_payouts fetch --minutes 60 --res-id 111,222     (reports already emailed, not asked again)
 
 .env (collector):
     DINING_REPORT_EMAIL      the address the report is sent to (must be a mailbox this job can read)
@@ -188,8 +189,6 @@ def fetch_reports(since: datetime, expected: int, wait_sec: int = 30, tries: int
                 _, data = imap.fetch(eid, "(RFC822)")
                 msg = email.message_from_bytes(data[0][1])
                 sent = parsedate_to_datetime(msg.get("Date"))
-                if sent.replace(tzinfo=None) < since - timedelta(minutes=2) and sent.tzinfo is None:
-                    continue
                 if sent.timestamp() < since.timestamp() - 120:
                     continue
                 seen.add(eid)
@@ -253,7 +252,17 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
 
 
 if __name__ == "__main__":
-    if len(sys.argv) >= 3 and sys.argv[1] == "load":
+    if len(sys.argv) >= 2 and sys.argv[1] == "fetch":  # collect reports already emailed in the last N minutes, without asking Zomato again
+        minutes = int(sys.argv[sys.argv.index("--minutes") + 1]) if "--minutes" in sys.argv else 60
+        only = {x.strip() for x in sys.argv[sys.argv.index("--res-id") + 1].split(",") if x.strip()} if "--res-id" in sys.argv else set()
+        files = fetch_reports(datetime.now().astimezone() - timedelta(minutes=minutes), expected=1, tries=3)
+        total = 0
+        for f in files:
+            n = save(parse_report(f), only or None)
+            total += n
+            print(f"{os.path.basename(f)}: saved {n}")
+        print(f"{len(files)} reports found, {total} bills saved")
+    elif len(sys.argv) >= 3 and sys.argv[1] == "load":
         only = set()
         if "--res-id" in sys.argv:
             only = {x.strip() for x in sys.argv[sys.argv.index("--res-id") + 1].split(",") if x.strip()}
