@@ -5,8 +5,9 @@ dashboard's own outlet-wise metrics query (outletWiseMetricDetailsV4, period YES
 that one day. Its figures are named like the report's, so they go through the same mapping (mappings/swiggy_business_report.json)
 and land in the same KPIs; two days later the report job overwrites the day with Swiggy's final figures (same key, upsert).
 
-What it does not have: the conversion funnel (impressions, menu opens, carts) is not in this query, so the funnel stays
-two days behind.
+What it has: the sales figures (net sales, delivered orders, average order value, cancellations). What it does not: Swiggy
+holds the operations, ads, discounts and menu figures of this query back by 48 hours too, and the conversion funnel is not in
+it, so those stay two days behind, as the report job has them.
 
 Safe by design: Swiggy words the day it answers for in the response title ("16th November"). A row is saved only when that
 day is yesterday; anything else is skipped and logged. Dry run (nothing is saved, only a few outlets are asked, and what came
@@ -31,9 +32,12 @@ BATCH = cfg.integer("SWIGGY_OUTLET_METRICS_BATCH", 100)  # outlets per request p
 PAGE_SIZE = 500
 DRY_OUTLETS = cfg.integer("SWIGGY_T1_DRY_OUTLETS", 3)
 
-# metricId -> the field Swiggy sorts that category by (the query needs one)
-CATEGORIES = {"SALES_V2": "NET_SALES", "OPERATIONS_V2": "DELAYED_ORDERS_PERCENTAGE", "ADS_V2": "ADS_ORDERS",
-              "DISCOUNTS_V2": "ORDERS_WITH_OFFERS", "MENU_V2": "MENU_SCORE_PERCENTAGE"}
+# metricId -> the field Swiggy sorts that category by (the query needs one). Checked on 2026-11-17: only SALES_V2 has yesterday.
+# Operations, ads, discounts and menu answer "Below metrics have a lag of 48 hours" (the day before yesterday's day before), so the
+# report job (business.py) is the one that gets those. Put them back here if Swiggy ever drops that lag: the title-day check
+# below would then let them through by itself.
+CATEGORIES = {"SALES_V2": "NET_SALES"}
+LAGGED = {"OPERATIONS_V2": "DELAYED_ORDERS_PERCENTAGE", "ADS_V2": "ADS_ORDERS", "DISCOUNTS_V2": "ORDERS_WITH_OFFERS", "MENU_V2": "MENU_SCORE_PERCENTAGE"}
 
 # the query's metric name -> the report's (section, metric): the keys mappings/swiggy_business_report.json is written in
 NAMES = {
