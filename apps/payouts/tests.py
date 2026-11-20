@@ -129,3 +129,58 @@ class PayoutTests(TestCase):
             cur.execute("SELECT set_config('app.scope', %s, true)", [scope_value(self.client_id, [self.a.pk])])
             cur.execute("SELECT count(*) FROM assistant.payout_orders")
             self.assertEqual(cur.fetchone()[0], 1)
+
+
+class AnalyticsLayoutTests(TestCase):
+    """Zomato changed its statement layout: the analytics shows one layout at a time, so no % mixes lines of both."""
+
+    @classmethod
+    def setUpTestData(cls):
+        industry = Industry.objects.first()
+        cls.client_org = Client.objects.create(name="Acme")
+        cls.brand = Brand.objects.create(client=cls.client_org, name="Brand", industry=industry)
+        cls.outlet = BrandOutlet.objects.create(brand=cls.brand, outlet_name="Brand", area="Rohini")
+        cls.owner = User.objects.create_user("owner2", password="x")
+        ClientUser.objects.create(user=cls.owner, client=cls.client_org, role="admin")
+        today = date.today()
+        old = [{"id": "total_order_value", "label": "Net order value (A)", "value": 1000.0, "items": []},
+               {"id": "additions", "label": "Additions (B)", "value": 10.0, "items": []}]
+        new = [{"id": "gross_order_value", "label": "Gross order value (A)", "value": 500.0, "items": []},
+               {"id": "net_order_value_subtotal", "label": "Net order value (A+B)", "value": 400.0, "items": []}]
+        for days, breakdown, orders in ((20, old, 7), (13, old, 5), (6, new, 3)):
+            PayoutCycle.objects.create(outlet=cls.outlet, platform_id="zomato", start_date=today - timedelta(days=days + 6), end_date=today - timedelta(days=days),
+                                       status="PAID", net_payout=D("100"), order_count=orders, breakdown=breakdown, fetched_at=now(), payout_date=today - timedelta(days=days))
+
+    def get(self, **q):
+        c = APIClient()
+        c.force_login(self.owner)
+        return c.get(f"/api/brands/{self.brand.pk}/payouts/analytics", q).json()
+
+    def test_two_layouts_are_listed_newest_first_and_the_newest_is_shown(self):
+        d = self.get()
+        self.assertEqual([L["name"] for L in d["layouts"]], ["Gross order value", "Net order value"])
+        self.assertEqual(d["layout"], "gross order value")
+        self.assertEqual(d["total"]["orders"], 3)  # only the new layout's payouts
+        self.assertEqual([s["label"] for s in d["sections"]], ["Gross order value (A)", "Net order value (A+B)"])
+
+    def test_the_older_layout_adds_up_only_its_own_payouts(self):
+        d = self.get(alayout="net order value")
+        self.assertEqual(d["total"]["orders"], 12)
+        self.assertEqual(d["total"]["cycles"], 2)
+        self.assertEqual([s["label"] for s in d["sections"]], ["Net order value (A)", "Additions (B)"])
+
+    def test_an_unknown_layout_falls_back_to_the_newest(self):
+        self.assertEqual(self.get(alayout="nonsense")["layout"], "gross order value")
+
+    def test_excel_export_follows_the_chosen_layout(self):
+        c = APIClient()
+        c.force_login(self.owner)
+        res = c.get(f"/api/brands/{self.brand.pk}/payouts/analytics/xlsx", {"alayout": "net order value"})
+        self.assertEqual(res.status_code, 200)
+        import io
+
+        from openpyxl import load_workbook
+
+        ws = load_workbook(io.BytesIO(res.content)).active
+        self.assertIn("Net order value format", ws["B2"].value)
+        self.assertEqual(ws["C4"].value, 12)  # number of orders in that layout

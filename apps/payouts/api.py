@@ -1,3 +1,4 @@
+import re
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -592,6 +593,33 @@ def _analytics(cycles, platform: str) -> dict:
     return {"platform": platform, "sections": sections, "columns": columns, "total": finish(total)}
 
 
+def _layout_key(c) -> str:
+    """The statement layout a payout uses. Zomato and Swiggy change their statements from time to time, and lines of the old and
+    new layout are not the same lines (different names, letters and bases), so they must never be added up or turned into
+    percentages together. A layout is named by its first statement section without its letter: 'Net order value (A)' and
+    'Net order value (A)' in a variant with extra lines are one layout; 'Gross order value (A)' is another."""
+    first = (c.breakdown or [{}])[0]
+    label = re.sub(r"\(.*?\)", "", str(first.get("label") or first.get("id") or "")).strip().lower()
+    return re.sub(r"\s+", " ", label) or "none"
+
+
+def _layouts(cycles) -> list[dict]:
+    """The layouts present in these payouts, newest first, with the weeks each covers."""
+    found: dict[str, dict] = {}
+    for c in cycles:
+        first = (c.breakdown or [{}])[0]
+        name = re.sub(r"\s*\(.*?\)", "", str(first.get("label") or first.get("id") or "")).strip()
+        L = found.setdefault(_layout_key(c), {"key": _layout_key(c), "name": name or "No statement lines", "cycles": 0, "from": c.start_date, "to": c.end_date})
+        L["cycles"] += 1
+        L["from"], L["to"] = min(L["from"], c.start_date), max(L["to"], c.end_date)
+    return sorted(found.values(), key=lambda L: (L["to"], L["from"]), reverse=True)
+
+
+def _pick_layout(request, layouts) -> str:
+    wanted = request.query_params.get("alayout")
+    return wanted if any(L["key"] == wanted for L in layouts) else (layouts[0]["key"] if layouts else "")
+
+
 def _analytics_platform(request, cycles) -> str:
     wanted = request.query_params.get("aplatform")  # which platform's layout to show; "platform" is the page's own filter
     have = sorted({c.platform_id for c in cycles})
@@ -604,7 +632,11 @@ def payout_analytics(request, brand_id):
     same filters as the list (dates, outlets, status, search); ?platform= picks Zomato or Swiggy (their layouts differ)."""
     cycles = [c for c, _ in _listed(request, brand_id)]
     platform = _analytics_platform(request, cycles)
-    return Response({**_analytics(cycles, platform), "platforms": sorted({c.platform_id for c in cycles})})
+    of_platform = [c for c in cycles if c.platform_id == platform]
+    layouts = _layouts(of_platform)
+    layout = _pick_layout(request, layouts)  # one statement layout at a time, so every % is taken from lines of the same layout
+    chosen = [c for c in of_platform if _layout_key(c) == layout]
+    return Response({**_analytics(chosen, platform), "platforms": sorted({c.platform_id for c in cycles}), "layouts": layouts, "layout": layout})
 
 
 @api_view(["GET"])
@@ -619,7 +651,11 @@ def payout_analytics_xlsx(request, brand_id):
 
     cycles = [c for c, _ in _listed(request, brand_id)]
     platform = _analytics_platform(request, cycles)
-    d = _analytics(cycles, platform)
+    of_platform = [c for c in cycles if c.platform_id == platform]
+    layouts = _layouts(of_platform)
+    layout = _pick_layout(request, layouts)
+    d = _analytics([c for c in of_platform if _layout_key(c) == layout], platform)
+    layout_note = next((f" · {L['name']} format, {L['from']:%d %b} to {L['to']:%d %b %Y}" for L in layouts if L["key"] == layout and len(layouts) > 1), "")
     basis = "gross" if request.query_params.get("basis") == "gross" else "net"
     key = "gross_base" if basis == "gross" else "net_base"
     cols = d["columns"] + [d["total"]]
@@ -635,7 +671,7 @@ def payout_analytics_xlsx(request, brand_id):
     for cell in ws[1]:
         cell.font, cell.fill, cell.alignment = bold, head, Alignment(horizontal="center", vertical="center", wrap_text=True)
     ws.row_dimensions[1].height = 48
-    ws.append([None, f"Payout breakup · % from {'gross' if basis == 'gross' else 'net'} sales"])
+    ws.append([None, f"Payout breakup · % from {'gross' if basis == 'gross' else 'net'} sales{layout_note}"])
     ws["B2"].font = Font(bold=True, size=12)
     ws.append([None, "Selected cycles"] + [x for c in cols for x in (f"{c['start']:%d %b} – {c['end']:%d %b %Y}" if c["start"] else "", "")])
     ws.append([None, "Number of orders"] + [x for c in cols for x in (c["orders"], None)])

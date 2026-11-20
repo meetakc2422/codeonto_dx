@@ -1426,7 +1426,7 @@ function wireStaffBilling(page, clientId) {
 }
 
 // ---------- payout reconciliation ----------
-const payoutFilters = { status: "", q: "", open: null, issue: "", view: "list", basis: "net", aPlatform: "", detail: false, combinedOpen: false };
+const payoutFilters = { status: "", q: "", open: null, issue: "", view: "list", basis: "net", aPlatform: "", aLayout: "", detail: false, combinedOpen: false };
 const analyticsOpen = new Set();  // statement sections opened in the analytics view
 const stmtSel = new Map();  // statement view: "outletId:platform" -> Set of unticked cycle ids
 const rupeesShort = (v) => {  // ₹12.6k, ₹3.13 L, ₹1.2 Cr: for tight spaces
@@ -1544,9 +1544,9 @@ async function renderReconciliation(page) {
     api(`/brands/${state.brandId}/payouts/combined`, listParams).catch(() => null),
   ]);
   const statements = payoutFilters.view === "statements" ? await api(`/brands/${state.brandId}/payouts/statements`, listParams) : null;
-  const analytics = payoutFilters.view === "analytics" ? await api(`/brands/${state.brandId}/payouts/analytics`, { ...listParams, aplatform: payoutFilters.aPlatform }) : null;
+  const analytics = payoutFilters.view === "analytics" ? await api(`/brands/${state.brandId}/payouts/analytics`, { ...listParams, aplatform: payoutFilters.aPlatform, alayout: payoutFilters.aLayout }) : null;
   const analyticsXlsx = new URL(`${API}/brands/${state.brandId}/payouts/analytics/xlsx`, location.origin);
-  Object.entries({ ...listParams, aplatform: analytics?.platform || "", basis: payoutFilters.basis }).forEach(([k, v]) => { if (v !== "" && v != null) analyticsXlsx.searchParams.set(k, v); });
+  Object.entries({ ...listParams, aplatform: analytics?.platform || "", alayout: analytics?.layout || "", basis: payoutFilters.basis }).forEach(([k, v]) => { if (v !== "" && v != null) analyticsXlsx.searchParams.set(k, v); });
   const exportUrl = new URL(`${API}/brands/${state.brandId}/payouts/export`, location.origin);
   Object.entries(listParams).forEach(([k, v]) => { if (v !== "" && v != null) exportUrl.searchParams.set(k, v); });
   const combinedXlsx = new URL(`${API}/brands/${state.brandId}/payouts/combined/xlsx`, location.origin);
@@ -1633,8 +1633,9 @@ async function renderReconciliation(page) {
   page.querySelectorAll("[data-view]").forEach((b) => b.addEventListener("click", () => { payoutFilters.view = b.dataset.view; renderReconciliation(page); }));
   if (statements) wireStatementBlocks(page, statements.groups);
   $("#combinedBox")?.addEventListener("toggle", (e) => { payoutFilters.combinedOpen = e.target.open; });
+  page.querySelectorAll("[data-alayout]").forEach((b) => b.addEventListener("click", () => { payoutFilters.aLayout = b.dataset.alayout; analyticsOpen.clear(); renderReconciliation(page); }));
   page.querySelectorAll("[data-abasis]").forEach((b) => b.addEventListener("click", () => { payoutFilters.basis = b.dataset.abasis; renderReconciliation(page); }));
-  page.querySelectorAll("[data-aplat]").forEach((b) => b.addEventListener("click", () => { payoutFilters.aPlatform = b.dataset.aplat; analyticsOpen.clear(); renderReconciliation(page); }));
+  page.querySelectorAll("[data-aplat]").forEach((b) => b.addEventListener("click", () => { payoutFilters.aPlatform = b.dataset.aplat; payoutFilters.aLayout = ""; analyticsOpen.clear(); renderReconciliation(page); }));
   page.querySelectorAll("[data-asec]").forEach((b) => b.addEventListener("click", () => { const k = b.dataset.asec; analyticsOpen.has(k) ? analyticsOpen.delete(k) : analyticsOpen.add(k); renderReconciliation(page); }));
   $("#aDetail")?.addEventListener("click", () => { payoutFilters.detail = !payoutFilters.detail; analyticsOpen.clear(); renderReconciliation(page); });
   $("#exportBook")?.addEventListener("click", () => {
@@ -1937,6 +1938,7 @@ function renderAnalytics(a) {
   }).join("");
   return `<div class="an-bar">
       ${a.platforms.length > 1 ? `<div class="segmented">${a.platforms.map((p) => `<button data-aplat="${p}" class="${a.platform === p ? "active" : ""}">${p === "swiggy" ? "Swiggy" : "Zomato"}</button>`).join("")}</div>` : ""}
+      ${(a.layouts || []).length > 1 ? `<div class="segmented" title="The platform changed its statement layout, and the lines of the two layouts are not the same lines. Each is shown on its own so every percentage is accurate.">${a.layouts.map((L) => `<button data-alayout="${esc(L.key)}" class="${a.layout === L.key ? "active" : ""}">${esc(L.name)} format · ${dayLabel(L.from)} – ${dayLabel(L.to)}</button>`).join("")}</div>` : ""}
       <div class="segmented">${[["net", "% of net sales"], ["gross", "% of gross sales"]].map(([v, l]) => `<button data-abasis="${v}" class="${payoutFilters.basis === v ? "active" : ""}">${l}</button>`).join("")}</div>
       <button class="btn light" id="aDetail">${payoutFilters.detail ? "Hide lines" : "Show all lines"}</button>
       <span class="muted">${plural(a.total.cycles, "payout")} · ${plural(a.columns.length, "outlet")} · ${inr.format(a.total.orders)} orders · all payouts matching the filters above</span></div>
@@ -1944,7 +1946,7 @@ function renderAnalytics(a) {
       <tbody><tr class="an-sec"><td class="an-label"><span class="an-chev"></span>Total orders</td>${cols.map((c) => `<td class="num ${c === a.total ? "an-total" : ""}">${inr.format(c.orders)}</td>`).join("")}</tr>
       ${rows}
       <tr class="an-sec an-net"><td class="an-label"><span class="an-chev"></span>Net payout</td>${cols.map((c) => `<td class="num ${c === a.total ? "an-total" : ""}">${cell(c, c.net_payout)}</td>`).join("")}</tr></tbody></table></div>
-    <p class="muted" style="margin:8px 0 0">Percentages are each line's share of ${payoutFilters.basis === "gross" ? "gross sales (net order value plus the discounts)" : "net sales (the statement's net order value)"}. Zomato and Swiggy statements are laid out differently, so each is shown on its own.</p>`;
+    <p class="muted" style="margin:8px 0 0">Percentages are each line's share of ${payoutFilters.basis === "gross" ? "gross sales (net order value plus the discounts)" : "net sales (the statement's net order value)"}. Zomato and Swiggy statements are laid out differently, so each is shown on its own${(a.layouts || []).length > 1 ? ", and so is each statement layout the platform has used in these dates (switch above)" : ""}.</p>`;
 }
 
 function renderStatementBlocks(groups) {
