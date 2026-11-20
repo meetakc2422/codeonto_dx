@@ -90,3 +90,36 @@ class EmptyAnswerTests(SimpleTestCase):
     def test_strict_raises_so_the_next_model_can_try(self):
         with self.assertRaises(graph.EmptyAnswer):
             graph.ask("hi", "t-3", None, "staff", "", llm=EmptyAnswerFake(), strict=True)
+
+
+from unittest import mock  # noqa: E402
+
+from django.contrib.auth import get_user_model  # noqa: E402
+from django.test import TestCase  # noqa: E402
+from rest_framework.test import APIClient  # noqa: E402
+
+from apps.outlets.models import Client, ClientUser  # noqa: E402
+
+
+@override_settings(ANTHROPIC_API_KEY="a", ASSISTANT_DATABASE_URL="postgresql://x/y", ASSISTANT_SCOPE_SECRET="s")
+class QueriesVisibilityTests(TestCase):
+    """The SQL behind an answer is shown to SocialSpork staff only, never to a customer."""
+
+    def _chat(self, user):
+        api = APIClient()
+        api.force_authenticate(user)
+        with mock.patch("apps.assistant.graph.ask", return_value=("The answer.", [{"sql": "SELECT 1"}])), \
+                mock.patch("apps.assistant.graph.make_llm", return_value=object()):
+            return api.post("/api/assistant/chat", {"message": "hi"}, format="json")
+
+    def test_customer_gets_the_answer_without_queries(self):
+        user = get_user_model().objects.create_user("cust", password="x")
+        ClientUser.objects.create(user=user, client=Client.objects.create(name="Acme"), role="admin")
+        res = self._chat(user)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(res.data["answer"], "The answer.")
+        self.assertEqual(res.data["queries"], [])
+
+    def test_staff_still_sees_the_queries(self):
+        res = self._chat(get_user_model().objects.create_user("boss", password="x", is_staff=True))
+        self.assertEqual(res.data["queries"], [{"sql": "SELECT 1"}])

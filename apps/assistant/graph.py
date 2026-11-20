@@ -120,7 +120,7 @@ def ask(message: str, thread_key: str, client_id, who: str, page: str, llm=None,
     try:
         out = graph.invoke({"messages": [("user", message)]}, config)
     except GraphRecursionError:
-        return "That needed more steps than I am allowed to take. Try a narrower question, for example one outlet or one week.", trace
+        return "That question is too broad for me to answer in one go. Try narrowing it, for example to one outlet or one week.", trace
     last = out["messages"][-1]
     text = last.content if isinstance(last.content, str) else "".join(
         b.get("text", "") for b in last.content if isinstance(b, dict) and b.get("type") == "text")
