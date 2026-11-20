@@ -52,7 +52,7 @@ export const authStorage = {
 export function errorText(e: any): string {
   const detail = e?.response?.data?.detail;
   if (typeof detail === 'string' && detail.trim()) return detail;
-  if (!e?.response) return "We couldn't reach SocialSpork. Check your internet connection and try again.";
+  if (!e?.response) return "We couldn't reach Compass. Check your internet connection and try again.";
   const status = e.response.status;
   if (status === 403) return "You don't have access to this.";
   if (status === 404) return "We couldn't find that.";

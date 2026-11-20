@@ -43,7 +43,7 @@ def _check_configured():
     missing = [n for n in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_OAUTH_REDIRECT_URI", "GOOGLE_TOKEN_KEY") if not getattr(settings, n, "")]
     if missing:
         logging.getLogger(__name__).error("Google connection is not set up, missing: %s", ", ".join(missing))
-        raise ValidationError("Connecting Google isn't available yet. Please contact SocialSpork.")
+        raise ValidationError("Connecting Google isn't available yet. Please contact Codeonto.")
 
 
 LOCAL_HOSTS = {"localhost", "127.0.0.1"}

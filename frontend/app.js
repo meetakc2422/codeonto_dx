@@ -103,7 +103,7 @@ async function api(path, params = {}, opts = {}) {
   Object.entries(params).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
   let res;
   try { res = await apiFetch(url, opts); }
-  catch (e) { console.error(e); throw userError("We couldn't reach SocialSpork. Check your internet connection and try again.", { status: 0 }); }
+  catch (e) { console.error(e); throw userError("We couldn't reach Compass. Check your internet connection and try again.", { status: 0 }); }
   if (res.status === 401 && path !== "/auth/me") { showLogin(); throw userError("Please log in"); }
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -812,7 +812,7 @@ async function renderModule(page, module) {
       <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none"><b style="font-size:20px">${fmt(cur, meta.unit)}</b><span class="muted" style="font-size:12px">${dayLabel}</span></div></div>`
       : `<div><div class="muted">${dayLabel}</div><b style="font-size:30px">${fmt(cur, meta.unit, false)}</b></div>`}
     <div style="flex:1;min-width:260px">
-      ${prev != null && cur != null ? bar("This day", cur, Math.max(cur, prev), "#408fca") + bar("Previous day", prev, Math.max(cur, prev), "#cbd5e1") : ""}
+      ${prev != null && cur != null ? bar("This day", cur, Math.max(cur, prev), "#d9480f") + bar("Previous day", prev, Math.max(cur, prev), "#cbd5e1") : ""}
       ${split.length > 1 ? `<div style="border-top:1px solid #eef1f5;margin:10px 0 2px"></div>` + split.map((x) => bar(x.name, x.v, Math.max(...split.map((y) => y.v)), PLATFORM_COLORS[x.code] || "#94a3b8")).join("") : ""}
     </div></div>`;
   page.innerHTML = `
@@ -3040,7 +3040,7 @@ async function renderInstagramCard(page, clientId) {
         <span class="status ${c.status === "connected" ? "replied" : "pending"}" title="${esc(c.error || "")}">${c.status === "connected" ? "connected" : "needs attention"}</span>
         ${canEdit ? `<button class="btn light" data-igsync="${c.id}">Sync now</button><button class="btn light" data-igoff="${c.id}">Disconnect</button>` : ""}</div>`).join("")}
     ${canEdit ? `<button class="btn blue" id="igConnect" ${info.configured ? "" : "disabled"}>${info.connections.length ? "Connect another account" : "Connect Instagram"}</button>
-      ${info.configured ? "" : `<p class="muted" style="margin:8px 0 0">Not set up yet: ask SocialSpork to add the Meta keys.</p>`}` : ""}
+      ${info.configured ? "" : `<p class="muted" style="margin:8px 0 0">Not set up yet: ask Codeonto to add the Meta keys.</p>`}` : ""}
     ${info.connections.length ? `<form id="igSearch" class="comp-search" style="margin-top:14px"><select name="type"><option value="hashtag">Hashtag</option><option value="username">Competitor username</option></select>
       <input name="q" placeholder="e.g. ramen, or a restaurant's Instagram name"><button class="btn blue">Search Instagram</button></form><div id="igResults"></div>` : ""}
     <div id="igFeed"></div>`;

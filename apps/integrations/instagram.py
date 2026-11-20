@@ -47,14 +47,14 @@ def configured() -> bool:
 def _check_configured():
     if not configured():
         logger.error("Instagram connection is not set up: META_APP_ID / META_APP_SECRET / GOOGLE_TOKEN_KEY missing")
-        raise ValidationError("Connecting Instagram isn't available yet. Please contact SocialSpork.")
+        raise ValidationError("Connecting Instagram isn't available yet. Please contact Codeonto.")
 
 
 def _redirect_uri(request) -> str:
     """Opened on localhost, the redirect comes back to this machine (add that address to the Meta app's valid OAuth redirect URIs)."""
     if request.get_host().split(":")[0] in LOCAL_HOSTS:
         return request.build_absolute_uri("/api/instagram/callback").replace("127.0.0.1", "localhost")
-    return "https://app.socialspork.com/api/instagram/callback"
+    return "https://compass.codeonto.com/api/instagram/callback"
 
 
 def _get(path: str, token: str, **params) -> dict:

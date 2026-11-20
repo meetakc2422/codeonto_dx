@@ -75,5 +75,5 @@ def chat(request):
         return Response({"detail": "The assistant hit a problem answering that. Please try again."}, status=502)
     log.duration_ms = int((time.time() - started) * 1000)
     log.save()
-    # the SQL behind an answer is for SocialSpork staff (to check the assistant); a customer sees only the answer
+    # the SQL behind an answer is for Codeonto staff (to check the assistant); a customer sees only the answer
     return Response({"answer": answer, "thread_id": thread_id, "queries": trace if access.is_staff(request.user) else []})

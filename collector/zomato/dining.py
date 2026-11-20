@@ -40,7 +40,7 @@ def _session() -> dict:
 
 
 def config(account: str) -> dict:
-    return require_env("SOCIALSPORK_DATABASE_URL")
+    return require_env("CODEONTO_DATABASE_URL")
 
 
 # ---- offers (JSON) ----------------------------------------------------------------------------------------------
@@ -139,7 +139,7 @@ def fetch_slots(headers: dict, res_id: str, date: str) -> list[dict]:
 
 
 def run_all(accounts: list[str], headless: bool = False, force: bool = False) -> bool:
-    require_env("SOCIALSPORK_DATABASE_URL")
+    require_env("CODEONTO_DATABASE_URL")
     headers = _session()
     only = {x for x in os.getenv("ONLY_RES_IDS", "").split(",") if x}
     with db.transaction() as cur:

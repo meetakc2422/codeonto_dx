@@ -72,9 +72,9 @@ class TurnTests(SimpleTestCase):
     @override_settings(ANTHROPIC_API_KEY="a")
     def test_a_turn_runs_and_the_system_prompt_has_the_pieces(self):
         fake = FakeModel()
-        answer, trace = graph.ask("hi", "t-1", None, "SocialSpork staff", "", llm=fake)
+        answer, trace = graph.ask("hi", "t-1", None, "Codeonto staff", "", llm=fake)
         self.assertEqual(answer, "Done.")
-        self.assertIn("SocialSpork staff", fake.system.content)
+        self.assertIn("Codeonto staff", fake.system.content)
 
 
 class EmptyAnswerFake(FakeModel):
@@ -103,7 +103,7 @@ from apps.outlets.models import Client, ClientUser  # noqa: E402
 
 @override_settings(ANTHROPIC_API_KEY="a", ASSISTANT_DATABASE_URL="postgresql://x/y", ASSISTANT_SCOPE_SECRET="s")
 class QueriesVisibilityTests(TestCase):
-    """The SQL behind an answer is shown to SocialSpork staff only, never to a customer."""
+    """The SQL behind an answer is shown to Codeonto staff only, never to a customer."""
 
     def _chat(self, user):
         api = APIClient()

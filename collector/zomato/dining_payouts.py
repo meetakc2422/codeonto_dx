@@ -45,7 +45,7 @@ HEADER_ROW = 7  # the column names sit on the 7th row of the sheet
 
 
 def config(account: str) -> dict:
-    return require_env("SOCIALSPORK_DATABASE_URL")
+    return require_env("CODEONTO_DATABASE_URL")
 
 
 # ---- reading the Excel ------------------------------------------------------------------------------------------
@@ -278,7 +278,7 @@ def windows(start: date, end: date) -> list[tuple[str, str]]:
 
 
 def run_all(accounts: list[str], headless: bool = False, force: bool = False) -> bool:
-    require_env("SOCIALSPORK_DATABASE_URL")
+    require_env("CODEONTO_DATABASE_URL")
     only = cfg.only_res_ids()
     if not only:
         log.error("zomato dining_payouts: pass --res-id with the dining outlets (this report is per outlet)")
