@@ -1676,14 +1676,28 @@ async function renderDiningPayouts(page) {
       <div class="card kpi"><span class="kpi-label">Zomato commission</span><div class="kpi-value">${rupees(s.commission)}</div><span class="muted">plus ${rupees(s.tax)} tax on commission</span></div>
       <div class="card kpi"><span class="kpi-label">Receivable from Zomato</span><div class="kpi-value">${rupees(s.net_receivable)}</div><span class="muted">${Object.entries(st).map(([k, v]) => `${esc(label[k] || k)} ${rupees(v.net)}`).join(" · ") || "no bills yet"}</span></div>
     </div>
+    ${Object.keys(st).length ? `<div class="card" style="margin-bottom:16px"><div class="card-head"><h3>By settlement status</h3><small class="muted">click a row to see its bills</small></div><table class="ov-table"><thead><tr><th>Status</th><th class="num">Bills</th><th class="num">Receivable</th></tr></thead><tbody>
+      ${Object.entries(st).map(([k, v]) => `<tr class="dp-row" data-status="${esc(k)}" style="cursor:pointer"><td><b>${esc(label[k] || k)}</b></td><td class="num">${inr.format(v.bills)}</td><td class="num">${rupees(v.net)}</td></tr>`).join("")}</tbody></table></div>` : ""}
     <div class="card" style="margin-bottom:16px"><div class="card-head"><h3>By outlet</h3></div>
       ${d.outlets.length ? `<table class="ov-table"><thead><tr><th>Outlet</th><th class="num">Bills</th><th class="num">Billed</th><th class="num">Commission</th><th class="num">Receivable</th><th class="num">Not yet paid</th></tr></thead><tbody>
       ${d.outlets.map((o) => `<tr><td><b>${esc(o.name)}</b><br><small class="muted">${esc(o.res_id)}</small></td><td class="num">${inr.format(o.bills)}</td><td class="num">${rupees(o.bill_amount)}</td><td class="num">${rupees(o.commission)}</td><td class="num">${rupees(o.net_receivable)}</td><td class="num">${rupees(o.unpaid)}</td></tr>`).join("")}</tbody></table>` : `<p class="muted">No dining outlets here.</p>`}</div>
-    ${d.settlements.length ? `<div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Settlements</h3><small class="muted">grouped by bank reference</small></div><table class="ov-table"><thead><tr><th>Reference (UTR)</th><th>Date</th><th class="num">Bills</th><th class="num">Amount</th></tr></thead><tbody>
-      ${d.settlements.map((x) => `<tr><td><code>${esc(x.utr)}</code></td><td>${x.date ? shortDate(x.date) : ""}</td><td class="num">${inr.format(x.bills)}</td><td class="num">${rupees(x.amount)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted" style="margin:0 0 16px">No settled bills in this report yet: everything is pending or carried forward.</p>`}
+    ${d.settlements.length ? `<div class="card" style="margin-bottom:16px"><div class="card-head"><h3>Settlements</h3><small class="muted">grouped by bank reference · click a row to see its bills</small></div><table class="ov-table"><thead><tr><th>Reference (UTR)</th><th>Date</th><th class="num">Bills</th><th class="num">Amount</th></tr></thead><tbody>
+      ${d.settlements.map((x) => `<tr class="dp-row" data-utr="${esc(x.utr)}" style="cursor:pointer"><td><code>${esc(x.utr)}</code></td><td>${x.date ? shortDate(x.date) : ""}</td><td class="num">${inr.format(x.bills)}</td><td class="num">${rupees(x.amount)}</td></tr>`).join("")}</tbody></table></div>` : `<p class="muted" style="margin:0 0 16px">No settled bills in this report yet: everything is pending or carried forward.</p>`}
     <div class="card"><div class="card-head"><h3>Latest bills</h3><small class="muted">newest 100</small></div><table class="ov-table"><thead><tr><th>When</th><th>Outlet</th><th>Type</th><th class="num">Bill</th><th class="num">Commission</th><th class="num">Receivable</th><th>Status</th></tr></thead><tbody>
       ${d.recent.map((t) => `<tr><td class="muted">${t.at ? shortDate(t.at) : ""}</td><td>${esc(t.outlet)}</td><td><small>${esc(t.discount_type || t.type || "")}</small></td><td class="num">${rupees(t.bill)}</td><td class="num">${rupees(t.commission)}</td><td class="num">${rupees(t.net)}</td><td><small>${esc(label[t.status] || t.status || "")}</small></td></tr>`).join("")}</tbody></table></div>`;
   bindReconToggle(page);
+  page.onclick = async (e) => {  // click a settlement or a status to open the bills behind it (assigned, so renders never stack handlers)
+    const row = e.target.closest(".dp-row"); if (!row) return;
+    const open = row.nextElementSibling;
+    if (open?.classList.contains("dp-open")) { open.remove(); return; }
+    const cell = document.createElement("tr"); cell.className = "dp-open";
+    cell.innerHTML = `<td colspan="9"><small class="muted">Loading bills…</small></td>`; row.after(cell);
+    try {
+      const r = await api(`/brands/${state.brandId}/dining/payouts`, { ...filterParams(), ...(row.dataset.utr ? { utr: row.dataset.utr } : { status: row.dataset.status }) });
+      cell.firstElementChild.innerHTML = `<div style="overflow:auto;max-height:420px"><table class="ov-table"><thead><tr><th>Bill</th><th>When</th><th>Outlet</th><th>Offer</th><th class="num">Bill</th><th class="num">Commission</th><th class="num">Tax</th><th class="num">Adj.</th><th class="num">Receivable</th></tr></thead><tbody>
+        ${r.bills.map((t) => `<tr><td><code>${esc(t.id)}</code></td><td class="muted">${t.at ? shortDate(t.at) : ""}</td><td>${esc(t.outlet)}</td><td><small>${esc(t.discount_type || t.type || "")}</small></td><td class="num">${rupees(t.bill)}</td><td class="num">${rupees(t.commission)}</td><td class="num">${rupees(t.tax)}</td><td class="num">${t.adjustment ? rupees(t.adjustment) : "—"}</td><td class="num">${rupees(t.net)}</td></tr>`).join("")}</tbody></table></div>${r.count > r.bills.length ? `<small class="muted">showing ${r.bills.length} of ${inr.format(r.count)}</small>` : ""}`;
+    } catch (err) { cell.firstElementChild.innerHTML = `<small class="muted">${esc(userMessage(err))}</small>`; }
+  };
 }
 
 async function renderReconciliation(page) {
