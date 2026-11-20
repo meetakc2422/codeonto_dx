@@ -539,7 +539,7 @@ async function addDiningToggle(page) {
   const mode = () => state.perfView || "delivery";
   const paint = () => {
     bar.innerHTML = `<button data-v="delivery" class="${mode() === "delivery" ? "active" : ""}">Delivery</button><button data-v="dining" class="${mode() === "dining" ? "active" : ""}">Dining</button>`;
-    page.querySelectorAll(":scope > :not(.perf-dining-bar):not(#diningView)").forEach((el) => { el.hidden = mode() === "dining"; });
+    page.querySelectorAll(":scope > :not(.perf-dining-bar):not(#diningView)").forEach((el) => { el.style.setProperty("display", mode() === "dining" ? "none" : "", mode() === "dining" ? "important" : ""); });
     page.querySelector("#diningView")?.remove();
     if (mode() === "dining") { const box = document.createElement("div"); box.id = "diningView"; page.appendChild(box); renderDiningView(box, d); }
   };
