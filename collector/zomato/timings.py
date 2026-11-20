@@ -78,7 +78,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         cur.execute("""SELECT bo.id AS outlet_id, bo.zomato_res_id AS res_id, z.account_id, b.name AS brand, bo.outlet_name
                        FROM brand_outlets bo JOIN zomato_outlets z ON z.res_id = bo.zomato_res_id
                        JOIN brands b ON b.id = bo.brand_id WHERE bo.is_active AND z.is_active""")
-        stores = cur.fetchall()
+        stores = cfg.keep_stores(cur.fetchall())  # --res-id limits the run
     by_id = {a["id"]: a for a in accs.values()}
     creds = {a["id"]: _cookies(db.load_credentials(a)) for a in accs.values()}
     default = next(iter(by_id))
