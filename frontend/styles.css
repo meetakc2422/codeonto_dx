@@ -1284,3 +1284,20 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .rp-data.warn { background: #fff4e0; color: #8a5a00; }
 .rp-data.warn summary { cursor: pointer; font-weight: 600; }
 .rp-data.warn table { margin-top: 10px; background: #fff; }
+
+/* Export reports page */
+.ex { max-width: 860px; padding: 20px 22px; }
+.ex h3 { margin: 0; font-size: 18px; }
+.ex-label { font-weight: 600; font-size: 13px; margin: 14px 0 8px; color: var(--ink, #0b1229); }
+.ex-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.ex-dates { display: flex; gap: 12px; margin-left: auto; font-size: 13px; }
+.ex-dates input { margin-left: 6px; padding: 6px 8px; border: 1px solid var(--border); border-radius: 8px; font: inherit; }
+.chip-btn { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.chip-btn.on { background: #0b1229; color: #fff; border-color: #0b1229; }
+.link-btn { border: 0; background: none; color: #408fca; cursor: pointer; font: inherit; padding: 0; }
+.ex-mods { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 8px; }
+.ex-mod { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
+.ex-mod input { margin-top: 3px; }
+.ex-mod small { display: block; font-size: 12px; line-height: 1.35; }
+.ex-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+.ex-actions button:disabled { opacity: .5; cursor: not-allowed; }

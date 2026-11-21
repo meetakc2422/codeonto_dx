@@ -11,7 +11,7 @@ import io
 from collections import defaultdict
 from datetime import date, timedelta
 
-from django.db.models import Count, Sum
+from django.db.models import Count, Q, Sum
 from django.http import HttpResponse
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
@@ -27,7 +27,7 @@ from .api import _aggregate, _filters, _range
 
 # (section key, title, KPI codes in column order)
 SECTIONS = [
-    ("overall", "Sales and operations", ["net_revenue", "gross_revenue", "delivered_orders", "avg_order_value", "cancellation_rate", "cancellation_loss",
+    ("overall", "Sales and operations", ["sales", "delivered_orders", "avg_order_value", "cancellation_rate", "cancellation_loss",
                                           "delayed_orders_pct", "avg_prep_time", "online_pct", "mfr_accuracy"]),
     ("growth", "Customer funnel", ["impressions", "menu_views", "add_to_cart", "funnel_orders", "menu_to_order_pct"]),
     ("ads", "Ads and discounts", ["ad_spend", "ad_sales", "ad_roi", "ad_orders", "discount_given", "discount_pct_revenue"]),
@@ -36,6 +36,32 @@ SECTIONS = [
 ISSUES = [("packaging", "Packaging"), ("quality", "Quality"), ("wrong_items", "Wrong item"), ("missing_items", "Missing item"),
           ("quantity", "Quantity"), ("other", "Other")]
 MONTHS_SHOWN = 6
+# what a person can pick on the Export reports page (key, name, one-line description)
+MODULES = [
+    ("overall", "Sales and operations", "Sales, orders, average order value, cancellations, delays, prep time, online time"),
+    ("growth", "Customer funnel", "Impressions, menu views, add to cart, orders, conversion"),
+    ("ads", "Ads and discounts", "Ad spend, ad sales, ad return, discounts given"),
+    ("reputation", "Ratings", "Platform rating, number of ratings, reviews, menu score"),
+    ("complaints", "Complaints", "Complaints by type, per outlet and per 100 orders"),
+    ("payouts", "Payouts", "Net order value, GST, fees, deductions and payout from the order statements"),
+    ("months", "Month by month", "Sales, payout, ads and discounts for the last 6 months"),
+]
+# Each app reports its own sales figure under its own name: Zomato's "Sales" is saved as gross_revenue, Swiggy's "Net Sales" as net_revenue.
+# The report's Sales adds each platform's own figure, so Swiggy is counted too.
+SALES_SOURCES = (("zomato", "gross_revenue"), ("swiggy", "net_revenue"))
+
+
+class _Sales:
+    code, name, unit, higher_is_better = "sales", "Sales", "currency", True
+
+
+def _sales(outlet_ids, platform, s, e) -> dict[int, float]:
+    q = Q(pk__in=[])
+    for plat, code in SALES_SOURCES:
+        if not platform or platform == plat:
+            q |= Q(platform_id=plat, kpi__code=code)
+    rows = MetricDaily.objects.filter(q, outlet_id__in=list(outlet_ids), metric_date__range=(s, e)).values("outlet_id").annotate(v=Sum("value"))
+    return {r["outlet_id"]: float(r["v"]) for r in rows if r["v"] is not None}
 
 
 def _pct_change(cur, prev):
@@ -104,8 +130,15 @@ def build(request, brand_id: int) -> dict:
         outlets = {k: v for k, v in outlets.items() if k in set(f["outlet_id"])}
     names = {k: (f"{o.outlet_name} · {o.area}" if o.area and o.area.lower() not in o.outlet_name.lower() else o.outlet_name) for k, o in outlets.items()}
 
+    cov = coverage(outlets, names, f["platform"], start, end)
+    period = {"start": start.isoformat(), "end": end.isoformat(), "days": span.days, "prev_start": p_start.isoformat(), "prev_end": p_end.isoformat()}
+    if request.query_params.get("check"):  # the Export page asks only for the data check while a person picks dates
+        return {"brand": brand.name, "period": period, "outlets": len(outlets), "coverage": cov, "modules": [{"key": k, "name": n, "about": a} for k, n, a in MODULES]}
+    asked = {m for m in (request.query_params.get("modules") or "").split(",") if m}
+    wanted = (asked & {k for k, _, _ in MODULES}) or {k for k, _, _ in MODULES}
     codes = [c for _, _, cs in SECTIONS for c in cs]
     meta = {k.code: k for k in Kpi.objects.filter(code__in=codes)}
+    meta["sales"] = _Sales
 
     def pull(s, e, by_outlet):
         rows = _aggregate(False, by_outlet, start=s, end=e, **base)
@@ -119,12 +152,19 @@ def build(request, brand_id: int) -> dict:
 
     cur_total, prev_total = pull(start, end, False), pull(p_start, p_end, False)
     cur_out, prev_out = pull(start, end, True), pull(p_start, p_end, True)
+    for src, out, tot in ((_sales(outlets, f["platform"], start, end), cur_out, cur_total), (_sales(outlets, f["platform"], p_start, p_end), prev_out, prev_total)):
+        for oid, v in src.items():
+            out[oid]["sales"] = v
+        if src:
+            tot["sales"] = sum(src.values())
 
     def cell(cur, prev):
         return {"value": cur, "prev": prev, "change": _pct_change(cur, prev)}
 
     sections = []
     for key, title, cs in SECTIONS:
+        if key not in wanted:
+            continue
         cs = [c for c in cs if c in meta]
         cols = [{"code": c, "name": "Gross revenue (Zomato only)" if c == "gross_revenue" else meta[c].name, "unit": meta[c].unit, "higher_is_better": meta[c].higher_is_better} for c in cs]
         rows = [{"outlet_id": oid, "name": names[oid], **{c: cell(cur_out.get(oid, {}).get(c), prev_out.get(oid, {}).get(c)) for c in cs}}
@@ -135,7 +175,7 @@ def build(request, brand_id: int) -> dict:
             sections.append({"key": key, "title": title, "columns": cols, "rows": rows, "total": total})
 
     # complaints by type, per outlet, in the period
-    cq = Complaint.objects.filter(outlet_id__in=list(outlets), raised_at__date__range=(start, end))
+    cq = Complaint.objects.filter(outlet_id__in=list(outlets), raised_at__date__range=(start, end)) if "complaints" in wanted else Complaint.objects.none()
     if f["platform"]:
         cq = cq.filter(platform_id=f["platform"])
     by_out = defaultdict(lambda: defaultdict(int))
@@ -149,7 +189,7 @@ def build(request, brand_id: int) -> dict:
         if total_c or orders:
             c_rows.append({"outlet_id": oid, "name": names[oid], "total": total_c, "per_100_orders": round(total_c / orders * 100, 1) if orders else None,
                            **{k: d.get(k, 0) for k, _ in ISSUES}})
-    if c_rows:
+    if c_rows and "complaints" in wanted:
         tot = {"total": sum(r["total"] for r in c_rows), **{k: sum(r[k] for r in c_rows) for k, _ in ISSUES}}
         all_orders = cur_total.get("delivered_orders") or 0
         tot["per_100_orders"] = round(tot["total"] / all_orders * 100, 1) if all_orders else None
@@ -158,7 +198,7 @@ def build(request, brand_id: int) -> dict:
                                      *[{"code": k, "name": n, "unit": "count"} for k, n in ISSUES]], "rows": c_rows, "total": tot})
 
     # payouts: what the platforms' own order statements add up to in the period
-    pq = PayoutOrder.objects.filter(cycle__outlet_id__in=list(outlets), order_date__date__range=(start, end))
+    pq = PayoutOrder.objects.filter(cycle__outlet_id__in=list(outlets), order_date__date__range=(start, end)) if "payouts" in wanted else PayoutOrder.objects.none()
     if f["platform"]:
         pq = pq.filter(cycle__platform_id=f["platform"])
     agg = {r["cycle__outlet_id"]: r for r in pq.values("cycle__outlet_id").annotate(
@@ -179,14 +219,14 @@ def build(request, brand_id: int) -> dict:
 
     # month by month (calendar months ending with the month of the end date)
     months = []
-    mp = {r["m"]: r for r in PayoutOrder.objects.filter(cycle__outlet_id__in=list(outlets), order_date__date__gte=_month_starts(end, MONTHS_SHOWN)[0],
-                                                          order_date__date__lte=end)
+    mp = {r["m"]: r for r in (PayoutOrder.objects.filter(cycle__outlet_id__in=list(outlets), order_date__date__gte=_month_starts(end, MONTHS_SHOWN)[0],
+                                                          order_date__date__lte=end) if "months" in wanted else PayoutOrder.objects.none())
           .extra(select={"m": "to_char(order_date, 'YYYY-MM')"}).values("m").annotate(pay=Sum("payout"))}
-    for ms in _month_starts(end, MONTHS_SHOWN):
+    for ms in (_month_starts(end, MONTHS_SHOWN) if "months" in wanted else []):
         me = min(date(ms.year, ms.month, calendar.monthrange(ms.year, ms.month)[1]), end)
         t = pull(ms, me, False)
         key = f"{ms.year}-{ms.month:02d}"
-        sales, ads, disc = t.get("net_revenue"), t.get("ad_spend"), t.get("discount_given")
+        sales, ads, disc = sum(_sales(outlets, f["platform"], ms, me).values()) or None, t.get("ad_spend"), t.get("discount_given")
         months.append({"month": key, "sales": sales, "payout": float(mp[key]["pay"]) if key in mp and mp[key]["pay"] is not None else None,
                        "ads_pct": round(ads / sales * 100, 1) if sales and ads is not None else None,
                        "discount_pct": round(disc / sales * 100, 1) if sales and disc is not None else None})
@@ -194,7 +234,7 @@ def build(request, brand_id: int) -> dict:
     # what changed most, in plain words (only changes of 10% or more, and only where there was something before)
     notes = []
     for key, title, cs in SECTIONS:
-        for c in cs:
+        for c in (cs if key in wanted else []):
             if c not in meta:
                 continue
             ch = _pct_change(cur_total.get(c), prev_total.get(c))
@@ -203,9 +243,7 @@ def build(request, brand_id: int) -> dict:
                 notes.append({"code": c, "name": meta[c].name, "change": ch, "good": good, "value": cur_total.get(c), "prev": prev_total.get(c), "unit": meta[c].unit})
     notes.sort(key=lambda n: -abs(n["change"]))
 
-    return {"brand": brand.name, "period": {"start": start.isoformat(), "end": end.isoformat(), "days": span.days,
-                                            "prev_start": p_start.isoformat(), "prev_end": p_end.isoformat()},
-            "outlets": len(outlets), "coverage": coverage(outlets, names, f["platform"], start, end), "highlights": notes[:6], "sections": sections, "months": months}
+    return {"brand": brand.name, "period": period, "outlets": len(outlets), "coverage": cov, "highlights": notes[:6], "sections": sections, "months": months}
 
 
 @api_view(["GET"])
@@ -295,7 +333,7 @@ def brand_report_xlsx(request, brand_id):
         for col, w in zip("ABCD", (38, 12, 14, 70)):
             sh.column_dimensions[col].width = w
     sh = wb.create_sheet("Months")
-    sh.append(["Month", "Net sales", "Payout", "Ads % of net sales", "Discount % of net sales"])
+    sh.append(["Month", "Sales", "Payout", "Ads % of sales", "Discount % of sales"])
     for cell_ in sh[1]:
         cell_.fill, cell_.font = head_fill, head_font
     for m in r["months"]:
@@ -306,4 +344,18 @@ def brand_report_xlsx(request, brand_id):
     wb.save(buf)
     resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     resp["Content-Disposition"] = f'attachment; filename="report_{p["start"]}_to_{p["end"]}.xlsx"'
+    return resp
+
+
+@api_view(["GET"])
+def brand_report_pdf(request, brand_id):
+    from .report_pdf import build_pdf
+
+    try:
+        data = build(request, brand_id)
+    except ValueError:
+        return Response({"detail": "Dates must look like 2026-11-20"}, status=400)
+    p = data["period"]
+    resp = HttpResponse(build_pdf(data), content_type="application/pdf")
+    resp["Content-Disposition"] = f'attachment; filename="report_{p["start"]}_to_{p["end"]}.pdf"'
     return resp

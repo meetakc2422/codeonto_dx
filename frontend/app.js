@@ -259,7 +259,7 @@ function renderSidebar() {
     const perf = industry.filter((m) => PERF_CODES.includes(m.code));
     const perfLink = perf.length ? `<a class="nav-item ${PERF_CODES.includes(route) ? "active" : ""}" href="#/${perf[0].code}" title="Performance">
       ${icon("marketplace_sales")}<span>Performance</span>${perf.every((m) => m.locked) ? `<em class="soon locked-badge">${icon("lock")}Upgrade</em>` : ""}</a>` : "";
-    const diningLink = (state.hasDining ? navLink("dining", "Slots & offers") : "") + navLink("report", "Report");
+    const diningLink = (state.hasDining ? navLink("dining", "Slots & offers") : "") + navLink("report", "Export reports");
     const aggregator = [...industry.filter((m) => m.code === "reconciliation").map(link), perfLink, diningLink,
       ...industry.filter((m) => m.code !== "reconciliation" && !PERF_CODES.includes(m.code)).map(link)].join("");
     html += `<div class="nav-group">Reputation</div>${common.map(link).join("")}` +
@@ -495,7 +495,7 @@ async function render() {
 
   const isSetup = route === "setup";
   $("#filters").style.display = isSetup ? "none" : "";
-  $("#pageTitle").textContent = isSetup ? "Brands & Outlets" : PERF_CODES.includes(route) ? "Performance" : route === "dining" ? "Slots & offers" : route === "report" ? "Report" : moduleName(route);
+  $("#pageTitle").textContent = isSetup ? "Brands & Outlets" : PERF_CODES.includes(route) ? "Performance" : route === "dining" ? "Slots & offers" : route === "report" ? "Export reports" : moduleName(route);
   $("#pageSub").textContent = isSetup
     ? "Name your brand and map each outlet to its Google, Zomato and Swiggy listing"
     : `${state.config.brand.name} · ${outletsLabel().replace(/ \(\d+\)$/, "")} · ${periodLabel()}`;
@@ -537,65 +537,91 @@ function addPerfTabs(page, route) {
   page.querySelectorAll(".perf-tabs [data-go]").forEach((b) => { b.onclick = () => { location.hash = `#/${b.dataset.go}`; }; });
 }
 
-// ---------- Report: the numbers an owner wants for any date range, per outlet and in total, with a download of the same data ----------
+// ---------- Export reports: pick the modules and the dates, check the data, download Excel or PDF ----------
+const expState = { start: "", end: "", mods: null, preset: "" };
+
 async function renderReport(page) {
-  const d = await api(`/brands/${state.brandId}/report`, filterParams());
-  if (!d.sections.length) { page.innerHTML = `<div class="card empty-state"><h3>No data for these dates</h3><p class="muted">Pick a longer period, or check that the outlets are connected.</p></div>`; return; }
-  const p = d.period, day = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-  const delta = (c, hib) => c == null ? "" : `<small class="rp-d ${Math.abs(c) < 0.05 ? "flat" : (c >= 0) === hib ? "up" : "down"}">${c >= 0 ? "▲" : "▼"} ${Math.abs(c).toFixed(1)}%</small>`;
-  const cell = (col, v) => v == null ? `<span class="muted">—</span>`
-    : typeof v === "object" ? (v.value == null ? `<span class="muted">—</span>` : `<b>${fmt(v.value, col.unit, false)}</b>${delta(v.change, col.higher_is_better !== false)}`)
-    : `<b>${fmt(v, col.unit, false)}</b>`;
-  const sec = (k) => d.sections.find((x) => x.key === k);
-  const tile = (title, secKey, code) => {
-    const s = sec(secKey), v = s?.total?.[code], c = s?.columns.find((x) => x.code === code);
-    return v ? `<div class="card kpi"><div class="kpi-top"><span class="kpi-label">${esc(title)}</span></div><div class="kpi-value">${fmt(v.value, c.unit)}</div>
-      <div class="kpi-foot">${changeChip({ change_pct: v.change, higher_is_better: c.higher_is_better })}<span>vs previous ${p.days === 1 ? "day" : p.days + " days"}</span></div></div>` : "";
+  const yest = new Date(); yest.setDate(yest.getDate() - 1);
+  if (!expState.start) { const r = range(); expState.start = r.start; expState.end = r.end; }
+  const meta = await api(`/brands/${state.brandId}/report`, { ...exportFilters(), check: 1 });
+  if (!expState.mods) expState.mods = new Set(meta.modules.map((m) => m.key));
+  const presets = [["7", "Last 7 days"], ["30", "Last 30 days"], ["month", "This month"], ["last", "Last month"]];
+  const platName = state.platform ? platformName() : "All platforms";
+  page.innerHTML = `<div class="card ex">
+    <h3>Export a report</h3>
+    <p class="muted" style="margin:2px 0 14px">Pick the dates and what to include, then download it as Excel or PDF. The same numbers go into both.</p>
+    <div class="ex-label">Dates</div>
+    <div class="ex-row">${presets.map(([k, t]) => `<button type="button" class="chip-btn" data-preset="${k}">${t}</button>`).join("")}
+      <span class="ex-dates"><label>From <input type="date" id="exStart" max="${isoDate(new Date())}"></label><label>To <input type="date" id="exEnd" max="${isoDate(new Date())}"></label></span></div>
+    <div class="ex-label">What to include <button type="button" class="link-btn" id="exAll">all</button> · <button type="button" class="link-btn" id="exNone">none</button></div>
+    <div class="ex-mods">${meta.modules.map((m) => `<label class="ex-mod"><input type="checkbox" data-mod="${m.key}" ${expState.mods.has(m.key) ? "checked" : ""}><span><b>${esc(m.name)}</b><small class="muted">${esc(m.about)}</small></span></label>`).join("")}</div>
+    <p class="muted" style="font-size:12.5px;margin:12px 0 10px">${esc(outletsLabel())} · ${esc(platName)}. Change these with the filters at the top of the page.</p>
+    <div id="exCheck" class="rp-data">Checking the data…</div>
+    <div class="ex-actions"><button class="btn light" id="exPdf">Download PDF</button><button class="btn blue" id="exXlsx">Download Excel</button></div></div>`;
+  const $s = $("#exStart"), $e = $("#exEnd");
+  $s.value = expState.start; $e.value = expState.end;
+  let cov = null, timer = null;
+  const nm = (g) => `${g.name} (${g.platform === "swiggy" ? "Swiggy" : "Zomato"})`;
+  const dayLbl = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  const paint = () => {
+    page.querySelectorAll("[data-preset]").forEach((b) => b.classList.toggle("on", b.dataset.preset === expState.preset));
+    const ok = expState.start && expState.end && expState.end >= expState.start && expState.mods.size > 0;
+    $("#exPdf").disabled = $("#exXlsx").disabled = !ok;
   };
-  const notes = d.highlights.map((n) => `<span class="rp-note ${n.good ? "up" : "down"}">${n.change >= 0 ? "▲" : "▼"} ${esc(n.name)} ${Math.abs(n.change).toFixed(0)}%
-      <small>${fmt(n.prev, n.unit)} → ${fmt(n.value, n.unit)}</small></span>`).join("");
-  const table = (s) => `<div class="rp-scroll"><table class="tbl rp-tbl"><thead><tr><th>Outlet</th>${s.columns.map((c) => `<th>${esc(c.name)}</th>`).join("")}</tr></thead><tbody>
-      ${s.rows.map((r) => `<tr><td>${esc(r.name)}</td>${s.columns.map((c) => `<td>${cell(c, r[c.code])}</td>`).join("")}</tr>`).join("")}
-      ${s.rows.length > 1 ? `<tr class="rp-total"><td>Total</td>${s.columns.map((c) => `<td>${cell(c, s.total[c.code])}</td>`).join("")}</tr>` : ""}</tbody></table></div>`;
-  const months = d.months.some((m) => m.sales != null) ? `<details class="card rp-sec" open><summary><h3>Month by month</h3><small class="muted">net sales, payout, ads and discounts</small></summary>
-      <div style="height:230px"><canvas id="rpMonths"></canvas></div>
-      <div class="rp-scroll"><table class="tbl rp-tbl"><thead><tr><th>Month</th><th>Ads % of net sales</th><th>Discount % of net sales</th></tr></thead><tbody>
-      ${d.months.map((m) => `<tr><td>${esc(m.month)}</td><td>${m.ads_pct == null ? "—" : m.ads_pct + "%"}</td><td>${m.discount_pct == null ? "—" : m.discount_pct + "%"}</td></tr>`).join("")}</tbody></table></div></details>` : "";
-  const cov = d.coverage, nm = (g) => `${g.name} (${g.platform === "swiggy" ? "Swiggy" : "Zomato"})`;
-  const coverage = !cov.days ? `<div class="rp-data">${esc(cov.note || "")}</div>`
-    : cov.complete ? `<div class="rp-data ok">✓ Sales data is complete for all ${cov.days} days (${day(cov.from)} – ${day(cov.to)}). Today is left out, its numbers are still filling in.</div>`
-    : `<details class="rp-data warn"><summary>⚠ Some days have no sales data: ${cov.gaps.length} outlet${cov.gaps.length === 1 ? "" : "s"}/platform${cov.gaps.length === 1 ? "" : "s"} with gaps in ${day(cov.from)} – ${day(cov.to)}. Totals leave these days out.</summary>
-        <table class="tbl"><thead><tr><th>Outlet</th><th>Days missing</th><th>Which days</th></tr></thead><tbody>
-        ${cov.gaps.slice(0, 30).map((g) => `<tr><td>${esc(nm(g))}</td><td>${g.missing_days}${g.no_data ? " (all)" : ""}</td><td>${esc(g.ranges.join(", "))}</td></tr>`).join("")}
-        </tbody></table>${cov.gaps.length > 30 ? `<p class="muted">…and ${cov.gaps.length - 30} more, all listed in the Excel file.</p>` : ""}</details>`;
-  page.innerHTML = `<div class="rp-head"><div><b>${day(p.start)} – ${day(p.end)}</b> <span class="muted">· ${d.outlets} outlet${d.outlets === 1 ? "" : "s"} · compared with ${day(p.prev_start)} – ${day(p.prev_end)}</span></div>
-      <button class="btn blue" id="rpExport">Download Excel</button></div>
-    ${coverage}
-    ${notes ? `<div class="rp-notes">${notes}</div>` : ""}
-    <div class="grid kpis">${tile("Net sales", "overall", "net_revenue")}${tile("Orders", "overall", "delivered_orders")}${tile("Average order value", "overall", "avg_order_value")}${tile("Rating", "reputation", "listing_rating")}</div>
-    ${d.sections.map((s, i) => `<details class="card rp-sec" ${i === 0 ? "open" : ""}><summary><h3>${esc(s.title)}</h3><small class="muted">${s.rows.length} outlet${s.rows.length === 1 ? "" : "s"}</small></summary>${table(s)}</details>`).join("")}
-    ${months}`;
-  $("#rpExport").onclick = async (e) => {
+  const check = async () => {
+    paint();
+    const box = $("#exCheck");
+    if (!expState.start || !expState.end || expState.end < expState.start) { box.className = "rp-data warn"; box.textContent = "Pick a start date that is on or before the end date."; cov = null; return; }
+    box.className = "rp-data"; box.textContent = "Checking the data…";
+    try {
+      const d = await api(`/brands/${state.brandId}/report`, { ...exportFilters(), check: 1 });
+      cov = d.coverage;
+      if (!cov.days) { box.className = "rp-data"; box.textContent = cov.note || ""; return; }
+      if (cov.complete) { box.className = "rp-data ok"; box.textContent = `✓ Sales data is complete for all ${cov.days} days (${dayLbl(cov.from)} – ${dayLbl(cov.to)}). Today is left out, its numbers are still filling in.`; return; }
+      box.className = "rp-data warn";
+      box.innerHTML = `<details><summary>⚠ ${cov.gaps.length} outlet${cov.gaps.length === 1 ? "" : "s"}/platform${cov.gaps.length === 1 ? "" : "s"} have days with no sales data in ${dayLbl(cov.from)} – ${dayLbl(cov.to)}. Totals leave these days out.</summary>
+        <table class="tbl"><thead><tr><th>Outlet</th><th>Days missing</th><th>Which days</th></tr></thead><tbody>${cov.gaps.slice(0, 30).map((g) => `<tr><td>${esc(nm(g))}</td><td>${g.missing_days}${g.no_data ? " (all)" : ""}</td><td>${esc(g.ranges.join(", "))}</td></tr>`).join("")}</tbody></table>
+        ${cov.gaps.length > 30 ? `<p class="muted">…and ${cov.gaps.length - 30} more, all listed in the file.</p>` : ""}</details>`;
+    } catch (err) { cov = null; box.className = "rp-data warn"; box.textContent = userMessage(err); }
+  };
+  const later = () => { clearTimeout(timer); timer = setTimeout(check, 350); };
+  const setDates = (a, b, preset = "") => { expState.start = a; expState.end = b; expState.preset = preset; $s.value = a; $e.value = b; later(); paint(); };
+  page.querySelectorAll("[data-preset]").forEach((b) => b.onclick = () => {
+    const end = new Date(yest), k = b.dataset.preset;
+    if (k === "7" || k === "30") { const st = new Date(end); st.setDate(end.getDate() - (Number(k) - 1)); setDates(isoDate(st), isoDate(end), k); }
+    else if (k === "month") setDates(isoDate(new Date(end.getFullYear(), end.getMonth(), 1)), isoDate(end), k);
+    else setDates(isoDate(new Date(end.getFullYear(), end.getMonth() - 1, 1)), isoDate(new Date(end.getFullYear(), end.getMonth(), 0)), k);
+  });
+  $s.onchange = () => setDates($s.value, expState.end);
+  $e.onchange = () => setDates(expState.start, $e.value);
+  page.querySelectorAll("[data-mod]").forEach((c) => c.onchange = () => { c.checked ? expState.mods.add(c.dataset.mod) : expState.mods.delete(c.dataset.mod); paint(); });
+  $("#exAll").onclick = () => { page.querySelectorAll("[data-mod]").forEach((c) => { c.checked = true; expState.mods.add(c.dataset.mod); }); paint(); };
+  $("#exNone").onclick = () => { page.querySelectorAll("[data-mod]").forEach((c) => { c.checked = false; }); expState.mods.clear(); paint(); };
+  const download = (kind) => async (e) => {
     const btn = e.currentTarget, label = btn.textContent;
-    if (!cov.complete && cov.days) {  // tell them before the file is made, not after
+    if (cov && !cov.complete && cov.days) {  // tell them before the file is made, not after
       const lines = cov.gaps.slice(0, 6).map((g) => `• ${nm(g)}: ${g.no_data ? "no data at all" : g.ranges.join(", ")}`).join("\n");
-      if (!confirm(`Some days have no sales data:\n\n${lines}${cov.gaps.length > 6 ? `\n…and ${cov.gaps.length - 6} more` : ""}\n\nThe file leaves these days out and lists them on a "Data gaps" sheet. Download it anyway?`)) return;
+      if (!confirm(`Some days have no sales data:\n\n${lines}${cov.gaps.length > 6 ? `\n…and ${cov.gaps.length - 6} more` : ""}\n\nThe file leaves these days out and lists them ${kind === "pdf" ? "on its last page" : 'on a "Data gaps" sheet'}. Download it anyway?`)) return;
     }
     btn.disabled = true; btn.textContent = "Preparing…";
     try {
-      const url = new URL(`${API}/brands/${state.brandId}/report/xlsx`, location.origin);
-      Object.entries(filterParams()).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
+      const url = new URL(`${API}/brands/${state.brandId}/report/${kind}`, location.origin);
+      Object.entries(exportFilters()).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
       const res = await apiFetch(url);
       if (!res.ok) throw userError("The file couldn't be made right now. Please try again in a moment.");
       const a = document.createElement("a");
-      a.href = URL.createObjectURL(await res.blob()); a.download = `report_${p.start}_to_${p.end}.xlsx`; a.click(); URL.revokeObjectURL(a.href);
+      a.href = URL.createObjectURL(await res.blob()); a.download = `report_${expState.start}_to_${expState.end}.${kind === "pdf" ? "pdf" : "xlsx"}`; a.click(); URL.revokeObjectURL(a.href);
     } catch (err) { toast(userMessage(err)); }
-    btn.disabled = false; btn.textContent = label;
+    btn.disabled = false; btn.textContent = label; paint();
   };
-  const cv = $("#rpMonths");
-  if (cv) chart(cv, { type: "bar", data: { labels: d.months.map((m) => m.month), datasets: [
-      { label: "Net sales", data: d.months.map((m) => m.sales), backgroundColor: "#408fca" }, { label: "Payout", data: d.months.map((m) => m.payout), backgroundColor: "#9aa8e8" }] },
-    options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { callback: (v) => compactINR(v) } } } } });
+  $("#exXlsx").onclick = download("xlsx");
+  $("#exPdf").onclick = download("pdf");
+  check();
+}
+
+// the filters an export uses: the page's own dates and modules, plus the outlet and platform picked at the top
+function exportFilters() {
+  return { start: expState.start, end: expState.end, outlet_id: state.locationId, platform: state.platform, modules: [...(expState.mods || [])].join(",") };
 }
 
 // Sidebar page "Slots & offers": dining offers and bookable slots, for brands that have a dining outlet.
