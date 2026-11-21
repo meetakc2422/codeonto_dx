@@ -501,7 +501,7 @@ async function render() {
     : `${state.config.brand.name} · ${outletsLabel().replace(/ \(\d+\)$/, "")} · ${periodLabel()}`;
   const lockedModule = state.config.modules.find((m) => m.code === route && m.locked);
   if (lockedModule) return renderLocked(page, lockedModule);
-  page.classList.toggle("ov-glass", route === "overview" && !isSetup);
+  page.classList.toggle("ov-glass", !isSetup);
   try {
     if (isSetup) await renderSetup(page, { creating: Boolean(setup.newBrandClientId) });
     else if (route === "overview") await renderOverview(page);
@@ -523,6 +523,7 @@ async function render() {
     else if (state.config.kpis.some((k) => k.module === route)) await renderModule(page, route);
     else renderComingSoon(page, route);
     if (PERF_CODES.includes(route)) addPerfTabs(page, route);
+    if (!isSetup) animateOverview(page);
   } catch (e) {
     page.innerHTML = `<div class="card empty-state"><h3>Couldn't load this page</h3><p>${esc(userMessage(e))}</p></div>`;
   }
@@ -838,15 +839,15 @@ const menuPrice = (i) => i.offer_price ? `<b title="${esc(i.offer_text || "Offer
 // Overview motion: tiles rise in one after another, their numbers count up, sparklines draw, rating bars fill. Skipped for people who ask for less motion.
 function animateOverview(page) {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-  page.querySelectorAll(".ov-t").forEach((t, i) => t.style.setProperty("--i", i));
-  page.querySelectorAll(".ov-alerts, .ov-main, .ov-tgrid + .card").forEach((c) => c.classList.add("ov-rise"));
-  page.querySelectorAll(".ov-t-value").forEach((el) => {
+  page.querySelectorAll(".ov-t, .kpi").forEach((t, i) => t.style.setProperty("--i", i));
+  page.querySelectorAll(".card:not(.kpi)").forEach((c, i) => { c.classList.add("ov-rise"); c.style.setProperty("--r", Math.min(i, 6)); });
+  page.querySelectorAll(".ov-t-value, .kpi-value").forEach((el) => {
     const node = [...el.childNodes].find((n) => n.nodeType === 3 && /\d/.test(n.textContent));
     const m = node && node.textContent.match(/^(\D*?)(\d[\d,]*(?:\.\d+)?)(.*)$/s);
     if (!m) return;
     const end = parseFloat(m[2].replace(/,/g, "")), dec = (m[2].split(".")[1] || "").length, [pre, , post] = [m[1], m[2], m[3]];
     if (!isFinite(end) || end === 0) return;
-    const t0 = performance.now() + 120 + Number(el.closest(".ov-t")?.style.getPropertyValue("--i") || 0) * 70;
+    const t0 = performance.now() + 120 + Number(el.closest(".ov-t, .kpi")?.style.getPropertyValue("--i") || 0) * 70;
     const step = (now) => {
       const p = Math.min(1, Math.max(0, (now - t0) / 800)), e = 1 - Math.pow(1 - p, 3);
       node.textContent = pre + (end * e).toLocaleString("en-IN", { minimumFractionDigits: dec, maximumFractionDigits: dec }) + post;
@@ -855,6 +856,22 @@ function animateOverview(page) {
     node.textContent = pre + (0).toLocaleString("en-IN", { minimumFractionDigits: dec }) + post;
     requestAnimationFrame(step);
   });
+}
+
+// The big chart on the Overview: a bar a day for revenue, a line for orders; bars grow up and the line draws itself.
+function overviewChart(rev, ord) {
+  const pts = (rev || []).filter((p) => p.value != null);
+  if (pts.length < 3) return "";
+  const W = 900, H = 230, L = 46, R = 10, T = 14, B = 26, n = pts.length, bw = (W - L - R) / n;
+  const hi = Math.max(...pts.map((p) => p.value)) || 1;
+  const y = (v) => T + (H - T - B) * (1 - v / hi);
+  const bars = pts.map((p, i) => `<rect class="oc-bar" style="--b:${i}" x="${(L + i * bw + bw * 0.14).toFixed(1)}" y="${y(p.value).toFixed(1)}" width="${(bw * 0.72).toFixed(1)}" height="${(H - B - y(p.value)).toFixed(1)}" rx="${Math.min(3, bw * 0.3).toFixed(1)}"><title>${esc(shortDate(p.date))}: ${rupees(p.value)}</title></rect>`).join("");
+  const grid = [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${y(hi * f).toFixed(1)}" y2="${y(hi * f).toFixed(1)}" class="oc-grid"/><text x="${L - 6}" y="${(y(hi * f) + 4).toFixed(1)}" text-anchor="end" class="oc-ax">${f ? rupeesShort(hi * f) : "0"}</text>`).join("");
+  const ticks = [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1].map((i) => `<text x="${(L + i * bw + bw / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" class="oc-ax">${esc(shortDate(pts[i].date))}</text>`).join("");
+  const o = (ord || []).filter((p) => p.value != null), oHi = Math.max(...o.map((p) => p.value), 1);
+  const line = o.length > 2 ? o.map((p, i) => `${i ? "L" : "M"}${(L + (i / (o.length - 1)) * (W - L - R - bw) + bw / 2).toFixed(1)} ${(T + (H - T - B) * (1 - p.value / oHi) * 0.92).toFixed(1)}`).join(" ") : "";
+  return `<div class="card ov-chart"><div class="card-head"><h3>Revenue and orders, day by day</h3><span class="oc-legend"><i class="b"></i>Revenue<i class="l"></i>Orders</span></div>
+    <svg viewBox="0 0 ${W} ${H}" class="oc-svg" role="img" aria-label="Daily revenue bars and orders line">${grid}${bars}${line ? `<path d="${line}" pathLength="1" class="oc-line"/>` : ""}${ticks}</svg></div>`;
 }
 
 async function renderOverview(page) {
@@ -953,6 +970,7 @@ async function renderOverview(page) {
   const ALERTS_SHOWN = 6, ROWS_SHOWN = 10;
   page.innerHTML = `
     <div class="ov-tgrid">${tiles.join("")}</div>
+    ${overviewChart(headTrends[HEAD_KPIS.indexOf("gross_revenue")], headTrends[HEAD_KPIS.indexOf("delivered_orders")])}
     <div class="card ov-alerts">
       <div class="card-head"><h3>${alerts.length ? "Needs attention" : "All clear"}</h3>${critical ? `<span class="ov-crit">${critical} critical</span>` : '<span class="muted">nothing needs fixing right now</span>'}</div>
       <div id="ovAlertList"></div>
@@ -994,7 +1012,6 @@ async function renderOverview(page) {
     const r = e.target.closest("[data-outlet]");
     if (r) { state.locationId = r.dataset.outlet; showSelectedOutlet(); render(); }
   });
-  animateOverview(page);
 }
 
 function leaderboardTable(rows, unit) {
