@@ -103,6 +103,7 @@ def coverage(outlets: dict, names: dict, platform, start: date, end: date) -> di
     if last < start:
         return {"checked": "Orders", "from": start.isoformat(), "to": last.isoformat(), "days": 0, "complete": True, "gaps": [], "note": "Today only: its numbers are still filling in."}
     days = [start + timedelta(days=i) for i in range((last - start).days + 1)]
+    swiggy_last = min(last, date.today() - timedelta(days=2))  # Swiggy's business report is only final up to two days back: the newest days are "not ready", not "missing"
     have = defaultdict(set)
     for oid, plat, d in MetricDaily.objects.filter(outlet_id__in=list(outlets), kpi__code="delivered_orders", metric_date__range=(start, last)).values_list("outlet_id", "platform_id", "metric_date"):
         have[(oid, plat)].add(d)
@@ -110,11 +111,12 @@ def coverage(outlets: dict, names: dict, platform, start: date, end: date) -> di
     for oid, o in outlets.items():
         plats = [p for p, ok in (("zomato", o.zomato_id and not o.zomato.is_dining), ("swiggy", o.swiggy_id)) if ok and (not platform or platform == p)]
         for p in plats:
-            miss = [d for d in days if d not in have[(oid, p)]]
+            miss = [d for d in days if d not in have[(oid, p)] and not (p == "swiggy" and d > swiggy_last)]
             if miss:
                 gaps.append({"outlet_id": oid, "name": names[oid], "platform": p, "missing_days": len(miss), "no_data": len(miss) == len(days), "ranges": _ranges(miss)})
     gaps.sort(key=lambda g: (-g["missing_days"], g["name"]))
-    return {"checked": "Orders", "from": start.isoformat(), "to": last.isoformat(), "days": len(days), "complete": not gaps, "gaps": gaps}
+    return {"checked": "Orders", "from": start.isoformat(), "to": last.isoformat(), "days": len(days), "complete": not gaps, "gaps": gaps,
+            "note": "Swiggy's newest two days are not final yet, so they are not counted as missing."}
 
 
 def build(request, brand_id: int) -> dict:
