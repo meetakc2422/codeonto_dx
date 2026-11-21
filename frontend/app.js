@@ -501,6 +501,7 @@ async function render() {
     : `${state.config.brand.name} · ${outletsLabel().replace(/ \(\d+\)$/, "")} · ${periodLabel()}`;
   const lockedModule = state.config.modules.find((m) => m.code === route && m.locked);
   if (lockedModule) return renderLocked(page, lockedModule);
+  page.classList.toggle("ov-glass", route === "overview" && !isSetup);
   try {
     if (isSetup) await renderSetup(page, { creating: Boolean(setup.newBrandClientId) });
     else if (route === "overview") await renderOverview(page);
@@ -804,7 +805,7 @@ function sparkline(points, tone = "#d9480f") {
   const lo = Math.min(...v), hi = Math.max(...v), span = hi - lo || 1, w = 100, h = 28;
   const xy = v.map((y, i) => [(i / (v.length - 1)) * w, h - 3 - ((y - lo) / span) * (h - 6)]);
   const line = xy.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)} ${y.toFixed(1)}`).join(" ");
-  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><path d="${line} L${w} ${h} L0 ${h} Z" fill="${tone}" opacity=".12"/><path d="${line}" fill="none" stroke="${tone}" stroke-width="1.8" vector-effect="non-scaling-stroke"/></svg>`;
+  return `<svg class="spark" viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><path d="${line} L${w} ${h} L0 ${h} Z" fill="${tone}" opacity=".12"/><path d="${line}" pathLength="1" fill="none" stroke="${tone}" stroke-width="1.8" vector-effect="non-scaling-stroke"/></svg>`;
 }
 
 // The badge on a KPI card: the platform logo(s) that supply the number, else the module icon.
@@ -834,6 +835,28 @@ const menuPrice = (i) => i.offer_price ? `<b title="${esc(i.offer_text || "Offer
 
 // ---------- overview ----------
 // the overview answers one question: what needs fixing right now across ratings, reviews, offline outlets and stock-outs
+// Overview motion: tiles rise in one after another, their numbers count up, sparklines draw, rating bars fill. Skipped for people who ask for less motion.
+function animateOverview(page) {
+  if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  page.querySelectorAll(".ov-t").forEach((t, i) => t.style.setProperty("--i", i));
+  page.querySelectorAll(".ov-alerts, .ov-main, .ov-tgrid + .card").forEach((c) => c.classList.add("ov-rise"));
+  page.querySelectorAll(".ov-t-value").forEach((el) => {
+    const node = [...el.childNodes].find((n) => n.nodeType === 3 && /\d/.test(n.textContent));
+    const m = node && node.textContent.match(/^(\D*?)(\d[\d,]*(?:\.\d+)?)(.*)$/s);
+    if (!m) return;
+    const end = parseFloat(m[2].replace(/,/g, "")), dec = (m[2].split(".")[1] || "").length, [pre, , post] = [m[1], m[2], m[3]];
+    if (!isFinite(end) || end === 0) return;
+    const t0 = performance.now() + 120 + Number(el.closest(".ov-t")?.style.getPropertyValue("--i") || 0) * 70;
+    const step = (now) => {
+      const p = Math.min(1, Math.max(0, (now - t0) / 800)), e = 1 - Math.pow(1 - p, 3);
+      node.textContent = pre + (end * e).toLocaleString("en-IN", { minimumFractionDigits: dec, maximumFractionDigits: dec }) + post;
+      if (p < 1) requestAnimationFrame(step);
+    };
+    node.textContent = pre + (0).toLocaleString("en-IN", { minimumFractionDigits: dec }) + post;
+    requestAnimationFrame(step);
+  });
+}
+
 async function renderOverview(page) {
   const has = (code) => state.config.modules.some((m) => m.code === code);
   const opt = (p) => p.catch(() => null);
@@ -971,6 +994,7 @@ async function renderOverview(page) {
     const r = e.target.closest("[data-outlet]");
     if (r) { state.locationId = r.dataset.outlet; showSelectedOutlet(); render(); }
   });
+  animateOverview(page);
 }
 
 function leaderboardTable(rows, unit) {
