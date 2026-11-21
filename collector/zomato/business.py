@@ -53,6 +53,9 @@ def _val(cell):
     return cell.get("value") if isinstance(cell, dict) else cell
 
 
+_listed: set = set()
+
+
 def _fetch(cookies: dict, res_id: str, start: date, end: date) -> dict[tuple, dict[date, float]]:
     """{(section, metric): {day: number}} for the window."""
     import requests
@@ -91,6 +94,9 @@ def _fetch(cookies: dict, res_id: str, start: date, end: date) -> dict[tuple, di
         for row in rows:
             metric = _val(row.get("metric"))
             key = (heading, metric)
+            if os.getenv("LIST_METRICS") and (heading, metric) not in _listed:  # LIST_METRICS=1: show everything Zomato returns, mapped or not
+                _listed.add((heading, metric))
+                log.info("zomato business metric: %s | %s%s", heading, metric, "" if key in WANTED else "   (not saved)")
             if key not in WANTED or key in out:  # first occurrence wins (e.g. two 'Total complaints')
                 continue
             days = {}
