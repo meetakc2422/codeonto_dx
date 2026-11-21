@@ -116,27 +116,30 @@ def _table(sec, st):
 
 
 def _tiles(r, st):
-    def find(sec_key, code):
-        sec = next((s for s in r["sections"] if s["key"] == sec_key), None)
-        if not sec:
-            return None
-        col = next((c for c in sec["columns"] if c["code"] == code), None)
-        return (col, sec["total"].get(code)) if col else None
-
     cells = []
-    for title, key, code in (("Sales", "overall", "sales"), ("Orders", "overall", "delivered_orders"), ("Average order value", "overall", "avg_order_value"), ("Rating", "reputation", "listing_rating")):
-        f = find(key, code)
-        if not f or f[1] is None or f[1].get("value") is None:
-            continue
-        col, v = f
-        cells.append([Paragraph(title, st["tile_l"]), Paragraph(fmt(v["value"], col["unit"], short=True), st["tile_v"]),
-                      Paragraph(_delta(v.get("change"), col.get("higher_is_better", True), 9).replace("<br/>", "") + ' <font size="7" color="#6B7585">vs previous period</font>' if v.get("change") is not None else "", st["cell"])])
+    for h in r.get("headline", []):
+        cells.append([Paragraph(h["name"], st["tile_l"]), Paragraph(fmt(h["value"], h["unit"], short=True), st["tile_v"]),
+                      Paragraph((_delta(h.get("change"), h.get("higher_is_better", True), 9).replace("<br/>", "") + ' <font size="7" color="#6B7585">vs previous period</font>') if h.get("change") is not None else "", st["cell"])])
     if not cells:
         return None
     t = Table([cells], colWidths=[WIDTH / len(cells)] * len(cells))
     t.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#DDE2EA")), ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#DDE2EA")),
                            ("BACKGROUND", (0, 0), (-1, -1), colors.white), ("TOPPADDING", (0, 0), (-1, -1), 8), ("BOTTOMPADDING", (0, 0), (-1, -1), 8), ("LEFTPADDING", (0, 0), (-1, -1), 10)]))
     return t
+
+
+def _gap_summary(cov):
+    """(sentences for the front page, gaps still to list one by one). A platform with no data at all for any of its outlets is one sentence."""
+    by = {}
+    for g in cov["gaps"]:
+        by.setdefault(g["platform"], []).append(g)
+    lines, rest = [], []
+    for plat, gs in by.items():
+        if all(g["no_data"] for g in gs):
+            lines.append(f'<b>{plat.title()}:</b> no data for {"its only outlet" if len(gs) == 1 else f"any of its {len(gs)} outlets"} in this period, so the figures below leave {plat.title()} out.')
+        else:
+            rest += gs
+    return lines, rest
 
 
 def _month_chart(months):
@@ -179,9 +182,10 @@ def build_pdf(r: dict) -> bytes:
         box.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), GREEN_BG), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
         story.append(box)
     else:
-        lines = "<br/>".join(f'{g["name"]} ({g["platform"].title()}): {"no data at all" if g["no_data"] else ", ".join(g["ranges"])}' for g in cov["gaps"][:8])
-        more = f'<br/>...and {len(cov["gaps"]) - 8} more (full list on the last page)' if len(cov["gaps"]) > 8 else ""
-        box = Table([[Paragraph(f'<font color="#8A5A00"><b>Data check: some days have no sales data.</b> Totals leave these days out.</font><br/><font size="8.5">{lines}{more}</font>', st["note"])]], colWidths=[WIDTH])
+        whole, partial = _gap_summary(cov)
+        parts = whole + [f'{g["name"]} ({g["platform"].title()}): {", ".join(g["ranges"])}' for g in partial[:6]]
+        more = f'<br/>...and {len(partial) - 6} more outlets with missing days (full list on the last page)' if len(partial) > 6 else ""
+        box = Table([[Paragraph(f'<font color="#8A5A00"><b>Data check:</b> some data is not available yet.</font><br/><font size="8.5">{"<br/>".join(parts)}{more}</font>', st["note"])]], colWidths=[WIDTH])
         box.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), AMBER_BG), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
         story.append(box)
     story.append(Spacer(1, 10))

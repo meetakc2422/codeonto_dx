@@ -243,7 +243,14 @@ def build(request, brand_id: int) -> dict:
                 notes.append({"code": c, "name": meta[c].name, "change": ch, "good": good, "value": cur_total.get(c), "prev": prev_total.get(c), "unit": meta[c].unit})
     notes.sort(key=lambda n: -abs(n["change"]))
 
-    return {"brand": brand.name, "period": period, "outlets": len(outlets), "coverage": cov, "highlights": notes[:6], "sections": sections, "months": months}
+    # the headline numbers do not depend on which modules were ticked
+    headline = []
+    for title, code, unit, hib in (("Sales", "sales", "currency", True), ("Orders", "delivered_orders", "count", True),
+                                   ("Average order value", "avg_order_value", "currency", True), ("Rating", "listing_rating", "rating", True)):
+        v = cur_total.get(code)
+        if v is not None:
+            headline.append({"name": title, "unit": unit, "value": v, "change": _pct_change(v, prev_total.get(code)), "higher_is_better": hib})
+    return {"brand": brand.name, "period": period, "outlets": len(outlets), "coverage": cov, "headline": headline, "highlights": notes[:6], "sections": sections, "months": months}
 
 
 @api_view(["GET"])
