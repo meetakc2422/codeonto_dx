@@ -190,9 +190,23 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     expired: set = set()  # logins refused this pass: their stores are skipped, the other logins carry on
     failures: list[str] = []  # other errors (timeouts, 5xx, bad answers): a few are normal, many mean something broke
     blocked = limited = 0  # still refused after the retries: those stores are skipped, the rest are saved
+    answered, refused_by = {}, {}  # per login: stores that answered, and stores that were refused
+    for s, items, err in results:
+        if isinstance(err, PermissionError):
+            refused_by.setdefault(login_of(s), []).append(str(s["res_id"]))
+        elif not err:
+            answered[login_of(s)] = answered.get(login_of(s), 0) + 1
     for s, items, err in results:
         if isinstance(err, PermissionError):
             acc_id = login_of(s)
+            if answered.get(acc_id):  # other stores of this login answered: it is alive, Zomato refused only these stores
+                if acc_id not in expired:
+                    expired.add(acc_id)
+                    ids = refused_by[acc_id]
+                    log.warning("zomato stockouts: login '%s' is fine (%s stores answered) but Zomato refused %s store(s): %s%s", by_id[acc_id]["label"], answered[acc_id], len(ids),
+                                ", ".join(ids[:15]), " ..." if len(ids) > 15 else "")
+                ok = False
+                continue
             if acc_id not in expired:
                 expired.add(acc_id)
                 label = by_id[acc_id]["label"]
