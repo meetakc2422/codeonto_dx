@@ -557,7 +557,8 @@ async function renderReport(page) {
     <div class="ex-mods">${meta.modules.map((m) => `<label class="ex-mod"><input type="checkbox" data-mod="${m.key}" ${expState.mods.has(m.key) ? "checked" : ""}><span><b>${esc(m.name)}</b><small class="muted">${esc(m.about)}</small></span></label>`).join("")}</div>
     <p class="muted" style="font-size:12.5px;margin:12px 0 10px">${esc(outletsLabel())} · ${esc(platName)}. Change these with the filters at the top of the page.</p>
     <div id="exCheck" class="rp-data">Checking the data…</div>
-    <div class="ex-actions"><button class="btn light" id="exPdf">Download PDF</button><button class="btn blue" id="exXlsx">Download Excel</button></div></div>`;
+    <div class="ex-actions"><button class="btn light" id="exPdf">Download PDF</button><button class="btn blue" id="exXlsx">Download Excel</button>
+      <span class="muted" style="margin-left:8px">Share PDF:</span><button class="btn light" id="exWa">WhatsApp</button><button class="btn light" id="exMail">Email</button></div></div>`;
   const $s = $("#exStart"), $e = $("#exEnd");
   $s.value = expState.start; $e.value = expState.end;
   let cov = null, timer = null;
@@ -566,7 +567,7 @@ async function renderReport(page) {
   const paint = () => {
     page.querySelectorAll("[data-preset]").forEach((b) => b.classList.toggle("on", b.dataset.preset === expState.preset));
     const ok = expState.start && expState.end && expState.end >= expState.start && expState.mods.size > 0;
-    $("#exPdf").disabled = $("#exXlsx").disabled = !ok;
+    $("#exPdf").disabled = $("#exXlsx").disabled = $("#exWa").disabled = $("#exMail").disabled = !ok;
   };
   const check = async () => {
     paint();
@@ -616,6 +617,31 @@ async function renderReport(page) {
   };
   $("#exXlsx").onclick = download("xlsx");
   $("#exPdf").onclick = download("pdf");
+  // Share the PDF: the phone's share sheet when it can attach the file, else download it and open WhatsApp / mail with the message ready
+  const share = (via) => async (e) => {
+    const btn = e.currentTarget, label = btn.textContent;
+    btn.disabled = true; btn.textContent = "Preparing…";
+    try {
+      const url = new URL(`${API}/brands/${state.brandId}/report/pdf`, location.origin);
+      Object.entries(exportFilters()).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
+      const res = await apiFetch(url);
+      if (!res.ok) throw userError("The file couldn't be made right now. Please try again in a moment.");
+      const blob = await res.blob(), name = `report_${expState.start}_to_${expState.end}.pdf`;
+      const file = new File([blob], name, { type: "application/pdf" });
+      const title = `${dayLbl(expState.start)} – ${dayLbl(expState.end)} report`;
+      if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title, text: title }); } catch (err) { if (err.name !== "AbortError") throw err; } }
+      else {
+        const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href);
+        const msg = `${title}. The PDF is attached.`;
+        if (via === "wa") window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
+        else location.href = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(msg)}`;
+        toast(`PDF downloaded: attach ${name} in ${via === "wa" ? "WhatsApp" : "your mail"}`);
+      }
+    } catch (err) { toast(userMessage(err)); }
+    btn.disabled = false; btn.textContent = label; paint();
+  };
+  $("#exWa").onclick = share("wa");
+  $("#exMail").onclick = share("mail");
   check();
 }
 

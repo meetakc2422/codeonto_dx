@@ -226,6 +226,10 @@ def build_pdf(r: dict) -> bytes:
                               ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
     story = [band, Spacer(1, 6), Paragraph(r["brand"], st["title"]),
              Paragraph(f'{r["outlets"]} outlets &nbsp;|&nbsp; {p["days"]} days &nbsp;|&nbsp; compared with {nice(p["prev_start"])} to {nice(p["prev_end"])}', st["sub"]), Spacer(1, 5)]
+    if r.get("visual", True):
+        from .report_visual import build_drawing
+
+        story += [build_drawing(r), PageBreak()]
     tiles = _tiles(r, st)
     if tiles:
         story += [tiles, Spacer(1, 5)]
