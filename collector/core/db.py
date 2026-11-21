@@ -136,6 +136,16 @@ def mark_account_synced(cur, account_id: int) -> None:
     cur.execute("UPDATE platform_accounts SET last_synced_at = now(), updated_at = now() WHERE id = %s", (account_id,))
 
 
+def login_was_renewed(account: dict, used_token) -> bool:
+    """True when the login now saved in the database is not the one a job started with: someone logged in again while the job was running,
+    so a refusal came from the old token and says nothing about the new one. Such a job must not flag the login as expired."""
+    try:
+        fresh = load_credentials(account).get("access_token")
+    except Exception:  # noqa: BLE001
+        return False
+    return bool(fresh) and fresh != used_token
+
+
 def mark_session_expired(account_id: int, reason: str) -> None:
     """Flag a login the platform keeps refusing, so the site shows it to staff (banner + Sessions page). Never raises:
     a job reporting an expired session must not crash because of the report."""

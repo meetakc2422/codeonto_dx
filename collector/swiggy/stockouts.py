@@ -132,6 +132,10 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             if acc_id not in expired:
                 expired.add(acc_id)
                 label = by_id[acc_id]["label"]
+                if db.login_was_renewed(by_id[acc_id], tokens[acc_id]):  # logged in again mid-pass: only the old token was refused
+                    log.warning("swiggy stockouts: login '%s' was refreshed while this pass ran; its stores wait for the next pass", label)
+                    ok = False
+                    continue
                 log.error("swiggy stockouts: login '%s' was refused (%s); its stores are skipped this pass", label, err)
                 db.mark_session_expired(acc_id, f"swiggy stockouts: {err}")
                 alerts.incident(f"Swiggy session expired: {label}", str(err),

@@ -188,6 +188,9 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         except PermissionError as e:
             dead.add(acc_id)
             ok = False
+            if db.login_was_renewed(by_id[acc_id], tokens[acc_id]):  # logged in again mid-run: only the old token was refused
+                log.warning("swiggy orders: login '%s' was refreshed while this run went; its stores wait for the next run", label)
+                continue
             log.error("swiggy orders: login '%s' was refused (%s); its stores are skipped this run", label, e)
             db.mark_session_expired(acc_id, f"swiggy orders: {e}")
             alerts.incident(f"Swiggy session expired: {label}", str(e), f"Use Log in again on the Sessions page, or run `python run.py swiggy session --account {label}`.")
