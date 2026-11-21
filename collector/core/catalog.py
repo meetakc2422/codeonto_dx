@@ -60,11 +60,15 @@ def upsert(cur, platform: str, outlets: list[Outlet], account_id: int, client_id
 
 
 def deactivate_missing(cur, platform: str, seen: set[str], force: bool) -> dict:
-    """Mark ids no account returned as inactive, within the safety limit unless forced."""
+    """Mark ids no account returned as inactive, within the safety limit unless forced.
+
+    Zomato dine-in listings (is_dining) are District's: the delivery merchant login never lists them, so being "missing" from
+    it says nothing about them. They are left alone; switch one off by hand in the admin if it is really gone."""
     table, pk, _ = CATALOG_TABLES[platform]
-    cur.execute(f"SELECT count(*) AS n FROM {table} WHERE is_active", ())
+    keep = " AND NOT is_dining" if platform == "zomato" else ""
+    cur.execute(f"SELECT count(*) AS n FROM {table} WHERE is_active{keep}", ())
     active = cur.fetchone()["n"]
-    cur.execute(f"SELECT count(*) AS n FROM {table} WHERE is_active AND NOT ({pk} = ANY(%s))", (list(seen),))
+    cur.execute(f"SELECT count(*) AS n FROM {table} WHERE is_active{keep} AND NOT ({pk} = ANY(%s))", (list(seen),))
     missing = cur.fetchone()["n"]
     if not missing:
         return {"deactivated": 0}
@@ -73,5 +77,5 @@ def deactivate_missing(cur, platform: str, seen: set[str], force: bool) -> dict:
                     "Check the accounts, then re-run with --force to deactivate them.",
                     platform, missing, MAX_DEACTIVATE_RATIO * 100)
         return {"deactivated": 0, "held_back": missing}
-    cur.execute(f"UPDATE {table} SET is_active = false WHERE is_active AND NOT ({pk} = ANY(%s))", (list(seen),))
+    cur.execute(f"UPDATE {table} SET is_active = false WHERE is_active{keep} AND NOT ({pk} = ANY(%s))", (list(seen),))
     return {"deactivated": cur.rowcount}
