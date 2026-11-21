@@ -100,6 +100,7 @@ class DiningMenuStatus(models.Model):
     updated_latest = models.DateTimeField(null=True, blank=True, help_text="The latest the menu can have been updated, worked out from the text")
     checked_at = models.DateTimeField(null=True, blank=True, help_text="Last time we asked District")
     synced_at = models.DateTimeField(null=True, blank=True, help_text="Last time we fetched the menu images")
+    photo_url = models.CharField(max_length=500, blank=True, help_text="The outlet's first photo on District, used as its picture")
 
     class Meta:
         db_table = "dining_menu_status"

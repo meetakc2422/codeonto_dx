@@ -48,6 +48,15 @@ def menu_updated_text(data: dict) -> str:
     return found[0] if found else ""
 
 
+def outlet_photo(data: dict) -> str:
+    """The first photo in the page's header gallery (a square picture of the outlet), or ''."""
+    for it in (((data.get("header_data") or {}).get("top_container") or {}).get("snippet") or {}).get("ed_media_snippet_type_1", {}).get("items") or []:
+        u = (((it or {}).get("media") or {}).get("image") or {}).get("url")
+        if u and u.startswith("https://"):
+            return u.split("?")[0] + "?fit=around%7C200%3A200&crop=200%3A200%3B%2A%2C%2A"
+    return ""
+
+
 def _count(text: str) -> int | None:
     """'2.6K+' -> 2600, '720' -> 720."""
     m = re.match(r"\s*([\d.,]+)\s*([kKlLmM]?)", text or "")
@@ -130,10 +139,11 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     for s in stores:
         rid = str(s["res_id"])
         now = datetime.now(timezone.utc)
-        text = ""
+        text, photo = "", ""
         try:
             info = fetch_info(headers, rid)
             text = menu_updated_text(info)
+            photo = outlet_photo(info)
             prof = store_profile(info)
             if prof["rating"] is not None or prof["cost_for_two"] is not None:
                 with db.transaction() as cur:
@@ -147,9 +157,11 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         with db.transaction() as cur:
             cur.execute("SELECT synced_at FROM dining_menu_status WHERE res_id = %s", (rid,))
             prev = cur.fetchone()
-            cur.execute("""INSERT INTO dining_menu_status (res_id, outlet_id, updated_text, updated_latest, checked_at) VALUES (%s,%s,%s,%s,%s)
+            cur.execute("""INSERT INTO dining_menu_status (res_id, outlet_id, updated_text, updated_latest, checked_at, photo_url) VALUES (%s,%s,%s,%s,%s,%s)
                            ON CONFLICT (res_id) DO UPDATE SET outlet_id = EXCLUDED.outlet_id, updated_text = EXCLUDED.updated_text,
-                           updated_latest = EXCLUDED.updated_latest, checked_at = EXCLUDED.checked_at""", (rid, s["outlet_id"], text, latest, now))
+                           updated_latest = EXCLUDED.updated_latest, checked_at = EXCLUDED.checked_at,
+                           photo_url = CASE WHEN EXCLUDED.photo_url <> '' THEN EXCLUDED.photo_url ELSE dining_menu_status.photo_url END""",
+                        (rid, s["outlet_id"], text, latest, now, photo))
         synced = prev["synced_at"] if prev else None
         if not force and synced and latest and synced > latest:
             log.info("zomato dining menu %s: %s, already synced after that: skipped", rid, text)

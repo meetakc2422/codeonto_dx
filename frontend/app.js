@@ -181,6 +181,7 @@ function timeAgo(ts) {
 // checked hours and leaves out items switched off on purpose; apps/insights STOCKOUT_LOSS_SHOWN is the server side
 const SHOW_STOCK_LOSS = false;
 const PLATFORM_ICONS = ["google", "zomato", "swiggy", "district"];
+const outletAvatar = (u) => (u ? `<img src="${esc(u)}" alt="" loading="lazy" referrerpolicy="no-referrer" style="width:28px;height:28px;border-radius:50%;object-fit:cover;vertical-align:-8px;margin-right:8px;border:1px solid var(--border)">` : "");
 const districtLogo = `<img class="pill-icon" src="assets/district.png" alt="District" title="District, Zomato's dining app" style="display:inline-block;vertical-align:-4px;margin-right:6px">`;
 
 function platformPill(code) {
@@ -569,7 +570,7 @@ function renderDiningMenu(box, d) {
     const gallery = (o.images || []).length ? `<details class="dn-fold" ${o.dishes ? "" : "open"}><summary><b>Menu pages</b> <small class="muted">${o.images.length} · as shown on District</small></summary>
       <div class="menu-thumbs">${o.images.map((u, k) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(u)}" alt="Menu page ${k + 1}"></a>`).join("")}</div></details>` : "";
     return `<details class="card dining-card" style="margin-bottom:12px" ${i === 0 ? "open" : ""}>
-      <summary class="card-head" style="cursor:pointer"><h3>${districtLogo}${esc(o.name)}</h3><small class="muted">${esc(status)}</small>${pill(o.avg_diff_pct)}</summary>
+      <summary class="card-head" style="cursor:pointer"><h3>${outletAvatar(o.logo)}${esc(o.name)}</h3>${districtLogo.replace("margin-right:6px","margin-left:auto;margin-right:2px")}<small class="muted">${esc(status)}</small>${pill(o.avg_diff_pct)}</summary>
       <p class="muted" style="margin:0 0 10px;font-size:12px">${o.menu_updated ? `District: ${esc(o.menu_updated.toLowerCase())}` : "District shows no update time"}${o.checked_at ? ` · checked ${timeAgo(o.checked_at)}` : ""}${o.synced_at ? ` · menu fetched ${timeAgo(o.synced_at)}` : ""}</p>
       ${top.length ? tbl(top) : ""}
       ${rest.length ? `<details class="dn-fold"><summary><b>All ${o.rows.length} compared dishes</b></summary>${tbl(rest)}</details>` : ""}
@@ -586,7 +587,7 @@ function renderDiningView(box, d) {
     if (!o.days.length) return `<div class="card" style="margin-bottom:16px"><h3>${esc(o.name)}</h3><p class="muted">No dining readings yet. The collector hasn't run for this outlet.</p></div>`;
     const day = o.days[0];
     return `<details class="card dining-card" data-i="${i}" style="margin-bottom:16px" ${i === 0 ? "open" : ""}>
-      <summary class="card-head" style="cursor:pointer"><h3>${districtLogo}${esc(o.name)}</h3><small class="muted">checked ${timeAgo(o.last_checked)} · ${esc(o.readings)} reading${o.readings === 1 ? "" : "s"}</small></summary>
+      <summary class="card-head" style="cursor:pointer"><h3>${outletAvatar(o.logo)}${esc(o.name)}</h3>${districtLogo.replace("margin-right:6px","margin-left:auto;margin-right:2px")}<small class="muted">checked ${timeAgo(o.last_checked)} · ${esc(o.readings)} reading${o.readings === 1 ? "" : "s"}</small></summary>
       <div class="segmented dining-days" style="margin:8px 0 12px;flex-wrap:wrap">${o.days.map((x, k) => `<button data-k="${k}" class="${k === 0 ? "active" : ""}">${new Date(x.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</button>`).join("")}</div>
       <div class="dining-day">${diningDay(day)}</div>${diningPast(o.past || [])}</details>`;
   }).join("");

@@ -18,6 +18,14 @@ from apps.insights.models import ItemSalesDaily
 from .models import DiningMenuItem, DiningMenuPage, DiningMenuStatus, DiningOfferSnapshot as Offer, DiningSlotSnapshot as Slot
 
 
+def _logo(bo) -> str:
+    """The brand's logo if one is set (admin: Brand, logo url), else the outlet's first photo on District."""
+    if bo.brand.logo_url:
+        return bo.brand.logo_url
+    st = DiningMenuStatus.objects.filter(res_id=str(bo.zomato_id)).only("photo_url").first()
+    return st.photo_url if st else ""
+
+
 def _dining_outlets(request, brand_id):
     qs = BrandOutlet.objects.filter(brand_id=brand_id, is_active=True, zomato__is_dining=True, zomato__is_active=True).select_related("zomato", "brand")
     qs = in_scope(qs, request.user, "id")
@@ -57,7 +65,7 @@ def brand_dining(request, brand_id):
     for bo in outlets:
         rid = bo.zomato_id
         times = list(Offer.objects.filter(res_id=rid).order_by("-taken_at").values_list("taken_at", flat=True).distinct()[:40])
-        row = {"outlet_id": bo.id, "name": bo.display_name, "res_id": rid, "last_checked": times[0] if times else None, "readings": len(times), "days": []}
+        row = {"outlet_id": bo.id, "name": bo.display_name, "res_id": rid, "logo": _logo(bo), "last_checked": times[0] if times else None, "readings": len(times), "days": []}
         if times:
             latest = times[0]
             history = defaultdict(list)  # (date, meal, offer) -> [(taken_at, slots_left)] oldest first
@@ -139,7 +147,7 @@ def brand_dining_menu(request, brand_id):
         rows.sort(key=lambda r: -abs(r["diff_pct"]))
         st = DiningMenuStatus.objects.filter(res_id=rid).first()
         avg = round(sum(r["diff_pct"] for r in rows) / len(rows), 1) if rows else None
-        out.append({"outlet_id": bo.id, "name": bo.display_name, "images": images, "pages": total, "pages_read": read, "dishes": len(items),
+        out.append({"outlet_id": bo.id, "name": bo.display_name, "logo": _logo(bo), "images": images, "pages": total, "pages_read": read, "dishes": len(items),
                     "compared": len(rows), "avg_diff_pct": avg,
                     "menu_updated": st.updated_text if st else "", "checked_at": st.checked_at if st else None, "synced_at": st.synced_at if st else None, "differ": sum(1 for r in rows if abs(r["diff_pct"]) >= 1),
                     "rows": rows, "unmatched": unmatched})
