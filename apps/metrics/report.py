@@ -252,7 +252,19 @@ def build(request, brand_id: int) -> dict:
         v = cur_total.get(code)
         if v is not None:
             headline.append({"name": title, "unit": unit, "value": v, "change": _pct_change(v, prev_total.get(code)), "higher_is_better": hib})
-    return {"brand": brand.name, "period": period, "outlets": len(outlets), "coverage": cov, "headline": headline, "highlights": notes[:6], "sections": sections, "months": months}
+    # each delivery platform on its own: what the owner compares first
+    by_platform, total_sales = [], sum(_sales(outlets, f["platform"], start, end).values()) or 0
+    for code, name in (("zomato", "Zomato"), ("swiggy", "Swiggy")):
+        if f["platform"] and f["platform"] != code:
+            continue
+        t = {r["code"]: r["value"] for r in _aggregate(False, False, start=start, end=end, **{**base, "platform": code})}
+        sales = sum(_sales(outlets, code, start, end).values()) or None
+        if sales is None and t.get("delivered_orders") is None:
+            continue
+        by_platform.append({"code": code, "name": name, "sales": sales, "orders": t.get("delivered_orders"), "aov": t.get("avg_order_value"),
+                            "rating": t.get("listing_rating"), "cancellation": t.get("cancellation_rate"),
+                            "share": round(sales / total_sales * 100, 1) if sales and total_sales else None})
+    return {"brand": brand.name, "period": period, "outlets": len(outlets), "coverage": cov, "headline": headline, "platforms": by_platform, "highlights": notes[:6], "sections": sections, "months": months}
 
 
 @api_view(["GET"])
@@ -272,86 +284,14 @@ def _display(v, unit):
 
 @api_view(["GET"])
 def brand_report_xlsx(request, brand_id):
-    from openpyxl import Workbook
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.utils import get_column_letter
+    from .report_xlsx import build_xlsx
 
     try:
-        r = build(request, brand_id)
+        data = build(request, brand_id)
     except ValueError:
         return Response({"detail": "Dates must look like 2026-11-20"}, status=400)
-    wb = Workbook()
-    head_fill, head_font = PatternFill("solid", fgColor="0B1229"), Font(bold=True, color="FFFFFF")
-    ws = wb.active
-    ws.title = "Summary"
-    p = r["period"]
-    ws.append([f"{r['brand']} report"])
-    ws["A1"].font = Font(bold=True, size=14)
-    ws.append([f"{p['start']} to {p['end']} ({p['days']} days), compared with {p['prev_start']} to {p['prev_end']}"])
-    ws.append([f"{r['outlets']} outlets"])
-    cov = r["coverage"]
-    ws.append(["Data check: every day has sales data" if cov["complete"] else f"Data check: {len(cov['gaps'])} outlet/platform(s) are missing sales days, see the 'Data gaps' sheet"])
-    ws.append([])
-    ws.append(["What changed most", "Now", "Before", "Change %", ""])
-    for c in ws[ws.max_row]:
-        c.fill, c.font = head_fill, head_font
-    for n in r["highlights"]:
-        ws.append([n["name"], _display(n["value"], n["unit"]), _display(n["prev"], n["unit"]), n["change"], "better" if n["good"] else "worse"])
-    ws.column_dimensions["A"].width = 34
-    for sec in r["sections"]:
-        sh = wb.create_sheet(sec["title"][:31])
-        cols = sec["columns"]
-        with_change = sec.get("kind") is None
-        header = ["Outlet"]
-        for c in cols:
-            label = c["name"] + (" (min)" if c["unit"] == "seconds" else " (%)" if c["unit"] == "percent" else "")
-            header += [label, "Before", "Change %"] if with_change else [label]
-        sh.append(header)
-        for cell_ in sh[1]:
-            cell_.fill, cell_.font = head_fill, head_font
-            cell_.alignment = Alignment(wrap_text=True, vertical="center")
-
-        def line(name, values):
-            out = [name]
-            for c in cols:
-                v = values[c["code"]]
-                if with_change:
-                    out += [_display(v["value"], c["unit"]), _display(v["prev"], c["unit"]), v["change"]]
-                else:
-                    out.append(v)
-            return out
-
-        for row in sec["rows"]:
-            sh.append(line(row["name"], row))
-        sh.append(line("Total", sec["total"]))
-        for cell_ in sh[sh.max_row]:
-            cell_.font = Font(bold=True)
-        sh.column_dimensions["A"].width = 38
-        for i in range(2, len(header) + 1):
-            sh.column_dimensions[get_column_letter(i)].width = 15
-        sh.freeze_panes = "B2"
-    if not cov["complete"]:
-        sh = wb.create_sheet("Data gaps")
-        sh.append(["Outlet", "Platform", "Days missing", "Which days"])
-        for cell_ in sh[1]:
-            cell_.fill, cell_.font = head_fill, head_font
-        for g in cov["gaps"]:
-            sh.append([g["name"], g["platform"].title(), g["missing_days"], ", ".join(g["ranges"])])
-        sh.append([])
-        sh.append([f"Checked on daily orders from {cov['from']} to {cov['to']}. Figures in the other sheets leave these days out."])
-        for col, w in zip("ABCD", (38, 12, 14, 70)):
-            sh.column_dimensions[col].width = w
-    sh = wb.create_sheet("Months")
-    sh.append(["Month", "Sales", "Payout", "Ads % of sales", "Discount % of sales"])
-    for cell_ in sh[1]:
-        cell_.fill, cell_.font = head_fill, head_font
-    for m in r["months"]:
-        sh.append([m["month"], m["sales"], m["payout"], m["ads_pct"], m["discount_pct"]])
-    for i in range(1, 6):
-        sh.column_dimensions[get_column_letter(i)].width = 20
-    buf = io.BytesIO()
-    wb.save(buf)
-    resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    p = data["period"]
+    resp = HttpResponse(build_xlsx(data), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
     resp["Content-Disposition"] = f'attachment; filename="report_{p["start"]}_to_{p["end"]}.xlsx"'
     return resp
 
