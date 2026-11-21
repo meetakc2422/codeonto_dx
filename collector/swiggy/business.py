@@ -78,6 +78,9 @@ def _request(token: str, rids: list[int], start: date, end: date) -> str:
     raise RuntimeError("Swiggy did not return a report link")
 
 
+_listed: set = set()
+
+
 def _read(link: str) -> dict[int, dict[tuple, dict[date, float]]]:
     """{outlet id: {(overview, metric): {day: number}}}"""
     import openpyxl
@@ -96,6 +99,9 @@ def _read(link: str) -> dict[int, dict[tuple, dict[date, float]]]:
         days = {i: _day(h) for i, h in enumerate(header) if i > i_m and _day(h)}
         for row in rows:
             key = (row[i_ov], row[i_m])
+            if os.getenv("LIST_METRICS") and key not in _listed:  # LIST_METRICS=1: show everything Swiggy returns, mapped or not
+                _listed.add(key)
+                log.info("swiggy business metric: %s | %s%s", key[0], key[1], "" if key in WANTED else "   (not saved)")
             if row[i_id] is None or key not in WANTED:
                 continue
             series = out[int(row[i_id])].setdefault(key, {})  # first occurrence wins
