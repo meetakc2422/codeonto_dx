@@ -12,7 +12,7 @@ from openpyxl.drawing.image import Image as XlImage
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-NAVY, BLUE, GREEN, RED, GREY, BAND, RULE = "0B1229", "408FCA", "12803F", "C4302B", "6B7585", "F3F5F9", "DDE2EA"
+NAVY, BLUE, GREEN, RED, GREY, BAND, RULE = "0B1229", "D9480F", "12803F", "C4302B", "6B7585", "F3F5F9", "DDE2EA"
 PLATFORM_FILL = {"zomato": "E23744", "swiggy": "FC8019", "district": "7C3AED"}
 ASSETS = Path(settings.BASE_DIR) / "frontend" / "assets"
 FONT = "Calibri"
@@ -275,7 +275,7 @@ def build_xlsx(r: dict) -> bytes:
         _section(wb, sec, r)
     _months(wb, r)
     _gaps(wb, r)
-    wb.properties.title, wb.properties.creator = f'{r["brand"]} report', "SocialSpork"
+    wb.properties.title, wb.properties.creator = f'{r["brand"]} report', "Codeonto"
     buf = io.BytesIO()
     wb.save(buf)
     return buf.getvalue()

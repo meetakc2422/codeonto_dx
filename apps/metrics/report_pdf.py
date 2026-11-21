@@ -18,7 +18,7 @@ from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Image, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
-NAVY, BLUE, GREEN, RED, GREY, LIGHT = colors.HexColor("#0B1229"), colors.HexColor("#408FCA"), colors.HexColor("#12803F"), colors.HexColor("#C4302B"), colors.HexColor("#6B7585"), colors.HexColor("#F3F5F9")
+NAVY, BLUE, GREEN, RED, GREY, LIGHT = colors.HexColor("#0B1229"), colors.HexColor("#D9480F"), colors.HexColor("#12803F"), colors.HexColor("#C4302B"), colors.HexColor("#6B7585"), colors.HexColor("#F3F5F9")
 AMBER_BG, GREEN_BG, RULE = colors.HexColor("#FFF4E0"), colors.HexColor("#E8F7EE"), colors.HexColor("#DDE2EA")
 ASSETS = Path(settings.BASE_DIR) / "frontend" / "assets"
 PLATFORM_COLOR = {"zomato": colors.HexColor("#E23744"), "swiggy": colors.HexColor("#FC8019"), "district": colors.HexColor("#7C3AED")}
@@ -220,7 +220,7 @@ def build_pdf(r: dict) -> bytes:
     nice = lambda iso: date.fromisoformat(iso).strftime("%d %b %Y").lstrip("0")
     title = "Weekly report" if p["days"] == 7 else "Report"
     logo = _logo("logo-full.png", 8)  # white wordmark: it sits on a dark band like the app's own header
-    band = Table([[logo or Paragraph("SocialSpork", st["head"]), Paragraph(f'<font color="white" name="{FS}">{title}</font> <font color="#9AA8C7">| {nice(p["start"])} to {nice(p["end"])}</font>',
+    band = Table([[logo or Paragraph("Compass", st["head"]), Paragraph(f'<font color="white" name="{FS}">{title}</font> <font color="#9AA8C7">| {nice(p["start"])} to {nice(p["end"])}</font>',
                                                                            ParagraphStyle("b", parent=st["cell"], alignment=2, fontSize=8.5, leading=11))]], colWidths=[WIDTH * 0.4, WIDTH * 0.6])
     band.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), NAVY), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
                               ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
@@ -311,11 +311,11 @@ def _finish(story, r, p, nice, title):
             canvas.drawImage(str(ASSETS / "logo-mark.png"), MARGIN, 5.4 * mm, width=3.8 * mm, height=4.0 * mm, mask="auto")
         except Exception:  # noqa: BLE001
             pass
-        canvas.drawString(MARGIN + 5.5 * mm, 6.4 * mm, f'{r["brand"]} | {nice(p["start"])} to {nice(p["end"])} | SocialSpork')
+        canvas.drawString(MARGIN + 5.5 * mm, 6.4 * mm, f'{r["brand"]} | {nice(p["start"])} to {nice(p["end"])} | Compass by Codeonto')
         canvas.drawRightString(PAGE[0] - MARGIN, 6.4 * mm, f"Page {doc.page}")
         canvas.restoreState()
 
     buf = io.BytesIO()
     SimpleDocTemplate(buf, pagesize=PAGE, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=MARGIN, bottomMargin=13 * mm,
-                      title=f'{r["brand"]} {title}', author="SocialSpork").build(story, onFirstPage=footer, onLaterPages=footer)
+                      title=f'{r["brand"]} {title}', author="Codeonto").build(story, onFirstPage=footer, onLaterPages=footer)
     return buf.getvalue()

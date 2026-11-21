@@ -125,7 +125,7 @@ def menu_images(headers: dict, res_id: str) -> list[str]:
 
 
 def run_all(accounts: list[str], headless: bool = False, force: bool = False) -> bool:
-    require_env("SOCIALSPORK_DATABASE_URL")
+    require_env("CODEONTO_DATABASE_URL")
     headers = _session()
     only = {x for x in os.getenv("ONLY_RES_IDS", "").split(",") if x}
     with db.transaction() as cur:
