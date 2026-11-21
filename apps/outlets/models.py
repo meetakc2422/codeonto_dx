@@ -75,9 +75,11 @@ class CatalogOutlet(models.Model):
 
 
 class ZomatoOutlet(CatalogOutlet):
-    res_id = models.CharField("Zomato res ID", max_length=32, primary_key=True)
+    res_id = models.CharField("Zomato / District res ID", max_length=32, primary_key=True,
+                              help_text="The same id on Zomato and on District (Zomato's dining app)")
     area = models.CharField(max_length=160, blank=True)
-    is_dining = models.BooleanField(default=False, db_default=False, help_text="A dine-in listing, not the delivery one")
+    is_dining = models.BooleanField("On District (dining)", default=False, db_default=False,
+                                    help_text="A dine-in listing: its District id is this same res ID. Not the delivery listing")
 
     class Meta(CatalogOutlet.Meta):
         db_table = "zomato_outlets"

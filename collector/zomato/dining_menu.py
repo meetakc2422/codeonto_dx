@@ -15,16 +15,20 @@ from datetime import datetime, timedelta, timezone
 from core import db
 from core.common import log, require_env
 
-from .dining import _post, _session
+from .dining import IST, _post, _session
 
 UNIT = {"second": timedelta(seconds=1), "minute": timedelta(minutes=1), "hour": timedelta(hours=1), "day": timedelta(days=1),
         "week": timedelta(weeks=1), "month": timedelta(days=30), "year": timedelta(days=365)}
 
 
-def menu_updated_text(headers: dict, res_id: str) -> str:
-    """District's 'Updated a month ago' from the restaurant page's Menu header; empty if the page has none."""
+def fetch_info(headers: dict, res_id: str) -> dict:
+    """The restaurant page as the District app shows it."""
     h = {**headers, "content-type": "application/json; charset=UTF-8"}
-    data = _post(h, "restaurant/info?lang=en&city_id=-1", json={"res_id": res_id, "business_params": "{}", "postback_params": "{}"}).json()
+    return _post(h, "restaurant/info?lang=en&city_id=-1", json={"res_id": res_id, "business_params": "{}", "postback_params": "{}"}).json()
+
+
+def menu_updated_text(data: dict) -> str:
+    """District's 'Updated a month ago' from the page's Menu header; empty if the page has none."""
     found = []
 
     def walk(o):
@@ -42,6 +46,46 @@ def menu_updated_text(headers: dict, res_id: str) -> str:
 
     walk(data)
     return found[0] if found else ""
+
+
+def _count(text: str) -> int | None:
+    """'2.6K+' -> 2600, '720' -> 720."""
+    m = re.match(r"\s*([\d.,]+)\s*([kKlLmM]?)", text or "")
+    if not m:
+        return None
+    return round(float(m.group(1).replace(",", "")) * {"k": 1e3, "l": 1e5, "m": 1e6}.get(m.group(2).lower(), 1))
+
+
+def store_profile(data: dict) -> dict:
+    """{rating, ratings, cost_for_two} from the page header: '4.3' over '2.6K+', and 'Japanese · ₹2200 for two'."""
+    hd = ((data.get("header_data") or {}).get("bottom_container")) or {}
+    block = hd.get("right_block") or {}
+    rating = ((block.get("top_container") or {}).get("title") or {}).get("text")
+    ratings = ((block.get("bottom_container") or {}).get("title") or {}).get("text")
+    sub = (hd.get("subtitle1") or {}).get("text") or ""
+    cost = re.search(r"₹\s*([\d,]+)\s*for two", sub)
+    try:
+        rating = float(rating) if rating and 0 < float(rating) <= 5 else None
+    except ValueError:
+        rating = None
+    return {"rating": rating, "ratings": _count(ratings), "cost_for_two": int(cost.group(1).replace(",", "")) if cost else None}
+
+
+def save_profile(cur, outlet_id, prof: dict, day) -> None:
+    """Today's District rating (weight = number of ratings, so a brand figure is a weighted average), rating count and cost for two."""
+    if not outlet_id:
+        return
+    cur.execute("SELECT code, id FROM kpis WHERE code IN ('listing_rating', 'rating_count', 'cost_for_two')")
+    kpi = {r["code"]: r["id"] for r in cur.fetchall()}
+    for code, value, weight in (("listing_rating", prof["rating"], prof["ratings"] or 1), ("rating_count", prof["ratings"], 1),
+                                ("cost_for_two", prof["cost_for_two"], 1)):
+        if value is None or code not in kpi:
+            continue
+        cur.execute("""INSERT INTO metric_daily (outlet_id, platform, kpi_id, metric_date, value, weight, updated_at)
+                       VALUES (%s, 'district', %s, %s, %s, %s, now())
+                       ON CONFLICT (outlet_id, platform, kpi_id, metric_date)
+                       DO UPDATE SET value = EXCLUDED.value, weight = EXCLUDED.weight, updated_at = now()""",
+                    (outlet_id, kpi[code], day, value, weight))
 
 
 def latest_update(text: str, now: datetime) -> datetime | None:
@@ -86,13 +130,19 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     for s in stores:
         rid = str(s["res_id"])
         now = datetime.now(timezone.utc)
+        text = ""
         try:
-            text = menu_updated_text(headers, rid)
+            info = fetch_info(headers, rid)
+            text = menu_updated_text(info)
+            prof = store_profile(info)
+            if prof["rating"] is not None or prof["cost_for_two"] is not None:
+                with db.transaction() as cur:
+                    save_profile(cur, s["outlet_id"], prof, datetime.now(IST).date())
+                log.info("zomato dining menu %s: District rating %s (%s ratings), cost for two %s", rid, prof["rating"], prof["ratings"], prof["cost_for_two"])
         except PermissionError:
             raise
         except Exception as e:
-            log.warning("zomato dining menu %s: could not read the menu's update time: %s", rid, e)
-            text = ""
+            log.warning("zomato dining menu %s: could not read the restaurant page: %s", rid, e)
         latest = latest_update(text, now) if text else None
         with db.transaction() as cur:
             cur.execute("SELECT synced_at FROM dining_menu_status WHERE res_id = %s", (rid,))
