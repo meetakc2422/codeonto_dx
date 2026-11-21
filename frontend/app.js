@@ -858,22 +858,6 @@ function animateOverview(page) {
   });
 }
 
-// The big chart on the Overview: a bar a day for revenue, a line for orders; bars grow up and the line draws itself.
-function overviewChart(rev, ord) {
-  const pts = (rev || []).filter((p) => p.value != null);
-  if (pts.length < 3) return "";
-  const W = 900, H = 230, L = 46, R = 10, T = 14, B = 26, n = pts.length, bw = (W - L - R) / n;
-  const hi = Math.max(...pts.map((p) => p.value)) || 1;
-  const y = (v) => T + (H - T - B) * (1 - v / hi);
-  const bars = pts.map((p, i) => `<rect class="oc-bar" style="--b:${i}" x="${(L + i * bw + bw * 0.14).toFixed(1)}" y="${y(p.value).toFixed(1)}" width="${(bw * 0.72).toFixed(1)}" height="${(H - B - y(p.value)).toFixed(1)}" rx="${Math.min(3, bw * 0.3).toFixed(1)}"><title>${esc(shortDate(p.date))}: ${rupees(p.value)}</title></rect>`).join("");
-  const grid = [0, 0.5, 1].map((f) => `<line x1="${L}" x2="${W - R}" y1="${y(hi * f).toFixed(1)}" y2="${y(hi * f).toFixed(1)}" class="oc-grid"/><text x="${L - 6}" y="${(y(hi * f) + 4).toFixed(1)}" text-anchor="end" class="oc-ax">${f ? rupeesShort(hi * f) : "0"}</text>`).join("");
-  const ticks = [0, Math.floor((n - 1) / 3), Math.floor((2 * (n - 1)) / 3), n - 1].map((i) => `<text x="${(L + i * bw + bw / 2).toFixed(1)}" y="${H - 8}" text-anchor="middle" class="oc-ax">${esc(shortDate(pts[i].date))}</text>`).join("");
-  const o = (ord || []).filter((p) => p.value != null), oHi = Math.max(...o.map((p) => p.value), 1);
-  const line = o.length > 2 ? o.map((p, i) => `${i ? "L" : "M"}${(L + (i / (o.length - 1)) * (W - L - R - bw) + bw / 2).toFixed(1)} ${(T + (H - T - B) * (1 - p.value / oHi) * 0.92).toFixed(1)}`).join(" ") : "";
-  return `<div class="card ov-chart"><div class="card-head"><h3>Revenue and orders, day by day</h3><span class="oc-legend"><i class="b"></i>Revenue<i class="l"></i>Orders</span></div>
-    <svg viewBox="0 0 ${W} ${H}" class="oc-svg" role="img" aria-label="Daily revenue bars and orders line">${grid}${bars}${line ? `<path d="${line}" pathLength="1" class="oc-line"/>` : ""}${ticks}</svg></div>`;
-}
-
 async function renderOverview(page) {
   const has = (code) => state.config.modules.some((m) => m.code === code);
   const opt = (p) => p.catch(() => null);
@@ -970,7 +954,6 @@ async function renderOverview(page) {
   const ALERTS_SHOWN = 6, ROWS_SHOWN = 10;
   page.innerHTML = `
     <div class="ov-tgrid">${tiles.join("")}</div>
-    ${overviewChart(headTrends[HEAD_KPIS.indexOf("gross_revenue")], headTrends[HEAD_KPIS.indexOf("delivered_orders")])}
     <div class="card ov-alerts">
       <div class="card-head"><h3>${alerts.length ? "Needs attention" : "All clear"}</h3>${critical ? `<span class="ov-crit">${critical} critical</span>` : '<span class="muted">nothing needs fixing right now</span>'}</div>
       <div id="ovAlertList"></div>
