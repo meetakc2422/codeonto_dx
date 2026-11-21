@@ -38,7 +38,7 @@ const ICONS = {
 const PLATFORM_COLORS = {
   google: "#d9480f", zomato: "#e23744", swiggy: "#fc8019", magicpin: "#e91e63",
   tripadvisor: "#00aa6c", booking: "#003580", makemytrip: "#d63b3b", facebook: "#1877f2",
-  instagram: "#c13584", district: "#7c3aed", practo: "#28328c", justdial: "#ff6f00", survey: "#64748b",
+  instagram: "#c13584", practo: "#28328c", justdial: "#ff6f00", survey: "#64748b",
 };
 const SERIES = ["#d9480f", "#0b1229", "#f5a524", "#12a150", "#8b5cf6", "#e5484d"];
 
@@ -184,7 +184,7 @@ const PLATFORM_ICONS = ["google", "zomato", "swiggy"];
 
 function platformPill(code) {
   const icon = PLATFORM_ICONS.includes(code);
-  const name = { google: "Google", zomato: "Zomato", swiggy: "Swiggy", district: "District" }[code] || code;
+  const name = { google: "Google", zomato: "Zomato", swiggy: "Swiggy" }[code] || code;
   return `<span class="pill">${icon ? `<img class="pill-icon" src="assets/${code}.png" alt="">` : `<span class="dot" style="background:${PLATFORM_COLORS[code] || "#94a3b8"}"></span>`}${esc(name)}</span>`;
 }
 function toast(msg) {
@@ -275,7 +275,7 @@ function renderSidebar() {
 // state.locationId holds the chosen outlet ids as "12" or "12,15,40" ("" = all); every API takes it as outlet_id
 const selIds = () => (state.locationId ? String(state.locationId).split(",").filter(Boolean) : []);
 const singleId = () => (selIds().length === 1 ? selIds()[0] : "");
-const PLATFORM_ID = { zomato: "zomato", swiggy: "swiggy", google: "google", district: "district" };
+const PLATFORM_ID = { zomato: "zomato", swiggy: "swiggy", google: "google" };
 const platformLocations = () => (state.platform && PLATFORM_ID[state.platform] ? state.locations.filter((l) => l[state.platform]) : state.locations);
 const platformName = () => state.config?.connected_platforms.find((p) => p.code === state.platform)?.name || "";
 const pickSel = new Set();
@@ -293,7 +293,7 @@ function showSelectedOutlet() {
 }
 
 function locationSub(l) {
-  const ids = { zomato: l.zomato && `Zomato ${l.zomato}`, district: l.district && `District ${l.district}`, swiggy: l.swiggy && `Swiggy ${l.swiggy}`, google: l.google && "Google" };
+  const ids = { zomato: l.zomato && `Zomato ${l.zomato}`, swiggy: l.swiggy && `Swiggy ${l.swiggy}`, google: l.google && "Google" };
   return [l.city, state.platform && PLATFORM_ID[state.platform] ? ids[state.platform] : l.resId].filter(Boolean).join(" · ");
 }
 
@@ -344,9 +344,8 @@ async function loadBrand(id) {
   state.locations = outlets.outlets.map((o) => {
     const name = o.area || o.outlet_name;
     const label = o.area && o.area.toLowerCase() !== o.outlet_name.toLowerCase() ? `${o.outlet_name} · ${o.area}` : name;
-    const dining = Boolean(o.is_dining);  // a dine-in listing: its Zomato res id is also its District id, and it has no delivery data
-    const resId = [dining ? `District ${o.zomato}` : o.zomato && `Zomato ${o.zomato}`, o.swiggy && `Swiggy ${o.swiggy}`].filter(Boolean).join(" · ");
-    return { id: o.id, name, label, city: o.city, resId, zomato: dining ? "" : o.zomato || "", district: o.district || "", dining, swiggy: o.swiggy || "", google: o.google || "",
+    const resId = [o.zomato && `Zomato ${o.zomato}`, o.swiggy && `Swiggy ${o.swiggy}`].filter(Boolean).join(" · ");
+    return { id: o.id, name, label, city: o.city, resId, zomato: o.zomato || "", swiggy: o.swiggy || "", google: o.google || "",
              search: [name, o.outlet_name, o.city, o.zomato, o.swiggy].filter(Boolean).join(" ").toLowerCase() };
   }).sort((a, b) => a.city.localeCompare(b.city) || a.name.localeCompare(b.name));
   $("#brandIndustry").textContent = config.brand.industry_name + (config.brand.is_demo ? " · SAMPLE DATA" : "");
@@ -536,12 +535,7 @@ function addPerfTabs(page, route) {
 }
 
 // Sidebar page "Slots & offers": dining offers and bookable slots, for brands that have a dining outlet.
-// dining data is District's: with Zomato, Swiggy or Google picked there is nothing to show
-const notDiningPlatform = () => state.platform && state.platform !== "district";
-const diningPlatformNote = () => `<div class="card empty-state"><h3>Dining is on District</h3><p class="muted">Switch the platform filter to All platforms or District to see this.</p></div>`;
-
 async function renderDiningPage(page) {
-  if (notDiningPlatform()) { page.innerHTML = diningPlatformNote(); return; }
   const v = state.diningTab === "menu" ? "menu" : "offers";
   page.innerHTML = `<div class="segmented recon-toggle" style="margin-bottom:16px;width:fit-content"><button data-v="offers" class="${v === "offers" ? "active" : ""}">Offers</button><button data-v="menu" class="${v === "menu" ? "active" : ""}">Menu</button></div><div id="diningView"></div>`;
   page.querySelector(".recon-toggle").onclick = (e) => {
@@ -1723,7 +1717,6 @@ function bindReconToggle(page) {
 }
 
 async function renderDiningPayouts(page) {
-  if (notDiningPlatform()) { page.innerHTML = diningPlatformNote(); return; }
   const d = await api(`/brands/${state.brandId}/dining/payouts`, filterParams());
   const s = d.summary, st = d.by_status;
   const label = { PENDING: "Pending settlement", CARRY_FORWARD: "Carried forward", SETTLED: "Settled", PAID: "Paid" };

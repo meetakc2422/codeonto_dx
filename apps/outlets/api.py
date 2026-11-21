@@ -23,14 +23,9 @@ def _brand_json(b: Brand) -> dict:
             "industry_code": b.industry.code, "industry_name": b.industry.name, "is_active": b.is_active, "is_demo": b.client.is_demo}
 
 
-def _is_dining(o: BrandOutlet) -> bool:
-    """A dine-in listing: its District id is the same res id as its Zomato one."""
-    return bool(o.zomato_id and o.zomato and o.zomato.is_dining)
-
-
 def _outlet_json(o: BrandOutlet) -> dict:
     return {"id": o.id, "outlet_name": o.outlet_name, "area": o.area, "city": o.city, "address": o.address,
-            "is_active": o.is_active, **o.platform_ids(), "is_dining": _is_dining(o), "district": o.zomato_id if _is_dining(o) else None,
+            "is_active": o.is_active, **o.platform_ids(),
             "labels": {code: str(getattr(o, f)) for code, f in BrandOutlet.PLATFORM_FIELDS.items() if getattr(o, f)}}
 
 
@@ -104,14 +99,7 @@ def brand_config(request, brand_id):
     kpis = Kpi.objects.filter(module__in=modules, is_active=True).select_related("module")
     counts = access.in_scope(b.outlets.all(), request.user, "id").aggregate(**{code: Count(f, filter=Q(**{f"{f}__isnull": False}))
                                     for code, f in BrandOutlet.PLATFORM_FIELDS.items()})
-    scoped = access.in_scope(b.outlets.all(), request.user, "id")
-    has_dining = scoped.filter(zomato__is_dining=True).exists()
-    codes = [c for c, n in counts.items() if n]
-    if "zomato" in codes and not scoped.filter(zomato__isnull=False, zomato__is_dining=False).exists():
-        codes.remove("zomato")  # its only Zomato ids are dine-in ones: those are District
-    if has_dining:
-        codes.append("district")
-    mapped = Platform.objects.filter(code__in=codes)
+    mapped = Platform.objects.filter(code__in=[c for c, n in counts.items() if n])
     return Response({
         "brand": _brand_json(b),
         "modules": [{"code": m.code, "name": m.name, "scope": m.scope, "locked": not access.is_staff(request.user) and not unlocked(b.client, m.code)}
