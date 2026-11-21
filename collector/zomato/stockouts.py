@@ -55,16 +55,16 @@ def _fetch(cookies: dict, res_id: str) -> list[dict]:
                                     or "json" not in resp.headers.get("content-type", "")):
         raise Blocked(f"Zomato blocked the menu request (403 Access Denied from {MENU_URL.split('/')[2]})")
     if resp.status_code in (401, 403):
-        raise PermissionError("Zomato session expired; run `run.py zomato session` for this account")
+        raise PermissionError(f"Zomato session expired (HTTP {resp.status_code}: {resp.text[:80]!r}); run `run.py zomato session` for this account")
     if resp.status_code == 429:
         raise RateLimited("Zomato rate limit (429) on menu fetch")
     resp.raise_for_status()
     try:
         body = resp.json()
     except ValueError:
-        raise PermissionError("Zomato session expired; run `run.py zomato session` for this account")
+        raise PermissionError(f"Zomato session expired (HTTP {resp.status_code} but not JSON, {resp.headers.get('content-type', '?')}: {resp.text[:80]!r}); run `run.py zomato session` for this account")
     if not body.get("success", True) and "login" in (body.get("message") or "").lower():
-        raise PermissionError("Zomato session expired; run `run.py zomato session` for this account")
+        raise PermissionError(f"Zomato session expired (message: {str(body.get('message'))[:80]!r}); run `run.py zomato session` for this account")
 
     return out_items((body.get("data") or {}).get("menuResponse") or {})
 
