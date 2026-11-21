@@ -72,11 +72,12 @@ def _platforms(d, r, x, y, w, h):
         d.add(Rect(x + 128, ly, 8, 8, fillColor=P.PLATFORM_COLOR.get(p["code"], P.GREY), strokeColor=None))
         _text(d, x + 142, ly + 1, f'{p["name"]}  {p["share"]:.0f}%' if p.get("share") is not None else p["name"], 8.5, True)
         _text(d, x + 142, ly - 11, f'{P.fmt(p["sales"], "currency", short=True)}  |  {P.fmt(p["orders"], "count")} orders', 7, color=MUTE)
-        _text(d, x + 142, ly - 21, f'Rating {P.fmt(p["rating"], "rating")}  |  {P.fmt(p["cancellation"], "percent")} cancelled', 7, color=MUTE)
+        bits = ([f'Rating {P.fmt(p["rating"], "rating")}'] if p.get("rating") else []) + ([f'{P.fmt(p["cancellation"], "percent")} cancelled'] if p.get("cancellation") is not None else [])
+        _text(d, x + 142, ly - 21, "  |  ".join(bits), 7, color=MUTE)
         ly -= 38
 
 
-def _bars(d, x, y, w, h, title, items, color_of, note=None):
+def _bars(d, x, y, w, h, title, items, color_of, note=None, label_w=92, chars=20):
     """Horizontal bars. items: [(label, value, text)]."""
     _card(d, x, y, w, h, title)
     items = [i for i in items if i[1] and i[1] > 0]
@@ -86,10 +87,10 @@ def _bars(d, x, y, w, h, title, items, color_of, note=None):
     top = max(i[1] for i in items)
     n = len(items)
     row = min(22, (h - 34) / n)
-    label_w, bar_w = 92, w - 92 - 100
+    bar_w = w - label_w - 100
     for k, (label, val, text) in enumerate(items):
         by = y + h - 36 - k * row
-        _text(d, x + 10, by, label[:20], 7.5)
+        _text(d, x + 10, by, (label if len(label) <= chars else label[: chars - 1] + "…"), 7.5)
         d.add(Rect(x + 10 + label_w, by - 2, bar_w, 9, rx=2, ry=2, fillColor=colors.white, strokeColor=None))
         d.add(Rect(x + 10 + label_w, by - 2, max(2, bar_w * val / top), 9, rx=2, ry=2, fillColor=color_of(k, label), strokeColor=None))
         _text(d, x + w - 8, by, text, 7.5, True, anchor="end")
@@ -128,9 +129,11 @@ def _outlets(d, r, x, y, w, h):
     rows = sorted([q for q in rows if q[1]], key=lambda q: -q[1])
     cap = 7
     shown = rows[:cap]
-    items = [(n.split(" · ")[0] if len(rows) > 3 else n, v, P.fmt(v, "currency", short=True)) for n, v in shown]
+    areas = [n.split(" · ")[-1] for n, _ in shown]
+    # the area tells outlets apart; where two share one, the start of the name goes in front
+    items = [(a if areas.count(a) == 1 else f'{n.split(" · ")[0][:11].rstrip()} · {a}', v, P.fmt(v, "currency", short=True)) for a, (n, v) in zip(areas, shown)]
     last = len(items) - 1
-    _bars(d, x, y, w, h, f"Outlets by sales ({len(rows)})", items, lambda k, _l: P.RED if (k == last and len(items) > 2) else P.BLUE, "No outlet sales")
+    _bars(d, x, y, w, h, f"Outlets by sales ({len(rows)})", items, lambda k, _l: P.RED if (k == last and len(items) > 2) else P.BLUE, "No outlet sales", label_w=100, chars=22)
 
 
 def _trend(d, r, x, y, w, h):
@@ -155,7 +158,8 @@ def _trend(d, r, x, y, w, h):
     for i, m in enumerate(ms):
         _text(d, px + i * step, y + 9, MONTHS[int(m["month"][5:7]) - 1] + " " + m["month"][2:4], 6.5, color=MUTE, anchor="middle")
     _text(d, x + w - 46, y + h - 15, "Sales", 7, True, P.BLUE, "end")
-    _text(d, x + w - 10, y + h - 15, "Payout", 7, True, colors.HexColor("#6F7FD1"), "end")
+    if any(m.get("payout") for m in ms):
+        _text(d, x + w - 10, y + h - 15, "Payout", 7, True, colors.HexColor("#6F7FD1"), "end")
 
 
 def build_drawing(r: dict) -> Drawing:
