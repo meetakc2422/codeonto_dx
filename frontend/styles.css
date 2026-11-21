@@ -1239,3 +1239,5 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .dn-fold > summary::before, .dining-card > summary::before { content: "▸"; font-size: 12px; opacity: .6; transition: transform .15s; }
 .dn-fold[open] > summary::before, .dining-card[open] > summary::before { transform: rotate(90deg); }
 .dining-card > summary small { margin-left: auto; }
+.menu-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-top: 10px; }
+.menu-thumbs img { width: 100%; height: 170px; object-fit: cover; object-position: top; border-radius: 8px; border: 1px solid var(--border); background: #f3f4f6; }

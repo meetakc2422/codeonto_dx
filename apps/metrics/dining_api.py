@@ -124,6 +124,7 @@ def brand_dining_menu(request, brand_id):
         rid = str(bo.zomato_id)
         pages = DiningMenuPage.objects.filter(res_id=rid)
         total, read = pages.count(), pages.filter(read_at__isnull=False).count()
+        images = list(pages.order_by("position").values_list("image_url", flat=True))
         items = list(DiningMenuItem.objects.filter(res_id=rid, price__isnull=False).order_by("page__position", "id"))
         delivery = _delivery_prices(brand_id, bo) if items else {}
         rows, unmatched = [], []
@@ -138,7 +139,7 @@ def brand_dining_menu(request, brand_id):
         rows.sort(key=lambda r: -abs(r["diff_pct"]))
         st = DiningMenuStatus.objects.filter(res_id=rid).first()
         avg = round(sum(r["diff_pct"] for r in rows) / len(rows), 1) if rows else None
-        out.append({"outlet_id": bo.id, "name": bo.display_name, "pages": total, "pages_read": read, "dishes": len(items),
+        out.append({"outlet_id": bo.id, "name": bo.display_name, "images": images, "pages": total, "pages_read": read, "dishes": len(items),
                     "compared": len(rows), "avg_diff_pct": avg,
                     "menu_updated": st.updated_text if st else "", "checked_at": st.checked_at if st else None, "synced_at": st.synced_at if st else None, "differ": sum(1 for r in rows if abs(r["diff_pct"]) >= 1),
                     "rows": rows, "unmatched": unmatched})

@@ -554,23 +554,27 @@ function renderDiningMenu(box, d) {
   const withData = outlets.filter((o) => o.compared);
   const all = withData.flatMap((o) => o.rows);
   const avg = all.length ? all.reduce((a, r) => a + r.diff_pct, 0) / all.length : null;
-  const pill = (p) => p == null ? `<span class="muted">—</span>` : `<span class="status ${Math.abs(p) < 1 ? "replied" : "pending"}">${p > 0 ? "+" : ""}${p.toFixed(1)}%</span>`;
-  const strip = `<div class="grid kpis" style="margin-bottom:16px">
+  const pill = (p) => p == null ? "" : `<span class="status ${Math.abs(p) < 1 ? "replied" : "pending"}">${p > 0 ? "+" : ""}${p.toFixed(1)}%</span>`;
+  // the comparison numbers only appear once some dishes have been read and matched
+  const strip = all.length ? `<div class="grid kpis" style="margin-bottom:16px">
     <div class="card kpi"><div class="kpi-top"><span class="kpi-label">Dishes compared</span></div><div class="kpi-value">${inr.format(all.length)}</div></div>
-    <div class="card kpi"><div class="kpi-top"><span class="kpi-label">Dining vs delivery, average</span></div><div class="kpi-value">${avg == null ? "—" : (avg > 0 ? "+" : "") + avg.toFixed(1) + "%"}</div></div>
-    <div class="card kpi"><div class="kpi-top"><span class="kpi-label">Priced differently</span></div><div class="kpi-value">${inr.format(all.filter((r) => Math.abs(r.diff_pct) >= 1).length)}</div></div></div>`;
+    <div class="card kpi"><div class="kpi-top"><span class="kpi-label">Dining vs delivery, average</span></div><div class="kpi-value">${(avg > 0 ? "+" : "") + avg.toFixed(1)}%</div></div>
+    <div class="card kpi"><div class="kpi-top"><span class="kpi-label">Priced differently</span></div><div class="kpi-value">${inr.format(all.filter((r) => Math.abs(r.diff_pct) >= 1).length)}</div></div></div>` : "";
   const row = (r) => `<tr><td>${esc(r.name)}${r.note ? ` <small class="muted">${esc(r.note)}</small>` : ""}</td><td>₹${inr.format(r.delivery)}</td><td>₹${inr.format(r.dining)}</td><td>${pill(r.diff_pct)}</td></tr>`;
+  const tbl = (rows) => `<table class="tbl"><thead><tr><th>Dish</th><th>Delivery</th><th>Dining</th><th>Difference</th></tr></thead><tbody>${rows.map(row).join("")}</tbody></table>`;
   const card = (o, i) => {
-    const status = !o.pages ? "menu not collected yet" : o.pages_read < o.pages ? `reading menu: ${o.pages_read} of ${o.pages} pages` : !o.compared ? `${o.dishes} dishes, none matched to delivery` : `${o.compared} dishes compared`;
+    const status = !o.pages ? "menu not collected yet" : !o.dishes ? `${o.pages} menu page${o.pages === 1 ? "" : "s"}` : !o.compared ? `${o.pages} pages · ${o.dishes} dishes read, none matched to delivery` : `${o.pages} pages · ${o.compared} dishes compared`;
     const top = o.rows.slice(0, 10), rest = o.rows.slice(10);
-    const tbl = (rows) => `<table class="tbl"><thead><tr><th>Dish</th><th>Delivery</th><th>Dining</th><th>Difference</th></tr></thead><tbody>${rows.map(row).join("")}</tbody></table>`;
+    const gallery = (o.images || []).length ? `<details class="dn-fold" ${o.dishes ? "" : "open"}><summary><b>Menu pages</b> <small class="muted">${o.images.length} · as shown on District</small></summary>
+      <div class="menu-thumbs">${o.images.map((u, k) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(u)}" alt="Menu page ${k + 1}"></a>`).join("")}</div></details>` : "";
     return `<details class="card dining-card" style="margin-bottom:12px" ${i === 0 ? "open" : ""}>
       <summary class="card-head" style="cursor:pointer"><h3>${esc(o.name)}</h3><small class="muted">${esc(status)}</small>${pill(o.avg_diff_pct)}</summary>
       <p class="muted" style="margin:0 0 10px;font-size:12px">${o.menu_updated ? `District: ${esc(o.menu_updated.toLowerCase())}` : "District shows no update time"}${o.checked_at ? ` · checked ${timeAgo(o.checked_at)}` : ""}${o.synced_at ? ` · menu fetched ${timeAgo(o.synced_at)}` : ""}</p>
       ${top.length ? tbl(top) : ""}
       ${rest.length ? `<details class="dn-fold"><summary><b>All ${o.rows.length} compared dishes</b></summary>${tbl(rest)}</details>` : ""}
       ${o.unmatched.length ? `<details class="dn-fold"><summary><b>Not on the delivery menu</b> <small class="muted">${o.unmatched.length} dishes</small></summary>
-        <table class="tbl"><tbody>${o.unmatched.map((r) => `<tr><td>${esc(r.name)}${r.note ? ` <small class="muted">${esc(r.note)}</small>` : ""}</td><td>₹${inr.format(r.dining)}</td></tr>`).join("")}</tbody></table></details>` : ""}</details>`;
+        <table class="tbl"><tbody>${o.unmatched.map((r) => `<tr><td>${esc(r.name)}${r.note ? ` <small class="muted">${esc(r.note)}</small>` : ""}</td><td>₹${inr.format(r.dining)}</td></tr>`).join("")}</tbody></table></details>` : ""}
+      ${gallery}</details>`;
   };
   box.innerHTML = strip + outlets.map(card).join("");
 }
