@@ -101,6 +101,13 @@ body.collapsed .sidebar { width: 72px; }
 body.collapsed .nav-item span, body.collapsed .nav-item .soon { display: none; }
 body.collapsed .nav-group { visibility: hidden; height: 12px; padding: 6px 0; }
 body.collapsed .content { margin-left: 72px; }
+/* collapsed to icons by default; hovering opens it over the page without moving the content */
+@media (min-width: 861px) {
+  body.collapsed .sidebar:hover { width: var(--sidebar-w); box-shadow: 8px 0 32px rgba(11,18,41,.28); }
+  body.collapsed .sidebar:hover .nav-item span, body.collapsed .sidebar:hover .nav-item .soon { display: inline; }
+  body.collapsed .sidebar:hover .nav-group { visibility: visible; height: auto; padding: 18px 12px 8px; }
+  .sidebar { transition: width .22s cubic-bezier(.2,.7,.2,1), box-shadow .22s; }
+}
 .scrim { display: none; }
 
 /* ---------- content ---------- */

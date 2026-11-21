@@ -5005,8 +5005,13 @@ $("#rangeQuick").addEventListener("click", (e) => {
 document.addEventListener("click", (e) => { if (!e.target.closest("#rangePop, #rangeSeg")) $("#rangePop").hidden = true; });
 $("#menuToggle").addEventListener("click", () => {
   if (window.matchMedia("(max-width: 860px)").matches) document.body.classList.toggle("nav-open");
-  else document.body.classList.toggle("collapsed");
+  else {
+    document.body.classList.toggle("collapsed");
+    try { localStorage.setItem("sidebar", document.body.classList.contains("collapsed") ? "icons" : "open"); } catch (e) { /* private window */ }
+  }
 });
+// desktop starts with the icon rail (it opens on hover) unless the person pinned it open
+try { if (localStorage.getItem("sidebar") !== "open") document.body.classList.add("collapsed"); } catch (e) { document.body.classList.add("collapsed"); }
 $("#scrim").addEventListener("click", () => document.body.classList.remove("nav-open"));
 $("#fullscreenBtn").addEventListener("click", () => {
   if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.();
