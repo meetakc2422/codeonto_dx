@@ -1231,3 +1231,11 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .sl-rej-detail[hidden] { display: none; }
 .sl-rej-row { display: flex; justify-content: space-between; gap: 10px; padding: 3px 0; border-top: 1px solid var(--border); }
 .sl-rej-row:first-of-type { border-top: 0; }
+
+/* Slots & offers: collapsible sections */
+.dn-fold { border-top: 1px solid var(--border); padding: 10px 0; }
+.dn-fold > summary, .dining-card > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 8px; }
+.dn-fold > summary::-webkit-details-marker, .dining-card > summary::-webkit-details-marker { display: none; }
+.dn-fold > summary::before, .dining-card > summary::before { content: "▸"; font-size: 12px; opacity: .6; transition: transform .15s; }
+.dn-fold[open] > summary::before, .dining-card[open] > summary::before { transform: rotate(90deg); }
+.dining-card > summary small { margin-left: auto; }

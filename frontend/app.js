@@ -546,10 +546,10 @@ function renderDiningView(box, d) {
   box.innerHTML = d.outlets.map((o, i) => {
     if (!o.days.length) return `<div class="card" style="margin-bottom:16px"><h3>${esc(o.name)}</h3><p class="muted">No dining readings yet. The collector hasn't run for this outlet.</p></div>`;
     const day = o.days[0];
-    return `<div class="card dining-card" data-i="${i}" style="margin-bottom:16px">
-      <div class="card-head"><h3>${esc(o.name)}</h3><small class="muted">checked ${timeAgo(o.last_checked)} · ${esc(o.readings)} reading${o.readings === 1 ? "" : "s"}</small></div>
+    return `<details class="card dining-card" data-i="${i}" style="margin-bottom:16px" ${i === 0 ? "open" : ""}>
+      <summary class="card-head" style="cursor:pointer"><h3>${esc(o.name)}</h3><small class="muted">checked ${timeAgo(o.last_checked)} · ${esc(o.readings)} reading${o.readings === 1 ? "" : "s"}</small></summary>
       <div class="segmented dining-days" style="margin:8px 0 12px;flex-wrap:wrap">${o.days.map((x, k) => `<button data-k="${k}" class="${k === 0 ? "active" : ""}">${new Date(x.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</button>`).join("")}</div>
-      <div class="dining-day">${diningDay(day)}</div>${diningPast(o.past || [])}</div>`;
+      <div class="dining-day">${diningDay(day)}</div>${diningPast(o.past || [])}</details>`;
   }).join("");
   box.querySelectorAll(".dining-card").forEach((card) => {
     const o = d.outlets[Number(card.dataset.i)];
@@ -563,14 +563,14 @@ function renderDiningView(box, d) {
 
 // Past dining dates in the chosen period: how much of each offer's capacity was taken (estimated from slots left).
 function diningPast(rows) {
-  const head = `<h4 style="margin:22px 0 4px">Past days · ${esc(periodLabel())}</h4>`;
-  if (!rows.length) return `${head}<p class="muted" style="margin:0">No readings for past dates in this period. We keep the last 30 days.</p>`;
+  const head = `<summary><b>Past days</b> <small class="muted">${esc(periodLabel())} · ${rows.length} rows</small></summary>`;
+  if (!rows.length) return `<details class="dn-fold" style="margin-top:14px">${head}<p class="muted" style="margin:8px 0 0">No readings for past dates in this period. We keep the last 30 days.</p></details>`;
   const tone = (p) => (p == null ? "" : p >= 70 ? "color:#16a34a" : p < 30 ? "color:#dc2626" : "");
-  return `${head}<p class="muted" style="margin:0 0 8px;font-size:12px">Booked = most slots we saw minus the last reading. An estimate: cancellations and manual changes also move the count.</p>
+  return `<details class="dn-fold" style="margin-top:14px">${head}<p class="muted" style="margin:8px 0;font-size:12px">Booked = most slots we saw minus the last reading. An estimate: cancellations and manual changes also move the count.</p>
     <table class="tbl"><thead><tr><th>Date</th><th>Meal</th><th>Offer</th><th>Slots</th><th>Booked</th><th>Filled</th></tr></thead><tbody>${rows.map((r) => `<tr>
       <td>${new Date(r.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</td>
       <td>${esc(r.meal)}</td><td><b>${esc(r.offer)}</b></td><td>${esc(r.capacity)}</td><td>${esc(r.booked)}</td>
-      <td style="${tone(r.fill_pct)}"><b>${r.fill_pct == null ? "—" : esc(r.fill_pct) + "%"}</b></td></tr>`).join("")}</tbody></table>`;
+      <td style="${tone(r.fill_pct)}"><b>${r.fill_pct == null ? "—" : esc(r.fill_pct) + "%"}</b></td></tr>`).join("")}</tbody></table></details>`;
 }
 
 function diningDay(day) {
@@ -582,8 +582,8 @@ function diningDay(day) {
   const byMeal = {};
   day.slots.forEach((s) => (byMeal[s.meal || "Slots"] = byMeal[s.meal || "Slots"] || []).push(s));
   const chip = (s, gone) => `<span class="comp-cuisine ${gone ? "" : "on"}" style="${gone ? "text-decoration:line-through;opacity:.5" : ""}" title="${gone ? "bookable earlier today, gone now" : "open"}">${esc(s.time || s)}${s.discount_pct ? ` · ${esc(s.discount_pct)}%` : ""}</span>`;
-  const slots = Object.entries(byMeal).map(([m, list]) => `<div style="margin-top:12px"><b>${esc(m)}</b> <small class="muted">${list.length} open</small><div class="comp-cuisine-row" style="margin-top:6px">${list.map((s) => chip(s, false)).join("")}</div></div>`).join("");
-  const gone = day.gone.length ? `<div style="margin-top:12px"><b>Gone since earlier readings</b> <small class="muted">full or closed</small><div class="comp-cuisine-row" style="margin-top:6px">${day.gone.map((t) => chip({ time: t }, true)).join("")}</div></div>` : "";
+  const slots = Object.entries(byMeal).map(([m, list]) => `<details class="dn-fold"><summary><b>${esc(m)}</b> <small class="muted">${list.length} slots open · ${esc(list[0].time)} to ${esc(list[list.length - 1].time)}</small></summary><div class="comp-cuisine-row" style="margin-top:8px">${list.map((s) => chip(s, false)).join("")}</div></details>`).join("");
+  const gone = day.gone.length ? `<details class="dn-fold"><summary><b>Gone since earlier readings</b> <small class="muted">${day.gone.length} full or closed</small></summary><div class="comp-cuisine-row" style="margin-top:8px">${day.gone.map((t) => chip({ time: t }, true)).join("")}</div></details>` : "";
   return offers + slots + gone;
 }
 
