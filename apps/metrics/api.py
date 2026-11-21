@@ -24,6 +24,7 @@ _AGG_FILTER = """
     AND (%(outlet_id)s::bigint[] IS NULL OR md.outlet_id = ANY(%(outlet_id)s::bigint[]))
     AND (%(allowed)s::bigint[] IS NULL OR md.outlet_id = ANY(%(allowed)s::bigint[]))
     AND (%(platform)s::text IS NULL OR md.platform = %(platform)s)
+    AND (%(platform)s::text IS NOT NULL OR md.platform <> 'district' OR k.code NOT IN ('listing_rating', 'rating_count'))
     AND (%(module)s::text IS NULL OR m.code = %(module)s)
     AND (%(kpi)s::text IS NULL OR k.code = %(kpi)s)"""
 
@@ -109,7 +110,7 @@ def brand_kpis(request, brand_id):
                        FROM kpis k CROSS JOIN platforms p
                        WHERE EXISTS (SELECT 1 FROM metric_daily md JOIN brand_outlets bo ON bo.id = md.outlet_id
                                      WHERE md.kpi_id = k.id AND md.platform = p.code AND bo.brand_id = %(b)s AND md.metric_date BETWEEN %(s)s AND %(e)s
-                                       AND (%(o)s::bigint[] IS NULL OR md.outlet_id = ANY(%(o)s::bigint[])) AND (%(p)s::text IS NULL OR md.platform = %(p)s)
+                                       AND (%(o)s::bigint[] IS NULL OR md.outlet_id = ANY(%(o)s::bigint[])) AND (%(p)s::text IS NULL OR md.platform = %(p)s) AND (%(p)s::text IS NOT NULL OR md.platform <> 'district' OR k.code NOT IN ('listing_rating', 'rating_count'))
                                        AND (%(a)s::bigint[] IS NULL OR md.outlet_id = ANY(%(a)s::bigint[])))
                        GROUP BY k.code""", {"b": brand_id, "s": start, "e": end, "o": f["outlet_id"], "p": f["platform"], "a": f["allowed"]})
         platforms = {code: [p for p in plats if p] for code, plats in cur.fetchall()}
