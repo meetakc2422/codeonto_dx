@@ -538,7 +538,14 @@ function addPerfTabs(page, route) {
 }
 
 // ---------- Export reports: pick the modules and the dates, check the data, download Excel or PDF ----------
-const expState = { start: "", end: "", mods: null, preset: "" };
+const expState = { start: "", end: "", mods: null, preset: "", tables: false };
+const exSvg = (d, c = "currentColor") => `<svg class="ex-ico" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
+const EX_ICON = {
+  pdf: exSvg('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>'),
+  xlsx: exSvg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/>'),
+  wa: `<svg class="ex-ico" viewBox="0 0 24 24" width="17" height="17" fill="#25D366"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.2 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.8s.7-2 .9-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.4 0 .5l-.4.6-.4.4c-.1.2-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.3 2.4 1.5.3.1.4.1.6-.1l.8-1c.2-.3.4-.2.6-.1l2 .9c.3.1.5.2.5.3.1.2.1.8-.1 1.4z"/></svg>`,
+  mail: exSvg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>', "#408FCA"),
+};
 
 async function renderReport(page) {
   const yest = new Date(); yest.setDate(yest.getDate() - 1);
@@ -557,8 +564,11 @@ async function renderReport(page) {
     <div class="ex-mods">${meta.modules.map((m) => `<label class="ex-mod"><input type="checkbox" data-mod="${m.key}" ${expState.mods.has(m.key) ? "checked" : ""}><span><b>${esc(m.name)}</b><small class="muted">${esc(m.about)}</small></span></label>`).join("")}</div>
     <p class="muted" style="font-size:12.5px;margin:12px 0 10px">${esc(outletsLabel())} · ${esc(platName)}. Change these with the filters at the top of the page.</p>
     <div id="exCheck" class="rp-data">Checking the data…</div>
-    <div class="ex-actions"><button class="btn light" id="exPdf">Download PDF</button><button class="btn blue" id="exXlsx">Download Excel</button>
-      <span class="muted" style="margin-left:8px">Share PDF:</span><button class="btn light" id="exWa">WhatsApp</button><button class="btn light" id="exMail">Email</button></div></div>`;
+    <label class="ex-tables"><input type="checkbox" id="exTables" ${expState.tables ? "checked" : ""}><span><b>Include the detailed tables in the PDF</b><small class="muted">Off: a one-page picture summary. On: the picture page plus every number, outlet by outlet.</small></span></label>
+    <div class="ex-actions">
+      <div class="ex-group"><span class="ex-glabel">Download</span><button class="btn light ex-btn" id="exPdf">${EX_ICON.pdf}PDF</button><button class="btn light ex-btn" id="exXlsx">${EX_ICON.xlsx}Excel</button></div>
+      <div class="ex-group"><span class="ex-glabel">Share the PDF</span><button class="btn light ex-btn" id="exWa">${EX_ICON.wa}WhatsApp</button><button class="btn light ex-btn" id="exMail">${EX_ICON.mail}Email</button></div>
+    </div></div>`;
   const $s = $("#exStart"), $e = $("#exEnd");
   $s.value = expState.start; $e.value = expState.end;
   let cov = null, timer = null;
@@ -596,34 +606,37 @@ async function renderReport(page) {
   $s.onchange = () => setDates($s.value, expState.end);
   $e.onchange = () => setDates(expState.start, $e.value);
   page.querySelectorAll("[data-mod]").forEach((c) => c.onchange = () => { c.checked ? expState.mods.add(c.dataset.mod) : expState.mods.delete(c.dataset.mod); paint(); });
+  $("#exTables").onchange = (e) => { expState.tables = e.target.checked; };
   $("#exAll").onclick = () => { page.querySelectorAll("[data-mod]").forEach((c) => { c.checked = true; expState.mods.add(c.dataset.mod); }); paint(); };
   $("#exNone").onclick = () => { page.querySelectorAll("[data-mod]").forEach((c) => { c.checked = false; }); expState.mods.clear(); paint(); };
   const download = (kind) => async (e) => {
-    const btn = e.currentTarget, label = btn.textContent;
+    const btn = e.currentTarget, label = btn.lastChild.textContent;
     if (cov && !cov.complete && cov.days) {  // tell them before the file is made, not after
       const lines = cov.gaps.slice(0, 6).map((g) => `• ${nm(g)}: ${g.no_data ? "no data at all" : g.ranges.join(", ")}`).join("\n");
       if (!confirm(`Some days have no sales data:\n\n${lines}${cov.gaps.length > 6 ? `\n…and ${cov.gaps.length - 6} more` : ""}\n\nThe file leaves these days out and lists them ${kind === "pdf" ? "on its last page" : 'on a "Data gaps" sheet'}. Download it anyway?`)) return;
     }
-    btn.disabled = true; btn.textContent = "Preparing…";
+    btn.disabled = true; btn.lastChild.textContent = "Preparing…";
     try {
       const url = new URL(`${API}/brands/${state.brandId}/report/${kind}`, location.origin);
       Object.entries(exportFilters()).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
+      if (kind === "pdf" && expState.tables) url.searchParams.set("tables", "1");
       const res = await apiFetch(url);
       if (!res.ok) throw userError("The file couldn't be made right now. Please try again in a moment.");
       const a = document.createElement("a");
       a.href = URL.createObjectURL(await res.blob()); a.download = `report_${expState.start}_to_${expState.end}.${kind === "pdf" ? "pdf" : "xlsx"}`; a.click(); URL.revokeObjectURL(a.href);
     } catch (err) { toast(userMessage(err)); }
-    btn.disabled = false; btn.textContent = label; paint();
+    btn.disabled = false; btn.lastChild.textContent = label; paint();
   };
   $("#exXlsx").onclick = download("xlsx");
   $("#exPdf").onclick = download("pdf");
   // Share the PDF: the phone's share sheet when it can attach the file, else download it and open WhatsApp / mail with the message ready
   const share = (via) => async (e) => {
-    const btn = e.currentTarget, label = btn.textContent;
-    btn.disabled = true; btn.textContent = "Preparing…";
+    const btn = e.currentTarget, label = btn.lastChild.textContent;
+    btn.disabled = true; btn.lastChild.textContent = "Preparing…";
     try {
       const url = new URL(`${API}/brands/${state.brandId}/report/pdf`, location.origin);
       Object.entries(exportFilters()).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
+      if (kind === "pdf" && expState.tables) url.searchParams.set("tables", "1");
       const res = await apiFetch(url);
       if (!res.ok) throw userError("The file couldn't be made right now. Please try again in a moment.");
       const blob = await res.blob(), name = `report_${expState.start}_to_${expState.end}.pdf`;
@@ -638,7 +651,7 @@ async function renderReport(page) {
         toast(`PDF downloaded: attach ${name} in ${via === "wa" ? "WhatsApp" : "your mail"}`);
       }
     } catch (err) { toast(userMessage(err)); }
-    btn.disabled = false; btn.textContent = label; paint();
+    btn.disabled = false; btn.lastChild.textContent = label; paint();
   };
   $("#exWa").onclick = share("wa");
   $("#exMail").onclick = share("mail");

@@ -8,7 +8,7 @@ from reportlab.lib.units import mm
 from . import report_pdf as P
 
 MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
-W, H = P.WIDTH, 138 * mm
+W, H = P.WIDTH, 128 * mm
 INK, MUTE, CARD = P.NAVY, P.GREY, colors.HexColor("#F3F5F9")
 
 

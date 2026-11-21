@@ -1299,5 +1299,12 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .ex-mod { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; }
 .ex-mod input { margin-top: 3px; }
 .ex-mod small { display: block; font-size: 12px; line-height: 1.35; }
-.ex-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 4px; }
+.ex-tables { display: flex; gap: 10px; align-items: flex-start; margin: 14px 0 6px; cursor: pointer; }
+.ex-tables input { margin-top: 3px; }
+.ex-tables small { display: block; font-size: 12px; line-height: 1.35; }
+.ex-actions { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: center; justify-content: space-between; margin-top: 10px; padding-top: 14px; border-top: 1px solid var(--border); }
+.ex-group { display: flex; align-items: center; gap: 8px; }
+.ex-glabel { font-size: 12.5px; font-weight: 600; color: var(--muted, #6b7585); margin-right: 2px; }
+.ex-btn { display: inline-flex; align-items: center; gap: 7px; }
+.ex-ico { flex: none; }
 .ex-actions button:disabled { opacity: .5; cursor: not-allowed; }

@@ -229,7 +229,17 @@ def build_pdf(r: dict) -> bytes:
     if r.get("visual", True):
         from .report_visual import build_drawing
 
-        story += [build_drawing(r), PageBreak()]
+        story += [build_drawing(r)]
+        if not r.get("tables"):  # the picture page alone, with a one-line data check under it
+            if not cov["days"]:
+                note = cov.get("note", "")
+            elif cov["complete"]:
+                note = f'<font color="#12803F"><b>Data check:</b> complete for all {cov["days"]} days.</font>'
+            else:
+                note = f'<font color="#8A5A00"><b>Data check:</b> some days have no data and are left out. Download with the detailed tables to see which.</font>'
+            story += [Spacer(1, 4), Paragraph(note, st["note"])]
+            return _finish(story, r, p, nice, title)
+        story.append(PageBreak())
     tiles = _tiles(r, st)
     if tiles:
         story += [tiles, Spacer(1, 5)]
@@ -289,6 +299,10 @@ def build_pdf(r: dict) -> bytes:
         story += [PageBreak(), Paragraph("Days with no sales data", st["h2"]),
                   Paragraph(f'Checked on daily delivered orders from {nice(cov["from"])} to {nice(cov["to"])}. The figures in this report leave these days out.', st["small"]), Spacer(1, 4), t]
 
+    return _finish(story, r, p, nice, title)
+
+
+def _finish(story, r, p, nice, title):
     def footer(canvas, doc):
         canvas.saveState()
         canvas.setFont(F, 6.8)

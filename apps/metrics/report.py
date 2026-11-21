@@ -305,6 +305,7 @@ def brand_report_pdf(request, brand_id):
     except ValueError:
         return Response({"detail": "Dates must look like 2026-11-20"}, status=400)
     p = data["period"]
+    data["tables"] = request.query_params.get("tables") == "1"
     resp = HttpResponse(build_pdf(data), content_type="application/pdf")
     resp["Content-Disposition"] = f'attachment; filename="report_{p["start"]}_to_{p["end"]}.pdf"'
     return resp
