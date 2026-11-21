@@ -27,7 +27,7 @@ from .api import _aggregate, _filters, _range
 
 # (section key, title, KPI codes in column order)
 SECTIONS = [
-    ("overall", "Sales and operations", ["gross_revenue", "delivered_orders", "avg_order_value", "cancellation_rate", "cancellation_loss",
+    ("overall", "Sales and operations", ["net_revenue", "gross_revenue", "delivered_orders", "avg_order_value", "cancellation_rate", "cancellation_loss",
                                           "delayed_orders_pct", "avg_prep_time", "online_pct", "mfr_accuracy"]),
     ("growth", "Customer funnel", ["impressions", "menu_views", "add_to_cart", "funnel_orders", "menu_to_order_pct"]),
     ("ads", "Ads and discounts", ["ad_spend", "ad_sales", "ad_roi", "ad_orders", "discount_given", "discount_pct_revenue"]),
@@ -71,14 +71,14 @@ def _ranges(days: list[date]) -> list[str]:
 
 
 def coverage(outlets: dict, names: dict, platform, start: date, end: date) -> dict:
-    """Which days have no sales data, per outlet and platform. Checked on daily sales (gross_revenue), which every other business figure
+    """Which days have no sales data, per outlet and platform. Checked on daily delivered orders, which both Zomato and Swiggy report and which every other business figure
     arrives with. Today is left out: its numbers are still filling in. Only platforms an outlet is mapped to are expected."""
     last = min(end, date.today() - timedelta(days=1))
     if last < start:
-        return {"checked": "Sales", "from": start.isoformat(), "to": last.isoformat(), "days": 0, "complete": True, "gaps": [], "note": "Today only: its numbers are still filling in."}
+        return {"checked": "Orders", "from": start.isoformat(), "to": last.isoformat(), "days": 0, "complete": True, "gaps": [], "note": "Today only: its numbers are still filling in."}
     days = [start + timedelta(days=i) for i in range((last - start).days + 1)]
     have = defaultdict(set)
-    for oid, plat, d in MetricDaily.objects.filter(outlet_id__in=list(outlets), kpi__code="gross_revenue", metric_date__range=(start, last)).values_list("outlet_id", "platform_id", "metric_date"):
+    for oid, plat, d in MetricDaily.objects.filter(outlet_id__in=list(outlets), kpi__code="delivered_orders", metric_date__range=(start, last)).values_list("outlet_id", "platform_id", "metric_date"):
         have[(oid, plat)].add(d)
     gaps = []
     for oid, o in outlets.items():
@@ -88,7 +88,7 @@ def coverage(outlets: dict, names: dict, platform, start: date, end: date) -> di
             if miss:
                 gaps.append({"outlet_id": oid, "name": names[oid], "platform": p, "missing_days": len(miss), "no_data": len(miss) == len(days), "ranges": _ranges(miss)})
     gaps.sort(key=lambda g: (-g["missing_days"], g["name"]))
-    return {"checked": "Sales", "from": start.isoformat(), "to": last.isoformat(), "days": len(days), "complete": not gaps, "gaps": gaps}
+    return {"checked": "Orders", "from": start.isoformat(), "to": last.isoformat(), "days": len(days), "complete": not gaps, "gaps": gaps}
 
 
 def build(request, brand_id: int) -> dict:
@@ -126,7 +126,7 @@ def build(request, brand_id: int) -> dict:
     sections = []
     for key, title, cs in SECTIONS:
         cs = [c for c in cs if c in meta]
-        cols = [{"code": c, "name": meta[c].name, "unit": meta[c].unit, "higher_is_better": meta[c].higher_is_better} for c in cs]
+        cols = [{"code": c, "name": "Gross revenue (Zomato only)" if c == "gross_revenue" else meta[c].name, "unit": meta[c].unit, "higher_is_better": meta[c].higher_is_better} for c in cs]
         rows = [{"outlet_id": oid, "name": names[oid], **{c: cell(cur_out.get(oid, {}).get(c), prev_out.get(oid, {}).get(c)) for c in cs}}
                 for oid in sorted(outlets, key=lambda i: names[i])]
         rows = [r for r in rows if any(r[c]["value"] is not None for c in cs)]
@@ -186,7 +186,7 @@ def build(request, brand_id: int) -> dict:
         me = min(date(ms.year, ms.month, calendar.monthrange(ms.year, ms.month)[1]), end)
         t = pull(ms, me, False)
         key = f"{ms.year}-{ms.month:02d}"
-        sales, ads, disc = t.get("gross_revenue"), t.get("ad_spend"), t.get("discount_given")
+        sales, ads, disc = t.get("net_revenue"), t.get("ad_spend"), t.get("discount_given")
         months.append({"month": key, "sales": sales, "payout": float(mp[key]["pay"]) if key in mp and mp[key]["pay"] is not None else None,
                        "ads_pct": round(ads / sales * 100, 1) if sales and ads is not None else None,
                        "discount_pct": round(disc / sales * 100, 1) if sales and disc is not None else None})
@@ -291,11 +291,11 @@ def brand_report_xlsx(request, brand_id):
         for g in cov["gaps"]:
             sh.append([g["name"], g["platform"].title(), g["missing_days"], ", ".join(g["ranges"])])
         sh.append([])
-        sh.append([f"Checked on daily sales from {cov['from']} to {cov['to']}. Figures in the other sheets leave these days out."])
+        sh.append([f"Checked on daily orders from {cov['from']} to {cov['to']}. Figures in the other sheets leave these days out."])
         for col, w in zip("ABCD", (38, 12, 14, 70)):
             sh.column_dimensions[col].width = w
     sh = wb.create_sheet("Months")
-    sh.append(["Month", "Sales", "Payout", "Ads % of sales", "Discount % of sales"])
+    sh.append(["Month", "Net sales", "Payout", "Ads % of net sales", "Discount % of net sales"])
     for cell_ in sh[1]:
         cell_.fill, cell_.font = head_fill, head_font
     for m in r["months"]:

@@ -557,9 +557,9 @@ async function renderReport(page) {
   const table = (s) => `<div class="rp-scroll"><table class="tbl rp-tbl"><thead><tr><th>Outlet</th>${s.columns.map((c) => `<th>${esc(c.name)}</th>`).join("")}</tr></thead><tbody>
       ${s.rows.map((r) => `<tr><td>${esc(r.name)}</td>${s.columns.map((c) => `<td>${cell(c, r[c.code])}</td>`).join("")}</tr>`).join("")}
       ${s.rows.length > 1 ? `<tr class="rp-total"><td>Total</td>${s.columns.map((c) => `<td>${cell(c, s.total[c.code])}</td>`).join("")}</tr>` : ""}</tbody></table></div>`;
-  const months = d.months.some((m) => m.sales != null) ? `<details class="card rp-sec" open><summary><h3>Month by month</h3><small class="muted">sales, payout, ads and discounts</small></summary>
+  const months = d.months.some((m) => m.sales != null) ? `<details class="card rp-sec" open><summary><h3>Month by month</h3><small class="muted">net sales, payout, ads and discounts</small></summary>
       <div style="height:230px"><canvas id="rpMonths"></canvas></div>
-      <div class="rp-scroll"><table class="tbl rp-tbl"><thead><tr><th>Month</th><th>Ads % of sales</th><th>Discount % of sales</th></tr></thead><tbody>
+      <div class="rp-scroll"><table class="tbl rp-tbl"><thead><tr><th>Month</th><th>Ads % of net sales</th><th>Discount % of net sales</th></tr></thead><tbody>
       ${d.months.map((m) => `<tr><td>${esc(m.month)}</td><td>${m.ads_pct == null ? "—" : m.ads_pct + "%"}</td><td>${m.discount_pct == null ? "—" : m.discount_pct + "%"}</td></tr>`).join("")}</tbody></table></div></details>` : "";
   const cov = d.coverage, nm = (g) => `${g.name} (${g.platform === "swiggy" ? "Swiggy" : "Zomato"})`;
   const coverage = !cov.days ? `<div class="rp-data">${esc(cov.note || "")}</div>`
@@ -572,7 +572,7 @@ async function renderReport(page) {
       <button class="btn blue" id="rpExport">Download Excel</button></div>
     ${coverage}
     ${notes ? `<div class="rp-notes">${notes}</div>` : ""}
-    <div class="grid kpis">${tile("Sales", "overall", "gross_revenue")}${tile("Orders", "overall", "delivered_orders")}${tile("Average order value", "overall", "avg_order_value")}${tile("Rating", "reputation", "listing_rating")}</div>
+    <div class="grid kpis">${tile("Net sales", "overall", "net_revenue")}${tile("Orders", "overall", "delivered_orders")}${tile("Average order value", "overall", "avg_order_value")}${tile("Rating", "reputation", "listing_rating")}</div>
     ${d.sections.map((s, i) => `<details class="card rp-sec" ${i === 0 ? "open" : ""}><summary><h3>${esc(s.title)}</h3><small class="muted">${s.rows.length} outlet${s.rows.length === 1 ? "" : "s"}</small></summary>${table(s)}</details>`).join("")}
     ${months}`;
   $("#rpExport").onclick = async (e) => {
@@ -594,7 +594,7 @@ async function renderReport(page) {
   };
   const cv = $("#rpMonths");
   if (cv) chart(cv, { type: "bar", data: { labels: d.months.map((m) => m.month), datasets: [
-      { label: "Sales", data: d.months.map((m) => m.sales), backgroundColor: "#408fca" }, { label: "Payout", data: d.months.map((m) => m.payout), backgroundColor: "#9aa8e8" }] },
+      { label: "Net sales", data: d.months.map((m) => m.sales), backgroundColor: "#408fca" }, { label: "Payout", data: d.months.map((m) => m.payout), backgroundColor: "#9aa8e8" }] },
     options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { callback: (v) => compactINR(v) } } } } });
 }
 
