@@ -6,6 +6,7 @@ is on the menu (enabled) but in_stock is 0; items the restaurant switched off th
 Meant to run every few minutes: `run.py swiggy stockouts --every 5`.
 """
 
+from collections import defaultdict
 import random
 import time
 from collections import Counter
@@ -126,9 +127,23 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     expired: set = set()
     failures: list[str] = []
     limited = 0
+    answered, refused_by = defaultdict(int), defaultdict(list)  # per login: stores that answered, and stores that were refused
+    for s, items, err in results:
+        if isinstance(err, PermissionError):
+            refused_by[login_of(s)].append(str(s["res_id"]))
+        elif not err:
+            answered[login_of(s)] += 1
     for s, items, err in results:
         if isinstance(err, PermissionError):
             acc_id = login_of(s)
+            if answered[acc_id]:  # other stores of this login answered, so the login is alive: Swiggy refused just this store (not one this login may open)
+                if acc_id not in expired:
+                    expired.add(acc_id)
+                    ids = refused_by[acc_id]
+                    log.warning("swiggy stockouts: login '%s' is fine (%s stores answered) but Swiggy refused %s store(s): %s%s", by_id[acc_id]["label"], answered[acc_id], len(ids),
+                                ", ".join(ids[:15]), " ..." if len(ids) > 15 else "")
+                ok = False
+                continue
             if acc_id not in expired:
                 expired.add(acc_id)
                 label = by_id[acc_id]["label"]

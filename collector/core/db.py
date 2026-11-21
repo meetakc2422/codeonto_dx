@@ -4,6 +4,7 @@ The collector writes catalog rows (zomato_outlets, swiggy_outlets, google_locati
 account sync times; Django owns the schema (migrations) and everything else.
 """
 
+import os
 import json
 from contextlib import contextmanager
 from pathlib import Path
@@ -151,6 +152,13 @@ def mark_session_expired(account_id: int, reason: str) -> None:
     a job reporting an expired session must not crash because of the report."""
     try:
         with transaction() as cur:
+            # a refusal soon after a fresh login almost always comes from a job that started with the old token: it says nothing about the new one
+            cur.execute("""SELECT 1 FROM platform_sessions WHERE account_id = %s AND kind = 'merchant'
+                           AND updated_at > now() - make_interval(mins => %s)""", (account_id, int(os.getenv("SESSION_GRACE_MINUTES", "15"))))
+            if cur.fetchone():
+                from .common import log
+                log.warning("Not flagging account %s as expired: it logged in again in the last %s minutes (%s)", account_id, os.getenv("SESSION_GRACE_MINUTES", "15"), str(reason)[:120])
+                return
             cur.execute("""UPDATE platform_accounts SET session_expired_at = COALESCE(session_expired_at, now()), session_error = %s
                            WHERE id = %s""", (str(reason)[:300], account_id))
     except Exception as e:  # noqa: BLE001
