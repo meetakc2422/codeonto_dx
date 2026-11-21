@@ -259,7 +259,7 @@ function renderSidebar() {
     const perf = industry.filter((m) => PERF_CODES.includes(m.code));
     const perfLink = perf.length ? `<a class="nav-item ${PERF_CODES.includes(route) ? "active" : ""}" href="#/${perf[0].code}" title="Performance">
       ${icon("marketplace_sales")}<span>Performance</span>${perf.every((m) => m.locked) ? `<em class="soon locked-badge">${icon("lock")}Upgrade</em>` : ""}</a>` : "";
-    const diningLink = state.hasDining ? navLink("dining", "Slots & offers") : "";
+    const diningLink = (state.hasDining ? navLink("dining", "Slots & offers") : "") + navLink("report", "Report");
     const aggregator = [...industry.filter((m) => m.code === "reconciliation").map(link), perfLink, diningLink,
       ...industry.filter((m) => m.code !== "reconciliation" && !PERF_CODES.includes(m.code)).map(link)].join("");
     html += `<div class="nav-group">Reputation</div>${common.map(link).join("")}` +
@@ -353,7 +353,7 @@ async function loadBrand(id) {
   $("#brandIndustry").textContent = config.brand.industry_name + (config.brand.is_demo ? " · SAMPLE DATA" : "");
   renderFilters();
   const route = currentRoute();
-  if (!["setup", "clients", "profile", "team", "billing", "dining"].includes(route) && !config.modules.some((m) => m.code === route)) location.hash = "#/overview";
+  if (!["setup", "clients", "profile", "team", "billing", "dining", "report"].includes(route) && !config.modules.some((m) => m.code === route)) location.hash = "#/overview";
   else render();
 }
 
@@ -495,7 +495,7 @@ async function render() {
 
   const isSetup = route === "setup";
   $("#filters").style.display = isSetup ? "none" : "";
-  $("#pageTitle").textContent = isSetup ? "Brands & Outlets" : PERF_CODES.includes(route) ? "Performance" : route === "dining" ? "Slots & offers" : moduleName(route);
+  $("#pageTitle").textContent = isSetup ? "Brands & Outlets" : PERF_CODES.includes(route) ? "Performance" : route === "dining" ? "Slots & offers" : route === "report" ? "Report" : moduleName(route);
   $("#pageSub").textContent = isSetup
     ? "Name your brand and map each outlet to its Google, Zomato and Swiggy listing"
     : `${state.config.brand.name} · ${outletsLabel().replace(/ \(\d+\)$/, "")} · ${periodLabel()}`;
@@ -518,6 +518,7 @@ async function render() {
     else if (route === "listings") await renderListings(page);
     else if (route === "competitors") await renderCompetition(page);
     else if (route === "dining") await renderDiningPage(page);
+    else if (route === "report") await renderReport(page);
     else if (state.config.kpis.some((k) => k.module === route)) await renderModule(page, route);
     else renderComingSoon(page, route);
     if (PERF_CODES.includes(route)) addPerfTabs(page, route);
@@ -534,6 +535,67 @@ function addPerfTabs(page, route) {
   page.insertAdjacentHTML("afterbegin", `<div class="segmented perf-tabs" style="margin-bottom:16px;flex-wrap:wrap">${tabs.map(([code, label]) =>
     `<button data-go="${code}" class="${code === route ? "active" : ""}">${label}</button>`).join("")}</div>`);
   page.querySelectorAll(".perf-tabs [data-go]").forEach((b) => { b.onclick = () => { location.hash = `#/${b.dataset.go}`; }; });
+}
+
+// ---------- Report: the numbers an owner wants for any date range, per outlet and in total, with a download of the same data ----------
+async function renderReport(page) {
+  const d = await api(`/brands/${state.brandId}/report`, filterParams());
+  if (!d.sections.length) { page.innerHTML = `<div class="card empty-state"><h3>No data for these dates</h3><p class="muted">Pick a longer period, or check that the outlets are connected.</p></div>`; return; }
+  const p = d.period, day = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  const delta = (c, hib) => c == null ? "" : `<small class="rp-d ${Math.abs(c) < 0.05 ? "flat" : (c >= 0) === hib ? "up" : "down"}">${c >= 0 ? "▲" : "▼"} ${Math.abs(c).toFixed(1)}%</small>`;
+  const cell = (col, v) => v == null ? `<span class="muted">—</span>`
+    : typeof v === "object" ? (v.value == null ? `<span class="muted">—</span>` : `<b>${fmt(v.value, col.unit, false)}</b>${delta(v.change, col.higher_is_better !== false)}`)
+    : `<b>${fmt(v, col.unit, false)}</b>`;
+  const sec = (k) => d.sections.find((x) => x.key === k);
+  const tile = (title, secKey, code) => {
+    const s = sec(secKey), v = s?.total?.[code], c = s?.columns.find((x) => x.code === code);
+    return v ? `<div class="card kpi"><div class="kpi-top"><span class="kpi-label">${esc(title)}</span></div><div class="kpi-value">${fmt(v.value, c.unit)}</div>
+      <div class="kpi-foot">${changeChip({ change_pct: v.change, higher_is_better: c.higher_is_better })}<span>vs previous ${p.days === 1 ? "day" : p.days + " days"}</span></div></div>` : "";
+  };
+  const notes = d.highlights.map((n) => `<span class="rp-note ${n.good ? "up" : "down"}">${n.change >= 0 ? "▲" : "▼"} ${esc(n.name)} ${Math.abs(n.change).toFixed(0)}%
+      <small>${fmt(n.prev, n.unit)} → ${fmt(n.value, n.unit)}</small></span>`).join("");
+  const table = (s) => `<div class="rp-scroll"><table class="tbl rp-tbl"><thead><tr><th>Outlet</th>${s.columns.map((c) => `<th>${esc(c.name)}</th>`).join("")}</tr></thead><tbody>
+      ${s.rows.map((r) => `<tr><td>${esc(r.name)}</td>${s.columns.map((c) => `<td>${cell(c, r[c.code])}</td>`).join("")}</tr>`).join("")}
+      ${s.rows.length > 1 ? `<tr class="rp-total"><td>Total</td>${s.columns.map((c) => `<td>${cell(c, s.total[c.code])}</td>`).join("")}</tr>` : ""}</tbody></table></div>`;
+  const months = d.months.some((m) => m.sales != null) ? `<details class="card rp-sec" open><summary><h3>Month by month</h3><small class="muted">sales, payout, ads and discounts</small></summary>
+      <div style="height:230px"><canvas id="rpMonths"></canvas></div>
+      <div class="rp-scroll"><table class="tbl rp-tbl"><thead><tr><th>Month</th><th>Ads % of sales</th><th>Discount % of sales</th></tr></thead><tbody>
+      ${d.months.map((m) => `<tr><td>${esc(m.month)}</td><td>${m.ads_pct == null ? "—" : m.ads_pct + "%"}</td><td>${m.discount_pct == null ? "—" : m.discount_pct + "%"}</td></tr>`).join("")}</tbody></table></div></details>` : "";
+  const cov = d.coverage, nm = (g) => `${g.name} (${g.platform === "swiggy" ? "Swiggy" : "Zomato"})`;
+  const coverage = !cov.days ? `<div class="rp-data">${esc(cov.note || "")}</div>`
+    : cov.complete ? `<div class="rp-data ok">✓ Sales data is complete for all ${cov.days} days (${day(cov.from)} – ${day(cov.to)}). Today is left out, its numbers are still filling in.</div>`
+    : `<details class="rp-data warn"><summary>⚠ Some days have no sales data: ${cov.gaps.length} outlet${cov.gaps.length === 1 ? "" : "s"}/platform${cov.gaps.length === 1 ? "" : "s"} with gaps in ${day(cov.from)} – ${day(cov.to)}. Totals leave these days out.</summary>
+        <table class="tbl"><thead><tr><th>Outlet</th><th>Days missing</th><th>Which days</th></tr></thead><tbody>
+        ${cov.gaps.slice(0, 30).map((g) => `<tr><td>${esc(nm(g))}</td><td>${g.missing_days}${g.no_data ? " (all)" : ""}</td><td>${esc(g.ranges.join(", "))}</td></tr>`).join("")}
+        </tbody></table>${cov.gaps.length > 30 ? `<p class="muted">…and ${cov.gaps.length - 30} more, all listed in the Excel file.</p>` : ""}</details>`;
+  page.innerHTML = `<div class="rp-head"><div><b>${day(p.start)} – ${day(p.end)}</b> <span class="muted">· ${d.outlets} outlet${d.outlets === 1 ? "" : "s"} · compared with ${day(p.prev_start)} – ${day(p.prev_end)}</span></div>
+      <button class="btn blue" id="rpExport">Download Excel</button></div>
+    ${coverage}
+    ${notes ? `<div class="rp-notes">${notes}</div>` : ""}
+    <div class="grid kpis">${tile("Sales", "overall", "gross_revenue")}${tile("Orders", "overall", "delivered_orders")}${tile("Average order value", "overall", "avg_order_value")}${tile("Rating", "reputation", "listing_rating")}</div>
+    ${d.sections.map((s, i) => `<details class="card rp-sec" ${i === 0 ? "open" : ""}><summary><h3>${esc(s.title)}</h3><small class="muted">${s.rows.length} outlet${s.rows.length === 1 ? "" : "s"}</small></summary>${table(s)}</details>`).join("")}
+    ${months}`;
+  $("#rpExport").onclick = async (e) => {
+    const btn = e.currentTarget, label = btn.textContent;
+    if (!cov.complete && cov.days) {  // tell them before the file is made, not after
+      const lines = cov.gaps.slice(0, 6).map((g) => `• ${nm(g)}: ${g.no_data ? "no data at all" : g.ranges.join(", ")}`).join("\n");
+      if (!confirm(`Some days have no sales data:\n\n${lines}${cov.gaps.length > 6 ? `\n…and ${cov.gaps.length - 6} more` : ""}\n\nThe file leaves these days out and lists them on a "Data gaps" sheet. Download it anyway?`)) return;
+    }
+    btn.disabled = true; btn.textContent = "Preparing…";
+    try {
+      const url = new URL(`${API}/brands/${state.brandId}/report/xlsx`, location.origin);
+      Object.entries(filterParams()).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
+      const res = await apiFetch(url);
+      if (!res.ok) throw userError("The file couldn't be made right now. Please try again in a moment.");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(await res.blob()); a.download = `report_${p.start}_to_${p.end}.xlsx`; a.click(); URL.revokeObjectURL(a.href);
+    } catch (err) { toast(userMessage(err)); }
+    btn.disabled = false; btn.textContent = label;
+  };
+  const cv = $("#rpMonths");
+  if (cv) chart(cv, { type: "bar", data: { labels: d.months.map((m) => m.month), datasets: [
+      { label: "Sales", data: d.months.map((m) => m.sales), backgroundColor: "#408fca" }, { label: "Payout", data: d.months.map((m) => m.payout), backgroundColor: "#9aa8e8" }] },
+    options: { responsive: true, maintainAspectRatio: false, scales: { y: { ticks: { callback: (v) => compactINR(v) } } } } });
 }
 
 // Sidebar page "Slots & offers": dining offers and bookable slots, for brands that have a dining outlet.

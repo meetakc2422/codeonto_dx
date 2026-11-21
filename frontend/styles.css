@@ -1261,3 +1261,26 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .mv-strip button.on { border-color: #fff; opacity: 1; }
 .mv-strip img { height: 56px; width: 42px; object-fit: cover; object-position: top; display: block; border-radius: 4px; }
 @media (max-width: 600px) { .mv-stage { padding: 0 8px; } .mv-nav { width: 36px; height: 36px; font-size: 22px; } }
+
+/* Report page */
+.rp-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; }
+.rp-notes { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+.rp-note { padding: 6px 12px; border-radius: 999px; font-size: 13px; font-weight: 600; background: #eef1f6; }
+.rp-note small { font-weight: 400; opacity: .8; margin-left: 4px; }
+.rp-note.up { background: #e8f7ee; color: #12803f; } .rp-note.down { background: #fdeceb; color: #c4302b; }
+.rp-sec { margin-top: 14px; padding: 14px 16px; }
+.rp-sec > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 10px; }
+.rp-sec > summary::-webkit-details-marker { display: none; }
+.rp-sec > summary::before { content: "▸"; font-size: 12px; opacity: .6; transition: transform .15s; }
+.rp-sec[open] > summary::before { transform: rotate(90deg); }
+.rp-sec > summary h3 { margin: 0; font-size: 16px; }
+.rp-scroll { overflow-x: auto; margin-top: 10px; }
+.rp-tbl td, .rp-tbl th { white-space: nowrap; vertical-align: top; }
+.rp-tbl td small.rp-d { display: block; font-size: 11px; font-weight: 600; }
+.rp-d.up { color: #12803f; } .rp-d.down { color: #c4302b; } .rp-d.flat { color: #8a94a6; }
+.rp-total td { border-top: 2px solid var(--border); background: #f7f8fb; }
+.rp-data { padding: 10px 14px; border-radius: 10px; font-size: 13px; background: #f1f4f9; margin-bottom: 12px; }
+.rp-data.ok { background: #e8f7ee; color: #12803f; }
+.rp-data.warn { background: #fff4e0; color: #8a5a00; }
+.rp-data.warn summary { cursor: pointer; font-weight: 600; }
+.rp-data.warn table { margin-top: 10px; background: #fff; }
