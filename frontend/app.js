@@ -568,7 +568,7 @@ function renderDiningMenu(box, d) {
     const status = !o.pages ? "menu not collected yet" : !o.dishes ? `${o.pages} menu page${o.pages === 1 ? "" : "s"}` : !o.compared ? `${o.pages} pages · ${o.dishes} dishes read, none matched to delivery` : `${o.pages} pages · ${o.compared} dishes compared`;
     const top = o.rows.slice(0, 10), rest = o.rows.slice(10);
     const gallery = (o.images || []).length ? `<details class="dn-fold" ${o.dishes ? "" : "open"}><summary><b>Menu pages</b> <small class="muted">${o.images.length} · as shown on District</small></summary>
-      <div class="menu-thumbs">${o.images.map((u, k) => `<a href="${esc(u)}" target="_blank" rel="noopener"><img loading="lazy" src="${esc(u)}" alt="Menu page ${k + 1}"></a>`).join("")}</div></details>` : "";
+      <div class="menu-thumbs">${o.images.map((u, k) => `<button type="button" class="menu-thumb" data-lb="${i}" data-k="${k}" title="Open page ${k + 1}"><img loading="lazy" src="${esc(u)}" alt="Menu page ${k + 1}"></button>`).join("")}</div></details>` : "";
     return `<details class="card dining-card" style="margin-bottom:12px" ${i === 0 ? "open" : ""}>
       <summary class="card-head" style="cursor:pointer"><h3>${outletAvatar(o.logo)}${esc(o.name)}</h3><small class="muted">${esc(status)}</small>${pill(o.avg_diff_pct)}${districtLogo.replace("margin-right:6px","margin-left:10px;margin-right:0")}</summary>
       <p class="muted" style="margin:0 0 10px;font-size:12px">${o.menu_updated ? `District: ${esc(o.menu_updated.toLowerCase())}` : "District shows no update time"}${o.checked_at ? ` · checked ${timeAgo(o.checked_at)}` : ""}${o.synced_at ? ` · menu fetched ${timeAgo(o.synced_at)}` : ""}</p>
@@ -579,6 +579,50 @@ function renderDiningMenu(box, d) {
       ${gallery}</details>`;
   };
   box.innerHTML = strip + outlets.map(card).join("");
+  box.onclick = (e) => {
+    const t = e.target.closest("[data-lb]"); if (!t) return;
+    const o = outlets[Number(t.dataset.lb)];
+    openMenuViewer(o.name, o.images || [], Number(t.dataset.k) || 0);
+  };
+}
+
+// Full-screen viewer for a menu's page images: arrows, keyboard, swipe, a strip of thumbnails, Esc or a click outside to close.
+function openMenuViewer(title, images, start = 0) {
+  if (!images.length) return;
+  let i = Math.min(Math.max(start, 0), images.length - 1);
+  const prevFocus = document.activeElement, prevOverflow = document.body.style.overflow;
+  const el = document.createElement("div");
+  el.className = "mv"; el.setAttribute("role", "dialog"); el.setAttribute("aria-modal", "true"); el.setAttribute("aria-label", `${title} menu`);
+  el.innerHTML = `<div class="mv-bar"><span class="mv-title">${esc(title)}</span><span class="mv-count"></span><button type="button" class="mv-x" aria-label="Close">✕</button></div>
+    <button type="button" class="mv-nav mv-prev" aria-label="Previous page">‹</button>
+    <div class="mv-stage"><img class="mv-img" alt=""></div>
+    <button type="button" class="mv-nav mv-next" aria-label="Next page">›</button>
+    <div class="mv-strip">${images.map((u, k) => `<button type="button" data-k="${k}" aria-label="Page ${k + 1}"><img src="${esc(u)}" alt="" loading="lazy"></button>`).join("")}</div>`;
+  const img = el.querySelector(".mv-img"), count = el.querySelector(".mv-count"), strip = el.querySelector(".mv-strip");
+  const show = (n) => {
+    i = (n + images.length) % images.length;
+    img.classList.add("mv-loading"); img.src = images[i];
+    img.onload = () => img.classList.remove("mv-loading");
+    count.textContent = `${i + 1} / ${images.length}`;
+    strip.querySelectorAll("button").forEach((b, k) => b.classList.toggle("on", k === i));
+    strip.querySelector("button.on")?.scrollIntoView({ block: "nearest", inline: "center" });
+    [i - 1, i + 1].forEach((k) => { const u = images[(k + images.length) % images.length]; new Image().src = u; });  // the neighbours load ahead
+  };
+  const close = () => { document.removeEventListener("keydown", onKey); el.remove(); document.body.style.overflow = prevOverflow; prevFocus?.focus?.(); };
+  const onKey = (e) => { if (e.key === "Escape") close(); else if (e.key === "ArrowRight") show(i + 1); else if (e.key === "ArrowLeft") show(i - 1); };
+  el.querySelector(".mv-x").onclick = close;
+  el.querySelector(".mv-prev").onclick = () => show(i - 1);
+  el.querySelector(".mv-next").onclick = () => show(i + 1);
+  strip.onclick = (e) => { const b = e.target.closest("[data-k]"); if (b) show(Number(b.dataset.k)); };
+  el.querySelector(".mv-stage").onclick = (e) => { if (e.target === e.currentTarget) close(); };
+  let x0 = null;
+  el.addEventListener("touchstart", (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+  el.addEventListener("touchend", (e) => { if (x0 == null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 50) show(i + (dx < 0 ? 1 : -1)); });
+  document.addEventListener("keydown", onKey);
+  document.body.style.overflow = "hidden";
+  document.body.appendChild(el);
+  show(i);
+  el.querySelector(".mv-x").focus();
 }
 
 function renderDiningView(box, d) {

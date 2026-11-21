@@ -1240,4 +1240,24 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .dn-fold[open] > summary::before, .dining-card[open] > summary::before { transform: rotate(90deg); }
 .dining-card > summary small { margin-left: auto; }
 .menu-thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; margin-top: 10px; }
+.menu-thumb { padding: 0; border: 0; background: none; cursor: zoom-in; }
+.menu-thumb:hover img { box-shadow: 0 2px 10px rgba(0,0,0,.18); }
 .menu-thumbs img { width: 100%; height: 170px; object-fit: cover; object-position: top; border-radius: 8px; border: 1px solid var(--border); background: #f3f4f6; }
+
+/* Menu page viewer */
+.mv { position: fixed; inset: 0; z-index: 3000; background: rgba(8, 12, 24, .92); display: flex; flex-direction: column; color: #fff; }
+.mv-bar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; }
+.mv-title { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mv-count { opacity: .75; font-size: 14px; }
+.mv-x { background: rgba(255,255,255,.12); color: #fff; border: 0; width: 36px; height: 36px; border-radius: 50%; font-size: 16px; cursor: pointer; }
+.mv-stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 0 56px; }
+.mv-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: 6px; transition: opacity .15s; }
+.mv-img.mv-loading { opacity: .35; }
+.mv-nav { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(255,255,255,.14); color: #fff; border: 0; width: 44px; height: 44px; border-radius: 50%; font-size: 28px; line-height: 1; cursor: pointer; }
+.mv-nav:hover, .mv-x:hover { background: rgba(255,255,255,.28); }
+.mv-prev { left: 8px; } .mv-next { right: 8px; }
+.mv-strip { display: flex; gap: 6px; overflow-x: auto; padding: 10px 16px 14px; justify-content: safe center; }
+.mv-strip button { flex: 0 0 auto; padding: 0; border: 2px solid transparent; border-radius: 6px; background: none; cursor: pointer; opacity: .55; }
+.mv-strip button.on { border-color: #fff; opacity: 1; }
+.mv-strip img { height: 56px; width: 42px; object-fit: cover; object-position: top; display: block; border-radius: 4px; }
+@media (max-width: 600px) { .mv-stage { padding: 0 8px; } .mv-nav { width: 36px; height: 36px; font-size: 22px; } }
