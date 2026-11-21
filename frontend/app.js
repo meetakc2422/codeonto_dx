@@ -1703,7 +1703,7 @@ async function renderAds(page) {
 // Delivery | Dining switch on Reconciliation, for brands with a dining outlet. Each side is its own page render.
 function reconToggleHtml() {
   const v = state.reconView === "dining" ? "dining" : "delivery";
-  return `<div class="segmented recon-toggle" style="margin-bottom:16px;width:fit-content"><button data-v="delivery" class="${v === "delivery" ? "active" : ""}">Delivery</button><button data-v="dining" class="${v === "dining" ? "active" : ""}">${districtLogo}Dining</button></div>`;
+  return `<div class="segmented recon-toggle" style="margin-bottom:16px;width:fit-content"><button data-v="delivery" class="${v === "delivery" ? "active" : ""}">Delivery</button><button data-v="dining" class="${v === "dining" ? "active" : ""}">Dining</button></div>`;
 }
 function addReconToggle(page) {
   if (!state.hasDining) return;
