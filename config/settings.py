@@ -173,6 +173,7 @@ COLLECTOR_DIR = env("COLLECTOR_DIR", str(BASE_DIR / "collector"))
 # AI assistant (read-only): its own database role, a signing secret for per-client scope, and the model
 ASSISTANT_DATABASE_URL = env("ASSISTANT_DATABASE_URL")
 ASSISTANT_SCOPE_SECRET = env("ASSISTANT_SCOPE_SECRET")
+DINING_MENU_MODEL = env("DINING_MENU_MODEL", "claude-haiku-5-5")  # reads the dining menu images
 ASSISTANT_MODEL = env("ASSISTANT_MODEL", "claude-sonnet-5-5")
 ASSISTANT_PROVIDER = env("ASSISTANT_PROVIDER", "anthropic")  # "anthropic" or "gemini": the one tried first
 ASSISTANT_GEMINI_MODEL = env("ASSISTANT_GEMINI_MODEL", "gemini-3.8-flash")  # Google retires models: on a 404 "no longer available", set this in .env

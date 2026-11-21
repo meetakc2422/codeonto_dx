@@ -111,6 +111,7 @@ api = [
     path("clients/<int:client_id>/billing/requests", billing.request_plan),
     path("brands/<int:brand_id>/ads/performance", payout_ads.ads_performance),
     path("brands/<int:brand_id>/dining", dining_api.brand_dining),
+    path("brands/<int:brand_id>/dining/menu", dining_api.brand_dining_menu),
     path("brands/<int:brand_id>/dining/payouts", payout_dining.brand_dining_payouts),
     path("brands/<int:brand_id>/payouts/summary", payouts.payout_summary),
     path("brands/<int:brand_id>/payouts/line-types/<int:line_id>", payouts.review_line),

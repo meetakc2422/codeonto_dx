@@ -10,7 +10,12 @@ from rest_framework.response import Response
 from apps.outlets.access import get_brand, in_scope, outlet_ids
 from apps.outlets.models import BrandOutlet
 
-from .models import DiningOfferSnapshot as Offer, DiningSlotSnapshot as Slot
+import re
+from difflib import SequenceMatcher
+
+from apps.insights.models import ItemSalesDaily
+
+from .models import DiningMenuItem, DiningMenuPage, DiningMenuStatus, DiningOfferSnapshot as Offer, DiningSlotSnapshot as Slot
 
 
 def _dining_outlets(request, brand_id):
@@ -78,3 +83,63 @@ def brand_dining(request, brand_id):
         row["past"] = _past(rid, start, min(end, date.today() - timedelta(days=1)))
         out.append(row)
     return Response({"has_dining": bool(outlets), "outlets": out})
+
+
+def _norm(x: str) -> str:
+    return re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]", " ", x.lower())).strip()
+
+
+def _delivery_prices(brand_id, outlet) -> dict:
+    """{normalised dish name: (name, price)}: the latest delivery price of each dish. Prefers the delivery store with the same
+    name and area as this dining outlet; falls back to the brand's other delivery stores."""
+    qs = ItemSalesDaily.objects.filter(outlet__brand_id=brand_id, unit_price__isnull=False, outlet__zomato__is_dining=False).order_by("day")
+    same = qs.filter(outlet__outlet_name=outlet.outlet_name, outlet__area=outlet.area)
+    rows = same if same.exists() else qs
+    out = {}
+    for r in rows.values("item_name", "unit_price"):  # oldest first, so the latest day wins
+        out[_norm(r["item_name"])] = (r["item_name"], float(r["unit_price"]))
+    return out
+
+
+def _match(name, note, delivery):
+    """The delivery dish for a dining dish: exact name (with the size when that helps), else a close spelling."""
+    for cand in (_norm(f"{name} {note}") if note else None, _norm(name)):
+        if cand and cand in delivery:
+            return delivery[cand]
+    n = _norm(name)
+    best, score = None, 0.0
+    for k, v in delivery.items():
+        r = SequenceMatcher(None, n, k).ratio()
+        if r > score:
+            best, score = v, r
+    return best if score >= 0.88 else None
+
+
+@api_view(["GET"])
+def brand_dining_menu(request, brand_id):
+    """Each dining outlet's menu prices next to what the same dish costs on delivery."""
+    get_brand(request.user, brand_id)
+    out = []
+    for bo in _dining_outlets(request, brand_id):
+        rid = str(bo.zomato_id)
+        pages = DiningMenuPage.objects.filter(res_id=rid)
+        total, read = pages.count(), pages.filter(read_at__isnull=False).count()
+        items = list(DiningMenuItem.objects.filter(res_id=rid, price__isnull=False).order_by("page__position", "id"))
+        delivery = _delivery_prices(brand_id, bo) if items else {}
+        rows, unmatched = [], []
+        for it in items:
+            m = _match(it.name, it.note, delivery)
+            price = float(it.price)
+            if m and m[1]:
+                rows.append({"name": it.name, "note": it.note, "section": it.section, "dining": price, "delivery": m[1],
+                             "diff_pct": round(100 * (price - m[1]) / m[1], 1)})
+            else:
+                unmatched.append({"name": it.name, "note": it.note, "section": it.section, "dining": price})
+        rows.sort(key=lambda r: -abs(r["diff_pct"]))
+        st = DiningMenuStatus.objects.filter(res_id=rid).first()
+        avg = round(sum(r["diff_pct"] for r in rows) / len(rows), 1) if rows else None
+        out.append({"outlet_id": bo.id, "name": bo.display_name, "pages": total, "pages_read": read, "dishes": len(items),
+                    "compared": len(rows), "avg_diff_pct": avg,
+                    "menu_updated": st.updated_text if st else "", "checked_at": st.checked_at if st else None, "synced_at": st.synced_at if st else None, "differ": sum(1 for r in rows if abs(r["diff_pct"]) >= 1),
+                    "rows": rows, "unmatched": unmatched})
+    return Response({"outlets": out})

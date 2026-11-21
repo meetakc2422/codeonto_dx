@@ -56,3 +56,50 @@ class DiningSlotSnapshot(models.Model):
     class Meta:
         db_table = "dining_slot_snapshots"
         indexes = [models.Index(fields=["res_id", "for_date", "taken_at"])]
+
+
+class DiningMenuPage(models.Model):
+    """One page of a dining outlet's menu as District shows it (an image). The collector keeps the list current; a page
+    is read into items once, and again only if the restaurant replaces the image (a new file name)."""
+
+    res_id = models.CharField(max_length=32)
+    outlet = models.ForeignKey("outlets.BrandOutlet", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    image_url = models.CharField(max_length=300)
+    position = models.PositiveSmallIntegerField(default=0)
+    first_seen = models.DateTimeField(auto_now_add=True)
+    read_at = models.DateTimeField(null=True, blank=True, help_text="When its items were read; empty = still to read")
+    read_error = models.CharField(max_length=300, blank=True)
+
+    class Meta:
+        db_table = "dining_menu_pages"
+        constraints = [models.UniqueConstraint(fields=["res_id", "image_url"], name="uniq_dining_menu_page")]
+
+
+class DiningMenuItem(models.Model):
+    """A dish and its dining price, read from a menu page."""
+
+    page = models.ForeignKey(DiningMenuPage, on_delete=models.CASCADE, related_name="items")
+    res_id = models.CharField(max_length=32, db_index=True)
+    outlet = models.ForeignKey("outlets.BrandOutlet", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    section = models.CharField(max_length=120, blank=True)
+    name = models.CharField(max_length=255)
+    price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    note = models.CharField(max_length=160, blank=True, help_text="Size or variant, e.g. 'Half' or '12 inch'")
+
+    class Meta:
+        db_table = "dining_menu_items"
+
+
+class DiningMenuStatus(models.Model):
+    """What District says about a dining outlet's menu ("Updated a month ago") and when we last looked, so a menu that has
+    not changed since our last sync is not fetched again."""
+
+    res_id = models.CharField(max_length=32, unique=True)
+    outlet = models.ForeignKey("outlets.BrandOutlet", on_delete=models.SET_NULL, null=True, blank=True, related_name="+")
+    updated_text = models.CharField(max_length=60, blank=True, help_text="District's own words, e.g. 'Updated a month ago'")
+    updated_latest = models.DateTimeField(null=True, blank=True, help_text="The latest the menu can have been updated, worked out from the text")
+    checked_at = models.DateTimeField(null=True, blank=True, help_text="Last time we asked District")
+    synced_at = models.DateTimeField(null=True, blank=True, help_text="Last time we fetched the menu images")
+
+    class Meta:
+        db_table = "dining_menu_status"
