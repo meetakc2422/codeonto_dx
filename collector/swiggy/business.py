@@ -24,6 +24,7 @@ BATCH = cfg.integer("SWIGGY_REPORT_BATCH", 50)  # outlets per report request
 WINDOW_DAYS = cfg.integer("SWIGGY_REPORT_WINDOW_DAYS", 7)  # days per request
 THROTTLE_WAIT = cfg.integer("SWIGGY_REPORT_THROTTLE_WAIT_SEC", 60)
 POLLS = cfg.integer("SWIGGY_REPORT_POLLS", 5)
+THROTTLE_TRIES = cfg.integer("SWIGGY_REPORT_THROTTLE_TRIES", 3)  # how many times to sit out Swiggy's "try again in 5 minutes" before giving up
 POLL_WAIT = cfg.integer("SWIGGY_REPORT_POLL_WAIT_SEC", 12)
 QUERY = cfg.text("SWIGGY_BUSINESS_REPORT_QUERY", """query GenerateBusinessReport($input: GenerateBusinessReportInput!) {
   generateBusinessReport(input: $input) { reportUrl message { value } } }""")
@@ -54,8 +55,8 @@ def _request(token: str, rids: list[int], start: date, end: date) -> str:
     body = {"query": QUERY, "operationName": "GenerateBusinessReport", "variables": {"input": {
         "rids": rids, "aggregation": "DAILY", "duration": "CUSTOM",
         "startDate": start.isoformat(), "endDate": end.isoformat(), "entityDetailsType": "RX"}}}
-    throttled = False
-    for attempt in range(POLLS):
+    waited = 0
+    for attempt in range(POLLS + THROTTLE_TRIES):
         resp = requests.post(REPORT_URL, headers=headers, json=body, timeout=cfg.http_timeout())
         if resp.status_code in (401, 403):
             raise PermissionError("Swiggy session expired; run `run.py swiggy session` for this account")
@@ -68,9 +69,12 @@ def _request(token: str, rids: list[int], start: date, end: date) -> str:
         msg = (errors[0].get("message") if errors else (report.get("message") or {}).get("value")) or "no message"
         if "Invalid Session" in msg or "Unauthorized" in msg:
             raise PermissionError("Swiggy session expired; run `run.py swiggy session` for this account")
-        if "5 minutes" in msg and not throttled:
-            log.warning("Swiggy throttled the report request; waiting %ss", THROTTLE_WAIT)
-            throttled = True
+        if "5 minutes" in msg:
+            # every new request while Swiggy is saying this can restart its clock, so do not ask again until the whole wait is over
+            if waited >= THROTTLE_TRIES:
+                break
+            waited += 1
+            log.warning("Swiggy throttled the report request; waiting %ss before asking again (%s/%s)", THROTTLE_WAIT, waited, THROTTLE_TRIES)
             time.sleep(THROTTLE_WAIT)
             continue
         log.info("Swiggy report not ready (%s); polling %s/%s", msg, attempt + 1, POLLS)
