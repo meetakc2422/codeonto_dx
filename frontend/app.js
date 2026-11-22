@@ -2695,7 +2695,7 @@ async function renderUptime(page) {
           .map(([v, l]) => `<button data-v="${v}" class="${uptimeFilters.status === v ? "active" : ""}">${l}</button>`).join("")}</div>
         <button class="btn light" id="uClear" ${uptimeFilters.outlet ? "" : "hidden"}>Clear filter</button>
       </div>
-      ${episodes.length ? `<table><thead><tr><th>Outlet</th><th>Status</th><th>Went offline</th><th>Back online</th><th>Downtime</th></tr></thead>
+      ${episodes.length ? `<table><thead><tr><th>Outlet</th><th>Status</th><th>Went offline</th><th>Back online</th><th title="Only the minutes the store was meant to be open are counted, so time offline while closed (for example overnight) is left out.">Downtime (open hours) ⓘ</th></tr></thead>
         <tbody>${episodes.map((e) => `<tr>
           <td>${esc(e.outlet_name.split(" · ").slice(1).join(" · ") || e.outlet_name)}${e.zomato_id ? ` <span class="muted">${esc(e.zomato_id)}</span>` : ""}</td>
           <td><span class="status ${e.is_active ? "pending" : "replied"}">${e.is_active ? "Offline" : "Back"}</span></td>
