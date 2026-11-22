@@ -5013,6 +5013,23 @@ $("#menuToggle").addEventListener("click", () => {
 // desktop starts with the icon rail (it opens on hover) unless the person pinned it open
 try { if (localStorage.getItem("sidebar") !== "open") document.body.classList.add("collapsed"); } catch (e) { document.body.classList.add("collapsed"); }
 $("#scrim").addEventListener("click", () => document.body.classList.remove("nav-open"));
+// Sidebar hover: the page is laid out once at its new width and slid there with a transform (FLIP), so it never re-wraps mid-animation.
+(() => {
+  const side = $("#sidebar"), content = document.querySelector(".content");
+  const wide = matchMedia("(min-width: 861px)"), calm = matchMedia("(prefers-reduced-motion: reduce)");
+  const shift = () => Math.max(0, side.offsetWidth ? 248 - 72 : 176);
+  let timer = null, anim = null;
+  const slide = (open) => {
+    if (!document.body.classList.contains("collapsed") || !wide.matches) return;
+    document.body.classList.toggle("sb-hover", open);
+    if (calm.matches) return;
+    anim?.cancel();
+    const d = shift();
+    anim = content.animate([{ transform: `translateX(${open ? -d : d}px)` }, { transform: "none" }], { duration: 240, easing: "cubic-bezier(.2,.7,.2,1)" });
+  };
+  side.addEventListener("mouseenter", () => { clearTimeout(timer); timer = setTimeout(() => slide(true), 80); });
+  side.addEventListener("mouseleave", () => { clearTimeout(timer); if (document.body.classList.contains("sb-hover")) slide(false); });
+})();
 $("#fullscreenBtn").addEventListener("click", () => {
   if (document.fullscreenElement) document.exitFullscreen(); else document.documentElement.requestFullscreen?.();
 });

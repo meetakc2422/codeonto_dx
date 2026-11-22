@@ -107,11 +107,12 @@ body.collapsed .content { margin-left: 72px; }
   body.collapsed .sidebar:hover .nav-item span, body.collapsed .sidebar:hover .nav-item .soon { display: inline; }
   body.collapsed .sidebar:hover .nav-group { visibility: visible; height: auto; padding: 18px 12px 8px; }
   .sidebar { transition: width .22s cubic-bezier(.2,.7,.2,1), box-shadow .22s; }
-  /* hovering opens the sidebar and the page slides over with it, both on the same curve */
-  body.collapsed .sidebar:hover { transition-delay: .08s; }
+  /* hovering opens the sidebar and the page makes room: laid out once at its final width (class set by app.js), then slid into place
+     with a transform, so nothing re-wraps frame by frame */
   .sidebar { will-change: width; }
-  .content { transition: margin-left .24s cubic-bezier(.2,.7,.2,1); will-change: margin-left; }
-  body.collapsed .layout:has(.sidebar:hover) .content { margin-left: var(--sidebar-w); transition-delay: .08s; }
+  .content { transition: none; }
+  body.collapsed.sb-hover .content { margin-left: var(--sidebar-w); }
+}
 }
 .scrim { display: none; }
 
