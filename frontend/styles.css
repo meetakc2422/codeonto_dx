@@ -174,7 +174,7 @@ tr:last-child td { border-bottom: 0; }
 
 /* reviews */
 .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 16px; align-items: center; }
-.toolbar input { min-width: 220px; flex: 1; }
+.toolbar input { min-width: 180px; flex: 0 1 340px; }
 .review { border-bottom: 1px solid var(--border); padding: 16px 0; display: grid; gap: 8px; }
 .review:last-child { border-bottom: 0; }
 .review-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }

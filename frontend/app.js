@@ -1154,7 +1154,7 @@ async function renderReviews(page) {
         <select id="rRating"><option value="">All ratings</option><option value="neg">1–2 ★</option><option value="mid">3 ★</option><option value="pos">4–5 ★</option></select>
         <select id="rStatus"><option value="">Any status</option>${Object.entries(REPLY_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
         <label class="check nowrap" title="Customers who chose on Zomato to share their number with the restaurant"><input type="checkbox" id="rContact" ${reviewFilters.contact ? "checked" : ""}> Number shared</label>
-        <span class="muted" style="margin-left:auto">click a row to read it and reply</span>
+        <span class="muted">click a row to read it and reply</span>
       </div>
       <div class="table-wrap"><table class="cp-table cp-list"><thead><tr>
         <th>When</th><th>Outlet</th><th></th><th>Rating</th><th>Review</th><th>Customer</th><th>Reply</th></tr></thead>
@@ -1416,7 +1416,7 @@ async function renderComplaints(page) {
         <input id="cq" type="search" placeholder="Search order id, item, customer…" value="${esc(complaintFilters.q)}">
         <select id="cStatus"><option value="">Any status</option>${TICKET_STATUS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
         ${complaintFilters.issue ? `<button class="btn light" id="cClear">${esc(ISSUE_LABELS[complaintFilters.issue] || complaintFilters.issue)} ✕</button>` : ""}
-        <span class="muted" style="margin-left:auto">click a row for details and notes</span>
+        <span class="muted">click a row for details and notes</span>
       </div>
       <div class="table-wrap"><table class="cp-table cp-list"><thead><tr>
         <th>Raised</th><th>Outlet</th><th></th><th>Issue</th><th>Items</th><th>Customer</th><th class="num">Refund</th>
@@ -1546,7 +1546,7 @@ async function renderItems(page) {
         <input id="iq" type="search" placeholder="Search item or category…" value="${esc(itemView.q)}">
         <div class="segmented" id="iFlag">${[[true, `Needs action (${t.flagged})`], [false, `All items (${itemData.items.length})`]]
           .map(([v, l]) => `<button data-v="${v}" class="${itemView.flagged === v ? "active" : ""}">${l}</button>`).join("")}</div>
-        <span class="muted" style="margin-left:auto">₹ lost = refunds + the low end of sales missed on stock-outs · click a row for details</span>
+        <span class="muted">₹ lost = refunds + the low end of sales missed on stock-outs · click a row for details</span>
       </div>
       <div class="table-wrap"><table class="cp-table cp-list"><thead><tr>
         ${ITEM_COLS.map(([k, l, cls]) => `<th class="${cls} it-sort" data-sort="${k}">${l}${itemView.sort === k ? (itemView.dir < 0 ? " ▾" : " ▴") : ""}</th>`).join("")}
