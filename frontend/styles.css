@@ -110,6 +110,7 @@ body.collapsed .content { margin-left: 72px; }
   /* hovering opens the sidebar and the page makes room: laid out once at its final width (class set by app.js), then slid into place
      with a transform, so nothing re-wraps frame by frame */
   .sidebar { will-change: width; }
+  body.collapsed .sidebar:hover { transition-delay: .08s; }
   .content { transition: none; }
   body.collapsed.sb-hover .content { margin-left: var(--sidebar-w); }
 }
