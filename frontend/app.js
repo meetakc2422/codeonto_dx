@@ -2921,7 +2921,7 @@ async function renderStockOuts(page) {
           ["new", isToday ? `New ${periodWord}` : "New in period"], ["restored", "Back"], ["long", `Off ${summary.long_off_days}+ days${summary.long_off ? ` (${inr.format(summary.long_off)})` : ""}`]]
           .map(([v, l]) => `<button data-v="${v}" class="${stockFilters.status === v ? "active" : ""}">${l}</button>`).join("")}</div>
         <button class="btn light" id="sClear" ${stockFilters.meal || stockFilters.outlet || stockFilters.city ? "" : "hidden"}>Clear filters</button>
-        <button class="btn blue" id="sExport" style="margin-left:auto">Export to Excel</button>
+        <button class="btn blue" id="sExport">Export to Excel</button>
       </div>
       <div id="stockList"></div>
     </div>`;
