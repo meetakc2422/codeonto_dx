@@ -110,8 +110,10 @@ body.collapsed .content { margin-left: 72px; }
   /* hovering opens the sidebar and the page slides over with it, both on the same curve */
   body.collapsed .sidebar:hover { transition-delay: .08s; }
   .sidebar { will-change: width; }
-  .content { transition: margin-left .24s cubic-bezier(.2,.7,.2,1); will-change: margin-left; }
-  body.collapsed .layout:has(.sidebar:hover) .content { margin-left: var(--sidebar-w); transition-delay: .08s; }
+  /* the page slides as one block (a transform, so nothing reflows); its far right edge goes out of view while the sidebar is open */
+  .layout { overflow-x: clip; }
+  .content { transition: transform .24s cubic-bezier(.2,.7,.2,1); will-change: transform; }
+  body.collapsed .layout:has(.sidebar:hover) .content { transform: translateX(calc(var(--sidebar-w) - 72px)); transition-delay: .08s; }
 }
 .scrim { display: none; }
 
