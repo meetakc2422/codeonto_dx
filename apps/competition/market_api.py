@@ -359,7 +359,8 @@ def search(request, brand_id, outlet_id, platform):
     if not q:
         return Response({"detail": "Type a restaurant, dish or cuisine."}, status=400)
     try:
-        query, total, found = m.search(place, q)
+        kind = request.data.get("kind") if request.data.get("kind") in ("restaurant", "dish", "cuisine") else None
+        query, total, found = m.search(place, q, kind)
     except m.Error as e:
         return _error(e)
     tracked = set(MarketCompetitor.objects.filter(outlet=outlet, restaurant__platform=m.code).values_list("restaurant__res_id", flat=True))

@@ -3864,10 +3864,13 @@ async function loadMarketCuisines(outletId) {
       if (!b) return;
       box.querySelectorAll(".comp-cuisine").forEach((x) => x.classList.toggle("on", x === b));
       form.q.value = b.dataset.cuisine;
+      if (form.kind) form.kind.value = "";  // a tag from the outlet's own list searches the way it always did
       form.requestSubmit();
     };
   } catch (x) { if ($("#zCuisines")) box.innerHTML = `<small class="muted">The cuisines couldn't be loaded right now. Please try again in a moment.</small>`; }
 }
+
+const SEARCH_KINDS = [["", "All", "a restaurant, dish or cuisine"], ["restaurant", "Restaurant", "a restaurant name"], ["dish", "Dish", "a dish"], ["cuisine", "Cuisine", "a cuisine"]];
 
 // 3-4 nearby restaurants that serve the same food as the outlet, to compare against in one click
 async function loadSuggestedCompetitors(outletId, box, spot) {
@@ -3923,7 +3926,7 @@ async function renderMarketComp(page, outletId) {
   const rows = [...(us ? [{ ...us, is_us: true }] : []), ...d.competitors];
   page.innerHTML = `
     <div class="card">
-      <form id="zSearch" class="comp-search comp-search-lg"><input name="q" placeholder="Search a restaurant, dish or cuisine on ${zName()}, e.g. Meghana, biryani, chinese" autofocus>
+      <form id="zSearch" class="comp-search comp-search-lg">${state.compTab === "zomato" ? `<select name="kind" id="zKind" aria-label="Search type" title="What to search for">${SEARCH_KINDS.map(([v, t]) => `<option value="${v}" ${(state.searchKind || "") === v ? "selected" : ""}>${t}</option>`).join("")}</select>` : ""}<input name="q" placeholder="Search a restaurant, dish or cuisine on ${zName()}, e.g. Meghana, biryani, chinese" autofocus>
         <button class="btn blue">Search</button></form>
       <div id="zCuisines" class="comp-cuisines"></div>
       ${zPeek(outletId) ? `<p class="comp-peek">Viewing from <strong>${esc(zPeek(outletId).title)}</strong>${zPeek(outletId).address ? `, ${esc(zPeek(outletId).address)}` : ""}
@@ -4013,12 +4016,16 @@ async function renderMarketComp(page, outletId) {
   page.querySelectorAll("[data-zuntrack]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); track({ res_id: b.dataset.zuntrack }, false); }));
   page.querySelectorAll("[data-zview]").forEach((tr) => tr.addEventListener("click", () => showMarketRestaurant(outletId, tr.dataset.zview, track)));
   let results = [];
+  const kindBox = $("#zKind"), qBox = $("#zSearch")?.q;
+  const hint = () => { const k = SEARCH_KINDS.find(([v]) => v === (kindBox?.value || "")); if (qBox && k) qBox.placeholder = `Search ${k[2]} on ${zName()}${k[0] ? "" : ", e.g. Meghana, biryani, chinese"}`; };
+  kindBox?.addEventListener("change", () => { state.searchKind = kindBox.value; hint(); qBox?.focus(); });
+  hint();
   $("#zSearch").addEventListener("submit", async (e) => {
     e.preventDefault(); $("#zError").textContent = "";
     const btn = e.target.querySelector("button"); btn.disabled = true;
     $("#zResults").innerHTML = `<p class="muted">Searching ${zName()}…</p>`;
     try {
-      const r = await apiJSON(`${zBase(outletId)}/search`, "POST", { q: e.target.q.value, spot: zPeek(outletId)?.spot });
+      const r = await apiJSON(`${zBase(outletId)}/search`, "POST", { q: e.target.q.value, kind: e.target.kind?.value || "", spot: zPeek(outletId)?.spot });
       results = r.results;
       $("#zResults").innerHTML = (r.total ? `<p class="muted" style="margin:0 0 4px">${inr.format(r.total)} restaurants for ${esc(r.query)} · showing the first ${results.length}</p>` : "") +
         (results.length ? results.map((x, i) => `<div class="comp-result">
