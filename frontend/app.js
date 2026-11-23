@@ -546,6 +546,7 @@ const EX_ICON = {
   pdf: exSvg('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>'),
   xlsx: exSvg('<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 4v16"/>'),
   wa: `<svg class="ex-ico" viewBox="0 0 24 24" width="17" height="17" fill="#25D366"><path d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2zm5.2 14.1c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.8s.7-2 .9-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.9 2.1c.1.2.1.4 0 .5l-.4.6-.4.4c-.1.2-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.3 2.4 1.5.3.1.4.1.6-.1l.8-1c.2-.3.4-.2.6-.1l2 .9c.3.1.5.2.5.3.1.2.1.8-.1 1.4z"/></svg>`,
+  more: exSvg('<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>'),
   mail: exSvg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/>', "#D9480F"),
 };
 
@@ -574,13 +575,13 @@ async function renderReport(page) {
     <label class="ex-tables"><input type="checkbox" id="exTables" ${expState.tables ? "checked" : ""}><span><b>Include the detailed tables in the PDF</b><small class="muted">Off: the picture pages only. On: the picture pages plus every number, outlet by outlet.</small></span></label>
     <div class="ex-actions">
       <div class="ex-group"><span class="ex-glabel">Download</span><button class="btn light ex-btn" id="exPdf">${EX_ICON.pdf}PDF</button><button class="btn light ex-btn" id="exXlsx">${EX_ICON.xlsx}Excel</button></div>
-      <div class="ex-group"><span class="ex-glabel">Share the PDF</span><button class="btn light ex-btn" id="exWa">${EX_ICON.wa}WhatsApp</button><button class="btn light ex-btn" id="exMail">${EX_ICON.mail}Email</button></div>
+      <div class="ex-group"><span class="ex-glabel">Share the PDF</span><button class="btn light ex-btn" id="exWa">${EX_ICON.wa}WhatsApp</button><button class="btn light ex-btn" id="exMail">${EX_ICON.mail}Email</button><button class="btn light ex-btn" id="exMore" title="AirDrop, Messages and other apps">${EX_ICON.more}More</button></div>
     </div></div>
     <aside class="ex-side"><div class="card ex-prev">
       <div class="ex-prev-head"><b>Preview</b><span class="muted" id="exPrevState"></span></div>
       <div class="ex-frame-wrap"><iframe id="exFrame" title="Report preview"></iframe><div class="ex-busy" id="exBusy">Building the preview…</div></div>
       <div class="ex-send"><div class="ex-chip" id="exChip" draggable="true" title="Drag me onto WhatsApp or Email">${EX_ICON.pdf}<span><b id="exChipName">report.pdf</b><small class="muted">drag me to send</small></span></div>
-        <div class="ex-drop" data-via="wa">${EX_ICON.wa}<span>WhatsApp</span></div><div class="ex-drop" data-via="mail">${EX_ICON.mail}<span>Email</span></div></div>
+        <div class="ex-drop" data-via="wa">${EX_ICON.wa}<span>WhatsApp</span></div><div class="ex-drop" data-via="mail">${EX_ICON.mail}<span>Email</span></div><div class="ex-drop" data-via="system" title="AirDrop, Messages and other apps">${EX_ICON.more}<span>More apps</span></div></div>
     </div></aside></div>`;
   const wrap = page.querySelector(".ex-wrap");  // per-render handlers go on this, not on `page`, which outlives the render
   const $s = $("#exStart"), $e = $("#exEnd");
@@ -601,7 +602,7 @@ async function renderReport(page) {
   const okToExport = () => expState.start && expState.end && expState.end >= expState.start && expState.order.length > 0;
   const paint = () => {
     page.querySelectorAll("[data-preset]").forEach((b) => b.classList.toggle("on", b.dataset.preset === expState.preset));
-    $("#exPdf").disabled = $("#exXlsx").disabled = $("#exWa").disabled = $("#exMail").disabled = !okToExport();
+    $("#exPdf").disabled = $("#exXlsx").disabled = $("#exWa").disabled = $("#exMail").disabled = $("#exMore").disabled = !okToExport();
     $("#exChip").classList.toggle("off", !okToExport());
     $("#exChipName").textContent = fileName();
   };
@@ -724,7 +725,10 @@ async function renderReport(page) {
       const blob = await getPdf(), name = fileName();
       const file = new File([blob], name, { type: "application/pdf" });
       const title = `${dayLbl(expState.start)} – ${dayLbl(expState.end)} report`;
-      if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title, text: title }); } catch (err) { if (err.name !== "AbortError") throw err; } }
+      // the system share sheet on a phone or tablet (WhatsApp is in it) or when asked for ("More"); on a computer, WhatsApp and Email do the direct thing
+      const touch = matchMedia("(pointer: coarse)").matches;
+      if (navigator.canShare?.({ files: [file] }) && (via === "system" || touch)) { try { await navigator.share({ files: [file], title, text: title }); } catch (err) { if (err.name !== "AbortError") throw err; } }
+      else if (via === "system") { saveBlob(blob, name); toast(`PDF downloaded: ${name}`); }
       else {
         saveBlob(blob, name);
         const msg = `${title}. The PDF is attached.`;
@@ -737,6 +741,7 @@ async function renderReport(page) {
   };
   $("#exWa").onclick = (e) => sharePdf("wa", e.currentTarget);
   $("#exMail").onclick = (e) => sharePdf("mail", e.currentTarget);
+  $("#exMore").onclick = (e) => sharePdf("system", e.currentTarget);
   // ---- drag the report chip onto WhatsApp or Email ----
   const chip = $("#exChip");
   chip.addEventListener("dragstart", (e) => { if (!okToExport()) { e.preventDefault(); return; } dragKey = null; e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("text/plain", fileName()); wrap.classList.add("sending"); });
