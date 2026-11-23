@@ -1104,7 +1104,9 @@ const RATING_BAND = { 1: "neg", 2: "neg", 3: "mid", 4: "pos", 5: "pos" };
 const REPLY_LABELS = { pending: "Pending", drafted: "Drafted", replied: "Replied", ignored: "Ignored" };
 
 async function renderReviews(page) {
-  const s = await api(`/brands/${state.brandId}/reviews/summary`, filterParams());
+  const [s, kp] = await Promise.all([api(`/brands/${state.brandId}/reviews/summary`, filterParams()),
+    api(`/brands/${state.brandId}/kpis`, filterParams()).catch(() => null)]);
+  const listing = (kp?.kpis || []).find((k) => k.code === "listing_rating" && k.value != null);  // the platform's own rating, which counts every rated order
   const names = new Map(state.locations.map((l) => [l.id, l.name]));
   const short = (n) => n.split(" · ").slice(1).join(" · ") || n;
   const pct = (n, of = s.total) => (of ? `${Math.round((n / of) * 100)}%` : "—");
@@ -1119,7 +1121,7 @@ async function renderReviews(page) {
   const outletList = reviewUi.outletsAll ? s.by_outlet : s.by_outlet.slice(0, REVIEW_TOP_OUTLETS);
   page.innerHTML = `
     <div class="card cp-stats">
-      ${stat("Reviews", inr.format(s.total))}${stat("Avg rating", s.avg_rating != null ? `${s.avg_rating} ★` : "—")}
+      ${stat("Reviews", inr.format(s.total))}${stat("Avg of reviews received", s.avg_rating != null ? `${s.avg_rating} ★` : "—", "", listing ? `Platform rating: ${Number(listing.value).toFixed(2)} ★ (counts every rated order)` : "only orders where the customer left a review")}
       ${stat("Negative (1–2★)", inr.format(s.negative), s.negative ? "bad" : "")}${stat("Pending reply", inr.format(s.pending), s.pending ? "warn" : "", `${inr.format(s.replied)} replied · ${pct(s.replied)}`)}
     </div>
     ${s.by_topic?.topics?.some((t) => t.count) ? `<div class="card cp-card rv-topics">
