@@ -1121,7 +1121,7 @@ async function renderReviews(page) {
   const outletList = reviewUi.outletsAll ? s.by_outlet : s.by_outlet.slice(0, REVIEW_TOP_OUTLETS);
   page.innerHTML = `
     <div class="card cp-stats">
-      ${stat("Reviews", inr.format(s.total))}${stat("Avg of reviews received", s.avg_rating != null ? `${s.avg_rating} ★` : "—", "", listing ? `Platform rating: ${Number(listing.value).toFixed(2)} ★ (counts every rated order)` : "only orders where the customer left a review")}
+      ${stat("Reviews", inr.format(s.total))}${listing ? stat("Platform rating", `${Number(listing.value).toFixed(2)} ★`, "", s.avg_rating != null ? `Reviews received this period average ${s.avg_rating} ★` : "") : stat("Avg of reviews received", s.avg_rating != null ? `${s.avg_rating} ★` : "—", "", "only orders where the customer left a review")}
       ${stat("Negative (1–2★)", inr.format(s.negative), s.negative ? "bad" : "")}${stat("Pending reply", inr.format(s.pending), s.pending ? "warn" : "", `${inr.format(s.replied)} replied · ${pct(s.replied)}`)}
     </div>
     ${s.by_topic?.topics?.some((t) => t.count) ? `<div class="card cp-card rv-topics">
