@@ -841,7 +841,19 @@ function animateOverview(page) {
   if (matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   page.querySelectorAll(".ov-t, .kpi").forEach((t, i) => t.style.setProperty("--i", i));
   page.querySelectorAll(".card:not(.kpi)").forEach((c, i) => { c.classList.add("ov-rise"); c.style.setProperty("--r", Math.min(i, 6)); });
-  page.querySelectorAll(".ov-t-value, .kpi-value").forEach((el) => {
+  // table rows come in one after another (the first dozen only, so long tables don't drag)
+  page.querySelectorAll("tbody tr").forEach((tr, i) => { if (i < 12) { tr.classList.add("ov-row"); tr.style.setProperty("--ri", i); } });
+  // a value that moved since this page was last drawn gets a brief glow in the direction it moved
+  const route = location.hash || "#/overview";
+  state.lastVals ||= {};
+  page.querySelectorAll(".ov-t, .kpi, .cp-stat").forEach((card) => {
+    const label = card.querySelector(".ov-t-label, .kpi-label, span")?.textContent?.trim(), val = card.querySelector(".ov-t-value, .kpi-value, b");
+    if (!label || !val) return;
+    const key = `${route}|${label}`, txt = val.textContent.replace(/[^\d.\-]/g, ""), now = parseFloat(txt), before = state.lastVals[key];
+    if (before != null && isFinite(now) && now !== before) card.classList.add(now > before ? "pulse-up" : "pulse-down");
+    if (isFinite(now)) state.lastVals[key] = now;
+  });
+  page.querySelectorAll(".ov-t-value, .kpi-value, .cp-stat b").forEach((el) => {
     const node = [...el.childNodes].find((n) => n.nodeType === 3 && /\d/.test(n.textContent));
     const m = node && node.textContent.match(/^(\D*?)(\d[\d,]*(?:\.\d+)?)(.*)$/s);
     if (!m) return;
@@ -951,11 +963,14 @@ async function renderOverview(page) {
   })).sort((a, b) => b.offline - a.offline || b.pay - a.pay || b.out - a.out || b.pending - a.pending || (a.rating ?? 9) - (b.rating ?? 9));
   const bad = (cond, html) => `<td class="num ${cond ? "ov-bad" : ""}">${html}</td>`;
 
+  // how much of the period's reviews have been answered: the one number on this page an owner can push to 100
+  const healthyPct = summary.total ? Math.round((summary.replied / summary.total) * 100) : null;
+  const healthRing = healthyPct == null ? "" : `<span class="ov-ring" title="${inr.format(summary.replied)} of ${inr.format(summary.total)} reviews in this period have a reply"><svg viewBox="0 0 36 36" width="30" height="30"><circle cx="18" cy="18" r="15" class="ov-ring-bg"/><circle cx="18" cy="18" r="15" class="ov-ring-fg ${healthyPct < 40 ? "low" : healthyPct < 75 ? "mid" : ""}" pathLength="100" stroke-dasharray="${healthyPct} 100"/></svg><b>${healthyPct}%</b><small class="muted">reviews replied</small></span>`;
   const ALERTS_SHOWN = 6, ROWS_SHOWN = 10;
   page.innerHTML = `
     <div class="ov-tgrid">${tiles.join("")}</div>
     <div class="card ov-alerts">
-      <div class="card-head"><h3>${alerts.length ? "Needs attention" : "All clear"}</h3>${critical ? `<span class="ov-crit">${critical} critical</span>` : '<span class="muted">nothing needs fixing right now</span>'}</div>
+      <div class="card-head"><h3>${alerts.length ? "Needs attention" : "All clear"}</h3>${healthRing}${critical ? `<span class="ov-crit">${critical} critical</span>` : '<span class="muted">nothing needs fixing right now</span>'}</div>
       <div id="ovAlertList"></div>
     </div>
     <div class="card" style="margin-top:14px">
