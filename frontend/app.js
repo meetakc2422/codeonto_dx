@@ -1106,7 +1106,9 @@ const REPLY_LABELS = { pending: "Pending", drafted: "Drafted", replied: "Replied
 async function renderReviews(page) {
   const [s, kp] = await Promise.all([api(`/brands/${state.brandId}/reviews/summary`, filterParams()),
     api(`/brands/${state.brandId}/kpis`, filterParams()).catch(() => null)]);
-  const listing = (kp?.kpis || []).find((k) => k.code === "listing_rating" && k.value != null);  // the platform's own rating, which counts every rated order
+  const listing = (kp?.kpis || []).find((k) => k.code === "listing_rating" && k.value != null);
+  const ratingTotal = (kp?.kpis || []).find((k) => k.code === "rating_count" && k.value);
+  const reviewTotal = (kp?.kpis || []).find((k) => k.code === "total_reviews" && k.value);  // the platform's own rating, which counts every rated order
   const names = new Map(state.locations.map((l) => [l.id, l.name]));
   const short = (n) => n.split(" · ").slice(1).join(" · ") || n;
   const pct = (n, of = s.total) => (of ? `${Math.round((n / of) * 100)}%` : "—");
@@ -1121,7 +1123,7 @@ async function renderReviews(page) {
   const outletList = reviewUi.outletsAll ? s.by_outlet : s.by_outlet.slice(0, REVIEW_TOP_OUTLETS);
   page.innerHTML = `
     <div class="card cp-stats">
-      ${stat("Reviews", inr.format(s.total))}${listing ? stat("Platform rating", `${Number(listing.value).toFixed(2)} ★`, "", s.avg_rating != null ? `Reviews received this period average ${s.avg_rating} ★` : "") : stat("Avg of reviews received", s.avg_rating != null ? `${s.avg_rating} ★` : "—", "", "only orders where the customer left a review")}
+      ${listing ? stat("Platform rating", `${Number(listing.value).toFixed(2)} ★`, "", ratingTotal ? `${compactCount(ratingTotal.value)} ratings` : "") : stat("Avg of reviews received", s.avg_rating != null ? `${s.avg_rating} ★` : "—", "", "only orders where the customer left a review")}${reviewTotal ? stat("Total reviews", compactCount(reviewTotal.value), "", `${inr.format(s.total)} received this period · avg ${s.avg_rating != null ? s.avg_rating + " ★" : "—"}`) : stat("Reviews", inr.format(s.total))}
       ${stat("Negative (1–2★)", inr.format(s.negative), s.negative ? "bad" : "")}${stat("Pending reply", inr.format(s.pending), s.pending ? "warn" : "", `${inr.format(s.replied)} replied · ${pct(s.replied)}`)}
     </div>
     ${s.by_topic?.topics?.some((t) => t.count) ? `<div class="card cp-card rv-topics">
