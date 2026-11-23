@@ -2706,11 +2706,17 @@ function openLossPanel(data, focusId) {
       <span class="lp-bar"><i style="width:${Math.max(3, (o.high / maxHigh) * 100)}%"></i></span>
       <b>${rupeesShort(o.low)} – ${rupeesShort(o.high)}</b></button>`).join("")}</section>`;
   const dayView = (o) => {
-    const days = o.days || [], top = Math.max(1, ...days.map((d) => d.high));
+    const days = o.days || [], byDate = new Map(days.map((d) => [d.date, d]));
+    const all = [], from = new Date(`${data.period.start}T00:00:00`), to = new Date(`${data.period.end}T00:00:00`);  // every day of the period, so quiet days show as gaps
+    for (let t = new Date(from); t <= to && all.length < 120; t.setDate(t.getDate() + 1)) all.push(isoDate(t));
+    const top = Math.max(1, ...days.map((d) => d.high)), peak = days.reduce((m, d) => (d.high > (m?.high || 0) ? d : m), null);
+    const marks = new Set([0, Math.round((all.length - 1) * 0.25), Math.round((all.length - 1) * 0.5), Math.round((all.length - 1) * 0.75), all.length - 1]);  // five dates along the bottom, not one per bar
+    const label = (iso) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-IN", { day: "numeric", month: "short" });
     return `<section class="lp-body"><h4>Day by day</h4>
-      <div class="lp-days">${days.map((d, i) => `<div class="lp-day" style="--i:${Math.min(i, 30)}" title="${esc(shortDate(d.date))}: offline ${d.offline_pct}% · ${rupeesShort(d.low)} – ${rupeesShort(d.high)} · ${esc(d.source)}">
-        <i style="height:${Math.max(4, (d.high / top) * 100)}%"></i><span>${esc(shortDate(d.date).replace(" ", " "))}</span></div>`).join("")}</div>
-      <ul class="lp-list">${days.slice().sort((a, b) => b.high - a.high).slice(0, 6).map((d) => `<li><span>${esc(shortDate(d.date))}</span><span class="muted">offline ${d.offline_pct}% · ${esc(d.source)}</span><b>${rupeesShort(d.low)} – ${rupeesShort(d.high)}</b></li>`).join("")}</ul></section>`;
+      <div class="lp-days">${all.map((iso, i) => { const d = byDate.get(iso);
+        return `<div class="lp-day ${d ? "" : "quiet"}" style="--i:${Math.min(i, 40)}" title="${esc(label(iso))}${d ? `: offline ${d.offline_pct}% · ${rupeesShort(d.low)} – ${rupeesShort(d.high)} · ${esc(d.source)}` : ": no offline time"}">
+          <i style="height:${d ? Math.max(5, (d.high / top) * 100) : 0}%"></i>${d && peak && d.date === peak.date ? `<em>${rupeesShort(d.high)}</em>` : ""}${marks.has(i) ? `<span>${esc(label(iso))}</span>` : ""}</div>`; }).join("")}</div>
+      <ul class="lp-list">${days.slice().sort((a, b) => b.high - a.high).slice(0, 6).map((d) => `<li><span>${esc(label(d.date))}</span><span class="muted">offline ${d.offline_pct}% · ${esc(d.source)}</span><b>${rupeesShort(d.low)} – ${rupeesShort(d.high)}</b></li>`).join("")}</ul></section>`;
   };
   document.body.appendChild(root);
   draw();
