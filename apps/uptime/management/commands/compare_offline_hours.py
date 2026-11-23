@@ -11,6 +11,7 @@ from datetime import date, timedelta
 from django.core.management.base import BaseCommand
 from django.db.models import Sum
 
+from apps.metrics.models import MetricDaily
 from apps.uptime.models import OfflineEpisode, UptimeDaily, ZomatoOfflineHours
 
 MIN_CHECKS = 20  # about 100 minutes of 5-minute checks
@@ -32,6 +33,7 @@ class Command(BaseCommand):
         z = {(r["outlet_id"], r["day"]): float(r["hours"]) for r in z.values("outlet_id", "day", "hours")}
         if not z:
             self.stdout.write("No Zomato offline hours stored yet. Run `python run.py zomato offline_hours` on the collector first.")
+            self.online_pct_section(o, since)
             return
         ids = {k[0] for k in z}
         ours = defaultdict(float)
@@ -56,3 +58,28 @@ class Command(BaseCommand):
             self.stdout.write(f"\nBiggest differences (outlet, day, Zomato h, our h, our checks):")
             for k, a, b in sorted(covered, key=lambda c: -abs(c[1] - c[2]))[: o["detail"]]:
                 self.stdout.write(f"  {names.get(k[0], k[0])[:34]:34} {k[1]}  zomato {a:5.1f}  ours {b:5.1f}  checks {checks.get(k, 0)}")
+        self.online_pct_section(o, since)
+
+    def online_pct_section(self, o, since):
+        """Zomato's business-report "Online %" for the day against our own online checks / checks, on days our monitor covered."""
+        zq = MetricDaily.objects.filter(kpi__code="online_pct", platform_id="zomato", metric_date__gte=since, value__isnull=False)
+        uq = UptimeDaily.objects.filter(platform_id="zomato", day__gte=since, checks__gte=MIN_CHECKS)
+        if o["brand"]:
+            zq, uq = zq.filter(outlet__brand__name__icontains=o["brand"]), uq.filter(outlet__brand__name__icontains=o["brand"])
+        zm = {(r["outlet_id"], r["metric_date"]): float(r["value"]) for r in zq.values("outlet_id", "metric_date", "value")}
+        ours = {(r["outlet_id"], r["day"]): (r["online_checks"] / r["checks"] * 100, r["checks"]) for r in uq.values("outlet_id", "day", "online_checks", "checks")}
+        both = [(k, zm[k], ours[k][0], ours[k][1]) for k in zm if k in ours]
+        self.stdout.write("\n--- Online % (Zomato business report) against our uptime % ---")
+        self.stdout.write(f"Zomato online % stored: {len(zm)} outlet-days; our monitor covered days: {len(ours)}; on both: {len(both)}")
+        if not both:
+            self.stdout.write("Nothing to compare yet: no outlet-day has both Zomato's Online % and at least %d of our checks." % MIN_CHECKS)
+            return
+        diffs = [a - b for _, a, b, _ in both]
+        within = sum(1 for d in diffs if abs(d) <= 3)
+        self.stdout.write(f"  within 3 points of each other: {within} of {len(both)} ({within / len(both) * 100:.0f}%)")
+        self.stdout.write(f"  average: Zomato {sum(a for _, a, _, _ in both) / len(both):.1f}%, ours {sum(b for _, _, b, _ in both) / len(both):.1f}%")
+        self.stdout.write(f"  Zomato higher by over 3 points: {sum(1 for d in diffs if d > 3)}   ours higher by over 3 points: {sum(1 for d in diffs if d < -3)}")
+        names = dict(__import__("apps.outlets.models", fromlist=["BrandOutlet"]).BrandOutlet.objects.filter(id__in={k[0] for k, *_ in both}).values_list("id", "outlet_name"))
+        self.stdout.write("\nBiggest differences (outlet, day, Zomato %, our %, our checks):")
+        for k, a, b, n in sorted(both, key=lambda c: -abs(c[1] - c[2]))[: o["detail"]]:
+            self.stdout.write(f"  {names.get(k[0], k[0])[:34]:34} {k[1]}  zomato {a:5.1f}  ours {b:5.1f}  checks {n}")
