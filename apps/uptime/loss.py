@@ -1,12 +1,14 @@
-"""Estimated sales lost to being offline, from each platform's own daily Online % and that day's sales.
+"""Estimated sales lost to being offline, from each platform's own daily Online % and the outlet's usual sales.
 
     GET /brands/<id>/uptime/loss?start=&end=&outlet_id=&platform=
 
-For one outlet, one platform and one day: with f the share of opening hours it was offline and S the sales it made while online,
-the day would have sold about S / (1 - f) if it had stayed up, so about S * f / (1 - f) was lost. When it was offline for most of
-the day there is too little to extrapolate from, so the outlet's usual day (the median of its normal days) stands in instead.
-Not every offline order is lost (some customers come back, some order from a rival), so the range runs from 60% of that figure
-to all of it.
+For one outlet, one platform and one day, with f the share of opening hours it was offline: it would normally have sold E that day,
+so about E * f was lost. E is the outlet's typical sales for that weekday (the median of its normal days on that weekday over the
+last 6 weeks, a day counting as normal when it was online at least 95% of the time). Zomato's own app works out its "Est. lost
+sales" the same way, which is why this one lands close to it. With too few same-weekday days, the median of all its normal days
+stands in; with no history at all, a day that was mostly online is extrapolated from what it sold while up (S * f / (1 - f)).
+Not every offline order is lost (some customers come back, some order from a rival), so the range runs from 60% of that
+figure to all of it.
 
 The platform's own Online % comes first (it covers every day, both platforms); our own monitor's uptime (Zomato only) fills in
 for a day the platform gave nothing for. A day with neither is left out and counted, not guessed.
@@ -28,27 +30,31 @@ from .models import UptimeDaily
 LOW_SHARE = 0.6  # at least this share of the offline sales is really lost
 MIN_OFFLINE = 0.01  # under 1% of the day is noise
 MIN_CHECKS = 20  # about 100 minutes of our 5-minute checks
-BASELINE_DAYS = 28  # how far back an outlet's usual day is taken from
+BASELINE_DAYS = 42  # how far back an outlet's usual sales are taken from (six weeks)
+MIN_SAMPLES = 3  # normal days needed before a median counts as the outlet's usual
 
 
-def lost_for_day(sales: float, offline: float, baseline: float | None) -> float | None:
-    """Sales lost on one day, or None when there is no basis for an estimate."""
-    if sales is None or offline is None or offline < MIN_OFFLINE:
-        return 0.0 if offline is not None and offline < MIN_OFFLINE else None
-    offline = min(offline, 1.0)
-    if offline <= 0.5:
-        expected = sales / (1 - offline)
-    elif baseline:
-        expected = baseline
-    else:
+def lost_for_day(sales: float | None, offline: float | None, expected: float | None) -> float | None:
+    """Sales lost on one day, or None when there is no basis for an estimate. `expected` is the outlet's usual sales for that day."""
+    if offline is None:
         return None
-    return max(0.0, expected * offline)
+    if offline < MIN_OFFLINE:
+        return 0.0
+    offline = min(offline, 1.0)
+    if expected:
+        return max(0.0, expected * offline)
+    if sales and offline <= 0.5:  # no history: scale up from what it sold while it was up
+        return sales * offline / (1 - offline)
+    return None
 
 
-def _usual_day(rows: list[tuple[date, float, float]]) -> float | None:
-    """Median sales of the days the outlet was online nearly all day (online >= 95%), if it had at least 3."""
-    good = [s for _, s, off in rows if off <= 0.05 and s]
-    return median(good) if len(good) >= 3 else None
+def usual_sales(day: date, rows: list[tuple[date, float, float]]) -> float | None:
+    """What this outlet normally sells on `day`'s weekday: the median of its normal days (online >= 95%) that weekday, else of all normal days."""
+    normal = [(d, s) for d, s, off in rows if off <= 0.05 and s and d != day]
+    same = [s for d, s in normal if d.weekday() == day.weekday()]
+    if len(same) >= MIN_SAMPLES:
+        return median(same)
+    return median([s for _, s in normal]) if len(normal) >= MIN_SAMPLES else None
 
 
 @api_view(["GET"])
@@ -94,13 +100,13 @@ def offline_loss(request, brand_id):
     outlets: dict[int, dict] = {}
     unestimated = used_monitor = 0
     for (oid, plat), rows in by_series.items():
-        baseline = _usual_day([(d, s, off) for d, s, off, _ in rows])
+        history = [(d, s, off) for d, s, off, _ in rows]
         o = outlets.setdefault(oid, {"outlet_id": oid, "central": 0.0, "offline_days": 0, "offline_sum": 0.0, "days": 0, "platforms": set(), "monitor_days": 0, "day_rows": []})
         for d, s, off, src in rows:
             if not (start <= d <= end):
                 continue
             o["days"] += 1
-            lost = lost_for_day(s, off, baseline)
+            lost = lost_for_day(s, off, usual_sales(d, history))
             if lost is None:
                 unestimated += 1
                 continue
@@ -130,4 +136,4 @@ def offline_loss(request, brand_id):
     return Response({"low": sum(r["low"] for r in rows), "high": sum(r["high"] for r in rows), "outlets": rows,
                      "outlet_days": sum(o["days"] for o in outlets.values()), "outlet_days_unestimated": unestimated, "outlet_days_from_monitor": used_monitor,
                      "period": {"start": start.isoformat(), "end": end.isoformat()},
-                     "method": "Sales while online ÷ share of the day online, times the share offline. Range: 60% to 100% of that, since some customers order later or elsewhere."})
+                     "method": "The outlet's usual sales for that weekday, times the share of the day it was offline. Range: 60% to 100% of that, since some customers order later or elsewhere."})

@@ -167,23 +167,26 @@ class UptimeTests(TestCase):
 class OfflineLossTests(__import__("django.test", fromlist=["SimpleTestCase"]).SimpleTestCase):
     """The per-day estimate behind /uptime/loss."""
 
-    def test_extrapolates_from_the_hours_it_was_online(self):
+    def test_uses_the_usual_sales_for_the_weekday(self):
         from .loss import lost_for_day
-        self.assertAlmostEqual(lost_for_day(9000, 0.1, None), 1000.0)  # sold 9,000 in 90% of the day: about 1,000 in the other 10%
+        self.assertAlmostEqual(lost_for_day(5019, 0.356, 14200), 5055.2)  # a weak day still loses a normal day's share (Zomato's own way)
 
-    def test_a_mostly_offline_day_uses_the_usual_day(self):
+    def test_with_no_history_it_scales_up_from_the_hours_it_was_online(self):
         from .loss import lost_for_day
-        self.assertAlmostEqual(lost_for_day(1000, 0.8, 5000), 4000.0)
-        self.assertIsNone(lost_for_day(1000, 0.8, None))  # nothing to base a guess on
+        self.assertAlmostEqual(lost_for_day(9000, 0.1, None), 1000.0)
+        self.assertIsNone(lost_for_day(1000, 0.8, None))  # mostly offline and nothing to go on
 
     def test_noise_and_missing_data(self):
         from .loss import lost_for_day
-        self.assertEqual(lost_for_day(500, 0.005, None), 0.0)
-        self.assertIsNone(lost_for_day(None, 0.3, None))
+        self.assertEqual(lost_for_day(500, 0.005, 10000), 0.0)
+        self.assertIsNone(lost_for_day(500, None, 10000))
 
-    def test_usual_day_needs_three_good_days(self):
-        from datetime import date
-        from .loss import _usual_day
-        d = date(2026, 11, 1)
-        self.assertIsNone(_usual_day([(d, 100, 0.0), (d, 200, 0.0)]))
-        self.assertEqual(_usual_day([(d, 100, 0.0), (d, 300, 0.02), (d, 200, 0.0), (d, 9000, 0.6)]), 200)
+    def test_usual_sales_prefers_the_same_weekday(self):
+        from datetime import date, timedelta
+        from .loss import usual_sales
+        thursday = date(2026, 10, 15)
+        rows = [(thursday - timedelta(days=7 * i), v, 0.0) for i, v in enumerate([10, 12, 14, 16], start=1)]  # past Thursdays
+        rows += [(date(2026, 10, 12), 900, 0.0), (date(2026, 10, 13), 900, 0.0), (date(2026, 10, 14), 900, 0.0)]  # busy other days
+        self.assertEqual(usual_sales(thursday, rows), 13)
+        self.assertIsNone(usual_sales(thursday, rows[:2]))  # too little history
+        self.assertEqual(usual_sales(date(2026, 10, 16), rows), 16)  # no Fridays: the median of all normal days stands in
