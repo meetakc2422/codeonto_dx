@@ -145,6 +145,7 @@ api = [
     path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/search", market_api.search),
     path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/cuisines", market_api.cuisines),
     path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/ranking", market_api.ranking),
+    path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/suggested", market_api.suggested),
     path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/track", market_api.track),
     path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/us", market_api.set_us),
     path("brands/<int:brand_id>/competition/<int:outlet_id>/<str:platform>/export", market_export.export),

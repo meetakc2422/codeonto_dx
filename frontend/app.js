@@ -3851,6 +3851,7 @@ async function loadMarketCuisines(outletId) {
     box.innerHTML = `<div class="comp-cuisine-head"><b>${esc(p.name || "This outlet")}</b> serves <small class="muted">click a cuisine to see who else serves it nearby</small></div>
       <div class="comp-cuisine-row">${p.cuisines.map((c) => `<button type="button" class="comp-cuisine" data-cuisine="${esc(c)}">${esc(c)}</button>`).join("")}</div>
       ${p.open_text || p.cost_text ? `<small class="muted">${[p.open_text, p.cost_text].filter(Boolean).map(esc).join(" · ")}</small>` : ""}`;
+    loadSuggestedCompetitors(outletId, box, spot);
     loadCuisineRanking(outletId, box, spot);
     box.onclick = (e) => {
       const b = e.target.closest("[data-cuisine]");
@@ -3860,6 +3861,32 @@ async function loadMarketCuisines(outletId) {
       form.requestSubmit();
     };
   } catch (x) { if ($("#zCuisines")) box.innerHTML = `<small class="muted">The cuisines couldn't be loaded right now. Please try again in a moment.</small>`; }
+}
+
+// 3-4 nearby restaurants that serve the same food as the outlet, to compare against in one click
+async function loadSuggestedCompetitors(outletId, box, spot) {
+  const slot = document.createElement("div");
+  slot.className = "comp-suggest";
+  slot.innerHTML = `<small class="muted">Finding competitors near you with the same food…</small>`;
+  box.appendChild(slot);
+  try {
+    const p = await api(`${zBase(outletId)}/suggested`, spot ? { spot: JSON.stringify(spot) } : {});
+    if (!slot.isConnected) return;
+    if (!p.suggestions?.length) { slot.innerHTML = p.detail ? `<small class="muted">${esc(p.detail)}</small>` : ""; return; }
+    slot.innerHTML = `<div class="comp-cuisine-head"><b>Competitors near you serving the same food</b> <small class="muted">from ${zName()}'s own lists for ${esc((p.cuisines || []).join(", "))}</small></div>
+      <div class="sg-grid">${p.suggestions.map((r, i) => `<div class="sg-card" style="--i:${i}">
+        <div class="sg-top"><b class="sg-name" title="${esc(r.name)}">${esc(r.name)}</b>${r.rating != null ? `<span class="sg-rate">${Number(r.rating).toFixed(1)} ★</span>` : ""}</div>
+        <div class="sg-meta">${[r.distance_km != null ? `${r.distance_km} km away` : "", r.delivery_time].filter(Boolean).map(esc).join(" · ")}</div>
+        <div class="sg-tags">${r.cuisines.map((c) => `<span>${esc(c)}</span>`).join("")}</div>
+        ${r.offer ? `<div class="sg-offer">${esc(r.offer)}</div>` : ""}
+        <button class="btn light sg-track" type="button" data-sg="${esc(r.res_id)}">Compare with us</button></div>`).join("")}</div>`;
+    slot.querySelectorAll("[data-sg]").forEach((b) => b.addEventListener("click", async () => {
+      const r = p.suggestions.find((x) => x.res_id === b.dataset.sg);
+      b.disabled = true; b.textContent = "Adding…";
+      try { await apiJSON(`${zBase(outletId)}/track`, "POST", { res_id: r.res_id, tracked: true, name: r.name, distance_km: r.distance_km, delivery_time: r.delivery_time, spot }); render(); }
+      catch (e) { b.disabled = false; b.textContent = "Compare with us"; toast(userMessage(e)); }
+    }));
+  } catch (x) { if (slot.isConnected) slot.innerHTML = `<small class="muted">Suggested competitors couldn't be loaded right now.</small>`; }
 }
 
 // where the outlet sits in the app's own list for each cuisine tag

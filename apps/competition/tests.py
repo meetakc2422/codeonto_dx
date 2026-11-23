@@ -188,3 +188,35 @@ class UnexpectedFailuresOnCompetitionPages(SimpleTestCase):
         from django.conf import settings
 
         self.assertEqual(settings.REST_FRAMEWORK["EXCEPTION_HANDLER"], "config.exception_handler.handler")
+
+
+class SuggestedCompetitorsTests(__import__("django.test", fromlist=["SimpleTestCase"]).SimpleTestCase):
+    """Which nearby restaurants are suggested as competitors."""
+
+    @staticmethod
+    def _r(rid, name, rating=4.2, km=1.0):
+        return {"res_id": rid, "name": name, "rating": rating, "distance_km": km, "delivery_time": "30 min", "offer": ""}
+
+    def test_most_cuisines_in_common_comes_first_then_closest(self):
+        from .market_api import pick_suggestions
+        found = {"Biryani": [self._r("1", "A", km=3), self._r("2", "B", km=1), self._r("3", "C", km=2)],
+                 "Mughlai": [self._r("3", "C", km=2), self._r("2", "B", km=1)]}
+        got = pick_suggestions(found, ours=None, tracked=set())
+        self.assertEqual([c["name"] for c in got], ["B", "C", "A"])  # B and C serve both; B is closer
+        self.assertEqual(got[0]["cuisines"], ["Biryani", "Mughlai"])
+
+    def test_leaves_out_ourselves_tracked_ones_and_poorly_rated(self):
+        from .market_api import pick_suggestions
+        found = {"Burger": [self._r("us", "Us"), self._r("t", "Tracked"), self._r("bad", "Bad", rating=2.1), self._r("ok", "Fine"), self._r("n", "Unrated", rating=None)]}
+        got = pick_suggestions(found, ours="us", tracked={"t"})
+        self.assertEqual(sorted(c["name"] for c in got), ["Fine", "Unrated"])
+
+    def test_at_most_four(self):
+        from .market_api import pick_suggestions
+        found = {"Pizza": [self._r(str(i), f"R{i}", km=i) for i in range(1, 9)]}
+        self.assertEqual([c["name"] for c in pick_suggestions(found, None, set())], ["R1", "R2", "R3", "R4"])
+
+    def test_nearby_beats_far_even_with_fewer_cuisines_in_common(self):
+        from .market_api import pick_suggestions
+        found = {"Chinese": [self._r("far", "Far", km=6.9), self._r("near", "Near", km=2.7)], "Asian": [self._r("far", "Far", km=6.9)]}
+        self.assertEqual([c["name"] for c in pick_suggestions(found, None, set())], ["Near", "Far"])  # Far matches two, but is over 5 km

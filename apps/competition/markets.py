@@ -44,7 +44,7 @@ class Zomato:
 
     @staticmethod
     def ranked(spot, q, pages=5):
-        """What the app lists for a cuisine, in the app's order: (total, [{res_id, name}]). Up to `pages` pages of ~6; Zomato's
+        """What the app lists for a cuisine, in the app's order: (total, [{res_id, name, rating, distance_km, delivery_time, is_ad, offer}]). Up to `pages` pages of ~6; Zomato's
         paging needs the previous page's postback token."""
         dish = next((h for h in zomato.suggest(spot, q) if h["search"] and not h["res_id"]), None)
         if not dish:
@@ -56,7 +56,9 @@ class Zomato:
             for r in got["restaurants"]:
                 if r["res_id"] and r["res_id"] not in seen:
                     seen.add(r["res_id"])
-                    out.append({"res_id": r["res_id"], "name": r["name"]})
+                    out.append({"res_id": r["res_id"], "name": r["name"], "rating": r.get("rating"), "distance_km": r.get("distance_km"),
+                                "delivery_time": r.get("delivery_time", ""), "is_ad": r.get("is_ad", False),
+                                "offer": ((r.get("offers") or [{}])[0].get("text") or "")})
             if not got.get("has_more") or not pb:
                 break
         return total, out

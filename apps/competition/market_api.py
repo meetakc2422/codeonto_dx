@@ -205,7 +205,64 @@ def cuisines(request, brand_id, outlet_id, platform):
     return Response(_profile_json(r))
 
 
+NEARBY_KM = 5  # a competitor farther than this is only suggested when too few are closer
 RANK_FRESH = 3 * 3600  # seconds a cuisine's ranking is kept, so reopening the page doesn't search again
+
+
+def _ranked_cached(m, outlet, place, tag):
+    """(total, [restaurants in the app's order]) for one cuisine at the outlet's spot, kept for a few hours so reopening the page
+    doesn't search again. Shared by the rank table and the suggested competitors."""
+    from django.core.cache import cache
+    key = f"ranked:{m.code}:{outlet.id}:{place.get('lat')}:{place.get('lng')}:{tag}"
+    hit = cache.get(key)
+    if hit is None:
+        hit = m.ranked(place, tag)
+        cache.set(key, hit, RANK_FRESH)
+    return hit
+
+
+def pick_suggestions(found_by_tag: dict, ours: str | None, tracked: set, limit: int = 4) -> list[dict]:
+    """The nearby restaurants most like this outlet: those within a few km first, and among them the ones that show up for the most of
+    its cuisines, then the closest, then the ones the app lists first. `found_by_tag` is {cuisine: [restaurant, ...]} in the app's own order. Skips the outlet itself, ones
+    already tracked and ads without a name."""
+    seen: dict[str, dict] = {}
+    for tag, found in found_by_tag.items():
+        for pos, r in enumerate(found, start=1):
+            rid = r.get("res_id")
+            if not rid or rid == ours or rid in tracked or not r.get("name"):
+                continue
+            c = seen.setdefault(rid, {**{k: r.get(k) for k in ("res_id", "name", "rating", "distance_km", "delivery_time", "offer")}, "cuisines": [], "best_rank": pos})
+            c["cuisines"].append(tag)
+            c["best_rank"] = min(c["best_rank"], pos)
+    good = [c for c in seen.values() if c["rating"] is None or c["rating"] >= 3.0]
+    good.sort(key=lambda c: (c["distance_km"] is not None and c["distance_km"] > NEARBY_KM, -len(c["cuisines"]),
+                            c["distance_km"] if c["distance_km"] is not None else 99, c["best_rank"]))
+    return good[:limit]
+
+
+@api_view(["GET"])
+def suggested(request, brand_id, outlet_id, platform):
+    """3-4 nearby restaurants that serve the same food as this outlet (Zomato only), to compare against in one click."""
+    m = _market(platform)
+    if not hasattr(m, "ranked"):
+        return Response({"detail": f"Suggestions aren't available on {m.name} yet.", "suggestions": []})
+    outlet = _outlet(request, brand_id, outlet_id)
+    place = _spot(request, outlet, m)
+    if not place:
+        return Response({"detail": f"Set the outlet's {m.name} location first.", "suggestions": []}, status=400)
+    ours = our_res_id(outlet, m, find=True)[0]
+    r = MarketRestaurant.objects.filter(platform=m.code, res_id=ours).first() if ours else None
+    tags = ((r.info or {}).get("cuisines") if r else None) or []
+    if not tags:
+        return Response({"detail": "Open the cuisine tags first so we know them.", "suggestions": []})
+    tracked = set(MarketCompetitor.objects.filter(outlet=outlet, restaurant__platform=m.code).values_list("restaurant__res_id", flat=True))
+    found_by_tag = {}
+    for tag in tags:
+        try:
+            found_by_tag[tag] = _ranked_cached(m, outlet, place, tag)[1]
+        except m.Error as e:
+            return _error(e)
+    return Response({"suggestions": pick_suggestions(found_by_tag, ours, tracked), "cuisines": tags})
 
 
 @api_view(["GET"])
@@ -227,18 +284,13 @@ def ranking(request, brand_id, outlet_id, platform):
         return Response({"detail": "Open the cuisine tags first so we know them.", "rows": []})
     rows = []
     for tag in tags:
-        key = f"rank:{m.code}:{outlet.id}:{place.get('lat')}:{place.get('lng')}:{tag}"
-        row = cache.get(key)
-        if row is None:
-            try:
-                total, found = m.ranked(place, tag)
-            except m.Error as e:
-                return _error(e)
-            ids = [x["res_id"] for x in found]
-            row = {"cuisine": tag, "rank": ids.index(ours) + 1 if ours in ids else None, "of": total or len(ids),
-                   "checked": len(ids), "top": [x["name"] for x in (found[:ids.index(ours)] if ours in ids else found)[:3]]}
-            cache.set(key, row, RANK_FRESH)
-        rows.append(row)
+        try:
+            total, found = _ranked_cached(m, outlet, place, tag)
+        except m.Error as e:
+            return _error(e)
+        ids = [x["res_id"] for x in found]
+        rows.append({"cuisine": tag, "rank": ids.index(ours) + 1 if ours in ids else None, "of": total or len(ids),
+                     "checked": len(ids), "top": [x["name"] for x in (found[:ids.index(ours)] if ours in ids else found)[:3]]})
     return Response({"rows": rows})
 
 
