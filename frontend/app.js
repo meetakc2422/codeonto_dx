@@ -5170,6 +5170,50 @@ function googleReturnNotice() {
 setTimeout(googleReturnNotice, 800);
 
 $("#brandSelect").addEventListener("change", (e) => loadBrand(Number(e.target.value)));
+
+// ---------- the brand picker: a search box over the brands, grouped by client ----------
+// The hidden <select id="brandSelect"> stays the one place the chosen brand lives (other code reads and sets it); this is the face on it.
+(() => {
+  const sel = $("#brandSelect"), btn = $("#brandBtn"), pop = $("#brandPop"), box = $("#brandSearch"), list = $("#brandList");
+  const nativeValue = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+  const labelNow = () => (state.brands || []).find((b) => String(b.id) === String(sel.value))?.name || sel.selectedOptions[0]?.textContent || "Brand";
+  const sync = () => { $("#brandBtnText").textContent = labelNow(); };
+  Object.defineProperty(sel, "value", { get() { return nativeValue.get.call(this); }, set(v) { nativeValue.set.call(this, v); sync(); }, configurable: true });
+  new MutationObserver(sync).observe(sel, { childList: true, subtree: true });  // the list was just filled in
+  let shown = [], at = -1;
+  const draw = () => {
+    const words = box.value.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    const byClient = new Map();
+    (state.brands || []).forEach((b) => {
+      const hay = `${b.name} ${b.client}`.toLowerCase();
+      if (words.every((w) => hay.includes(w))) (byClient.get(b.client) || byClient.set(b.client, []).get(b.client)).push(b);
+    });
+    shown = [...byClient.values()].flat();
+    const cur = String(sel.value);
+    at = Math.max(0, shown.findIndex((b) => String(b.id) === cur));
+    list.innerHTML = shown.length ? [...byClient.entries()].map(([client, bs]) => `<div class="brand-group">${esc(client)} <small>· ${bs.length} brand${bs.length === 1 ? "" : "s"}</small></div>` +
+      bs.map((b) => `<div class="brand-opt ${String(b.id) === cur ? "cur" : ""}" role="option" data-id="${b.id}" aria-selected="${String(b.id) === cur}"><span class="tick">${String(b.id) === cur ? "✓" : ""}</span>${esc(b.name)}</div>`).join("")).join("")
+      : `<div class="brand-none">No brand matches “${esc(box.value.trim())}”</div>`;
+    mark();
+  };
+  const mark = () => { list.querySelectorAll(".brand-opt").forEach((el, i) => el.classList.toggle("hot", i === at)); list.querySelectorAll(".brand-opt")[at]?.scrollIntoView({ block: "nearest" }); };
+  const open = () => { pop.hidden = false; btn.setAttribute("aria-expanded", "true"); box.value = ""; draw(); box.focus(); };
+  const close = (back = true) => { pop.hidden = true; btn.setAttribute("aria-expanded", "false"); if (back) btn.focus(); };
+  const pick = (id) => { if (id == null) return; close(); if (String(sel.value) !== String(id)) { sel.value = id; sel.dispatchEvent(new Event("change", { bubbles: true })); } };
+  btn.addEventListener("click", () => (pop.hidden ? open() : close(false)));
+  box.addEventListener("input", draw);
+  box.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowDown") { e.preventDefault(); at = Math.min(shown.length - 1, at + 1); mark(); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); at = Math.max(0, at - 1); mark(); }
+    else if (e.key === "Enter") { e.preventDefault(); pick(shown[at]?.id); }
+    else if (e.key === "Escape") { e.preventDefault(); close(); }
+  });
+  list.addEventListener("click", (e) => { const o = e.target.closest(".brand-opt"); if (o) pick(o.dataset.id); });
+  list.addEventListener("mousemove", (e) => { const o = e.target.closest(".brand-opt"); if (!o) return; const i = [...list.querySelectorAll(".brand-opt")].indexOf(o); if (i !== at) { at = i; mark(); } });
+  document.addEventListener("click", (e) => { if (!pop.hidden && !e.target.closest(".brand-picker")) close(false); });
+  sync();
+})();
+
 $("#locationBtn").addEventListener("click", () => setOutletPicker($("#locationPop").hidden));
 $("#locationSearch").addEventListener("input", renderOutletList);
 $("#locationList").addEventListener("change", (e) => {

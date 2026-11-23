@@ -28,7 +28,13 @@
     <div class="topbar-right">
       <div class="brand-picker">
         <span class="brand-industry" id="brandIndustry"></span>
-        <select id="brandSelect" aria-label="Brand"></select>
+        <button type="button" class="brand-btn" id="brandBtn" aria-haspopup="listbox" aria-expanded="false" aria-label="Choose a brand"><span id="brandBtnText">Brand</span>
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg></button>
+        <select id="brandSelect" class="brand-native" aria-label="Brand" tabindex="-1" aria-hidden="true"></select>
+        <div class="brand-pop" id="brandPop" hidden>
+          <input type="search" id="brandSearch" placeholder="Search brands or clients…" aria-label="Search brands" autocomplete="off">
+          <div class="brand-list" id="brandList" role="listbox"></div>
+        </div>
       </div>
       <button class="icon-btn" id="fullscreenBtn" aria-label="Fullscreen">
         <svg viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>
