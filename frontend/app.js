@@ -1132,12 +1132,16 @@ async function renderModule(page, module) {
   const meta = kpiMeta(selected) || modKpis[0];
   const platforms = state.platform ? [] : state.config.connected_platforms;
 
-  const [kpiRes, trend, board, ...perPlatform] = await Promise.all([
+  const sparkKpis = modKpis.filter((k) => k.code !== meta.code).slice(0, 7);  // each card gets a small trend line, which also fills the width a few cards leave
+  const [kpiRes, trend, board, sparkRes, ...perPlatform] = await Promise.all([
     api(`/brands/${state.brandId}/kpis`, filterParams({ module })),
     api(`/brands/${state.brandId}/kpis/${meta.code}/trend`, filterParams()),
     api(`/brands/${state.brandId}/leaderboard/${meta.code}`, range()),
+    Promise.all(sparkKpis.map((k) => api(`/brands/${state.brandId}/kpis/${k.code}/trend`, filterParams()).catch(() => []))),
     ...platforms.map((p) => api(`/brands/${state.brandId}/kpis/${meta.code}/trend`, filterParams({ platform: p.code }))),
   ]);
+  const sparks = { [meta.code]: trend };
+  sparkKpis.forEach((k, i) => { sparks[k.code] = sparkRes[i]; });
   if (!kpiRes.kpis.length) return renderNoData(page);
   const platformSeries = platforms
     .map((p, i) => ({ platform: p, points: perPlatform[i] }))
@@ -1166,7 +1170,7 @@ async function renderModule(page, module) {
       ${split.length > 1 ? `<div style="border-top:1px solid #eef1f5;margin:10px 0 2px"></div>` + split.map((x) => bar(x.name, x.v, Math.max(...split.map((y) => y.v)), PLATFORM_COLORS[x.code] || "#94a3b8")).join("") : ""}
     </div></div>`;
   page.innerHTML = `
-    ${kpiCards(kpiRes.kpis, module)}
+    ${kpiCards(kpiRes.kpis, module, sparks)}
     ${funnel}
     <div class="card">
       <div class="card-head">
