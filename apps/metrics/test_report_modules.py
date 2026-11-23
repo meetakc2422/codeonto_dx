@@ -7,7 +7,7 @@ from rest_framework.test import APIClient
 from apps.masters.models import Industry
 from apps.outlets.models import Brand, Client
 
-ALL = ["overall", "growth", "ads", "reputation", "complaints", "payouts", "months"]
+ALL = ["overview", "recommendations", "overall", "growth", "ads", "reputation", "complaints", "payouts", "months"]
 
 
 class ReportModulesTests(TestCase):
