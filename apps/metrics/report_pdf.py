@@ -96,6 +96,29 @@ def _styles():
     }
 
 
+def _written_block(r, st):
+    """The written overview and the recommended next steps, side by side (one alone takes the whole width)."""
+    body = ParagraphStyle("wb", parent=st["cell"], fontSize=9.2, leading=13.4, spaceAfter=5)
+    head = ParagraphStyle("wh", parent=st["h2"], fontSize=12, leading=15, spaceBefore=0, spaceAfter=7)
+    rec = ParagraphStyle("wr", parent=st["cell"], fontSize=8.8, leading=12.2, spaceAfter=7)
+    dot = {"High": "#C4302B", "Medium": "#E39A12", "Low": "#6B7585"}
+    cols = []
+    if r.get("overview"):
+        cols.append([Paragraph("Overview", head)] + [Paragraph(x, body) for x in r["overview"]])
+    if r.get("recommendations"):
+        cols.append([Paragraph("Recommended next steps", head)] + [
+            Paragraph(f'<font color="{dot.get(x["level"], "#6B7585")}">&#9679;</font> <b>{i}. {x["title"]}</b> <font color="#6B7585" size="7">{x["level"]} priority</font><br/>{x["detail"]}', rec)
+            for i, x in enumerate(r["recommendations"], start=1)])
+    if not cols:
+        return Spacer(1, 1)
+    widths = [WIDTH] if len(cols) == 1 else [WIDTH * 0.5 - 4, WIDTH * 0.5 - 4]
+    t = Table([cols], colWidths=widths, hAlign="LEFT") if len(cols) == 1 else Table([[cols[0], cols[1]]], colWidths=widths, hAlign="LEFT")
+    t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("BACKGROUND", (0, 0), (-1, -1), LIGHT), ("BOX", (0, 0), (-1, -1), 0.4, RULE),
+                           ("LINEAFTER", (0, 0), (0, 0), 0.4, RULE) if len(cols) == 2 else ("TOPPADDING", (0, 0), (-1, -1), 12),
+                           ("LEFTPADDING", (0, 0), (-1, -1), 14), ("RIGHTPADDING", (0, 0), (-1, -1), 14), ("TOPPADDING", (0, 0), (-1, -1), 12), ("BOTTOMPADDING", (0, 0), (-1, -1), 8)]))
+    return t
+
+
 def _chg(ch, hib=True, size=6.6) -> str:
     """The change as a small coloured figure on the same line as its value."""
     if ch is None:
@@ -229,7 +252,14 @@ def build_pdf(r: dict) -> bytes:
     if r.get("visual", True):
         from .report_visual import build_drawings
 
-        for k, page_drawing in enumerate(build_drawings(r)):
+        has_text = bool(r.get("overview") or r.get("recommendations"))
+        drawings = build_drawings(r, with_tiles=not has_text)  # with a written page first, the tiles go on it instead
+        if has_text:
+            tiles = _tiles(r, st)
+            story += ([tiles, Spacer(1, 8)] if tiles else []) + [_written_block(r, st)]
+            if drawings:
+                story.append(PageBreak())
+        for k, page_drawing in enumerate(drawings):
             story += [PageBreak(), page_drawing] if k else [page_drawing]
         if not r.get("tables"):  # the picture page alone, with a one-line data check under it
             if not cov["days"]:

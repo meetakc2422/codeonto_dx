@@ -23,6 +23,7 @@ from apps.payouts.models import PayoutOrder
 
 from .models import MetricDaily
 
+from . import report_insights as insights
 from .api import _aggregate, _filters, _range
 
 # (section key, title, KPI codes in column order)
@@ -38,6 +39,8 @@ ISSUES = [("packaging", "Packaging"), ("quality", "Quality"), ("wrong_items", "W
 MONTHS_SHOWN = 6
 # what a person can pick on the Export reports page (key, name, one-line description)
 MODULES = [
+    ("overview", "Written overview", "A few plain sentences on how the period went"),
+    ("recommendations", "Recommended next steps", "The few things most worth doing, with the numbers behind them"),
     ("overall", "Sales and operations", "Sales, orders, average order value, cancellations, delays, prep time, online time"),
     ("growth", "Customer funnel", "Impressions, menu views, add to cart, orders, conversion"),
     ("ads", "Ads and discounts", "Ad spend, ad sales, ad return, discounts given"),
@@ -267,7 +270,12 @@ def build(request, brand_id: int) -> dict:
                             "rating": t.get("listing_rating"), "cancellation": t.get("cancellation_rate"),
                             "share": round(sales / total_sales * 100, 1) if sales and total_sales else None})
     sections.sort(key=lambda sec: order.index(sec["key"]) if sec["key"] in order else 99)
-    return {"brand": brand.name, "period": period, "outlets": len(outlets), "coverage": cov, "headline": headline, "platforms": by_platform, "highlights": notes[:6], "sections": sections, "months": months, "module_order": order}
+    result = {"brand": brand.name, "period": period, "outlets": len(outlets), "coverage": cov, "headline": headline, "platforms": by_platform, "highlights": notes[:6], "sections": sections, "months": months, "module_order": order}
+    if "overview" in wanted:
+        result["overview"] = insights.overview(result)
+    if "recommendations" in wanted:
+        result["recommendations"] = insights.recommendations(result)
+    return result
 
 
 @api_view(["GET"])

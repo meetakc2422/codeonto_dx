@@ -234,15 +234,17 @@ def _rows_of(cells):
     return rows
 
 
-def build_drawings(r: dict) -> list[Drawing]:
-    """The picture pages: the headline tiles, then one panel for each module asked for, in the order asked, three to a row and
-    two rows to a page (more panels carry on to a second page)."""
+def build_drawings(r: dict, with_tiles: bool = True) -> list[Drawing]:
+    """The picture pages: the headline tiles (unless a written page already has them), then one panel for each module asked for,
+    in the order asked, three to a row and two rows to a page (more panels carry on to a second page)."""
     order = r.get("module_order") or list(PANELS)
     cells = [(fn, wt) for m in order for fn, wt in PANELS.get(m, [])]
     gap = 8
-    first = Drawing(W, H)
-    _tiles(first, r, H)
     if not cells:
+        if not with_tiles:
+            return []
+        first = Drawing(W, H)
+        _tiles(first, r, H)
         _text(first, 0, H - 90, "No sections picked: the headline numbers above are all this report holds.", 9, color=MUTE)
         return [first]
     rows = _rows_of(cells)
@@ -258,9 +260,15 @@ def build_drawings(r: dict) -> list[Drawing]:
                 fn(d, r, x, y, w, h)
                 x += w + gap
 
-    lay(first, rows[:2], H - 52 - gap, min(row_h, 200) if len(rows) > 1 else min(row_h, 170))
-    pages = [first]
-    rest = rows[2:]
+    pages = []
+    if with_tiles:
+        first = Drawing(W, H)
+        _tiles(first, r, H)
+        lay(first, rows[:2], H - 52 - gap, min(row_h, 200) if len(rows) > 1 else min(row_h, 170))
+        pages.append(first)
+        rest = rows[2:]
+    else:
+        rest = rows
     for k in range(0, len(rest), 2):
         chunk = rest[k:k + 2]
         d = Drawing(W, len(chunk) * row_h + (len(chunk) - 1) * gap)
