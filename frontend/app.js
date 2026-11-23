@@ -924,7 +924,7 @@ async function renderOverview(page) {
   }
   if (uptime) tiles.push(T(offline.length ? "red" : "ok", "#/store_uptime", "Outlets offline", inr.format(offline.length),
     offline.length ? "Not taking orders right now" : `All online${uptime.uptime_pct != null ? ` · ${fmt(uptime.uptime_pct, "percent")} uptime` : ""}`, "",
-    offLoss && offLoss.high > 0 ? `<span class="ov-loss" title="${esc(offLoss.method)}">≈ ${rupeesShort(offLoss.low)} – ${rupeesShort(offLoss.high)} sales lost to being offline, ${periodLabel()}</span>` : ""));
+    offLoss && offLoss.high > 0 ? `<span class="ov-loss lp-open" role="button" tabindex="0">Check estimated revenue loss ›</span>` : ""));
   tiles.push(T(summary.pending ? (summary.negative ? "red" : "amber") : "ok", "#/reviews", "Reviews to reply", inr.format(summary.pending),
     summary.pending ? `${inr.format(summary.negative)} negative in this period` : "All replied"));
   if (pay?.cycles) tiles.push(T(pay.with_issues ? "red" : "ok", "#/reconciliation", "Payouts to check", inr.format(pay.with_issues),
@@ -938,13 +938,13 @@ async function renderOverview(page) {
   const ageWords = (h) => (h < 48 ? `${Math.round(h)} hours` : `${Math.round(h / 24)} days`);
   (fresh?.sources || []).filter((f) => f.status === "late")
     .forEach((f) => alerts.push({ sev: f.age_hours > f.limit_hours * 3 ? "critical" : "warning", cat: "Data", title: `${f.label} (${f.platform}) not updated for ${ageWords(f.age_hours)}`, sub: "numbers on this page may be out of date", href: "#/overview", rank: 0.5 }));
-  offline.forEach((o) => alerts.push({ sev: "critical", cat: "Uptime", title: `${o.name} is offline`, sub: `since ${timeAgo(o.offline_since).replace(" ago", "")}`, href: "#/store_uptime", rank: 0 }));
+  offline.forEach((o) => alerts.push({ sev: "critical", cat: "Offline hours", title: `${o.name} is offline`, sub: `since ${timeAgo(o.offline_since).replace(" ago", "")}`, href: "#/store_uptime", rank: 0 }));
   const foodSafety = (summary.by_topic?.topics || []).find((t) => t.slug === "food_safety");
   if (foodSafety?.negative) alerts.push({ sev: "critical", cat: "Reviews", title: `${plural(foodSafety.negative, "negative review")} about food safety`, sub: "stomach issues, hair, insects, spoiled food", href: "#/reviews", set: { topic: "food_safety", rating: "neg", status: "" }, rank: 1 });
   if (summary.pending) alerts.push({ sev: summary.negative ? "critical" : "warning", cat: "Reviews", title: `${plural(summary.pending, "review")} waiting for a reply`, sub: `${inr.format(summary.negative)} negative in this period`, href: "#/reviews", set: { status: "pending", rating: "", topic: "" }, rank: 2 });
   (pay?.issues || []).slice(0, 3).forEach((i) => alerts.push({ sev: PAY_MONEY.has(i.code) ? "critical" : "warning", cat: "Payouts", title: `${plural(i.count, "payout")}: ${PAY_SHORT[i.code] || i.label}`, sub: pay.discrepancy_total && i.code === "payout_mismatch" ? `${rupees(pay.discrepancy_total)} unexplained` : "open reconciliation", href: "#/reconciliation", rank: 3 }));
   [...(stock?.by_outlet || [])].filter((o) => o.active >= 10).sort((a, b) => b.active - a.active).slice(0, 3)
-    .forEach((o) => alerts.push({ sev: "warning", cat: "Stock-outs", title: `${plural(o.active, "item")} out of stock`, sub: nameOf.get(o.outlet_id) || `Outlet ${o.outlet_id}`, href: "#/stock_outs", rank: 4 }));
+    .forEach((o) => alerts.push({ sev: "warning", cat: "Out of stock", title: `${plural(o.active, "item")} out of stock`, sub: nameOf.get(o.outlet_id) || `Outlet ${o.outlet_id}`, href: "#/stock_outs", rank: 4 }));
   (dropsRes?.drops || []).slice(0, 60).forEach((d) => {
     const pct = d.change_pct == null ? "" : `${Math.abs(d.change_pct).toFixed(0)}%`;
     const title = d.unit === "percent" || d.unit === "rating" ? `${d.name} fell from ${fmt(d.previous, d.unit)} to ${fmt(d.value, d.unit)}`
@@ -982,6 +982,7 @@ async function renderOverview(page) {
       <div id="ovRowsMore"></div>
     </div>`;
 
+  page.querySelectorAll(".lp-open").forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); e.stopPropagation(); openLossPanel(offLoss); }));
   let allAlerts = false, allRows = false;
   const drawAlerts = () => {
     const list = allAlerts ? alerts : alerts.slice(0, ALERTS_SHOWN);
@@ -2598,7 +2599,7 @@ const manyOutlets = (n) => `${n} outlet${n === 1 ? "" : "s"}`;
 
 function showChanges(fresh, one, summary, online) {
   if (fresh.length > OFFLINE_MAX_NOTICES) {
-    showOfflineNotice({ title: summary, detail: "Open Store Uptime to see which", open: () => openOfflineOutlet(), online });
+    showOfflineNotice({ title: summary, detail: "Open Offline hours to see which", open: () => openOfflineOutlet(), online });
     return;
   }
   fresh.forEach((r) => showOfflineNotice({ ...one(r), open: () => openOfflineOutlet(r), online }));
@@ -2611,10 +2612,10 @@ async function checkOffline() {
     changes = await api("/uptime/changes", state.me.is_staff && state.brandId ? { brand_id: state.brandId } : {});
   } catch { return; }  // try again next minute; a popup is never worth an error message
 
-  // only stores that just went down are news: ones offline for days are on Store Uptime, not a popup
+  // only stores that just went down are news: ones offline for days are on Offline hours, not a popup
   const offline = unseenChanges("offline", changes.offline.filter((r) => Date.now() - new Date(r.since) < 3 * 36e5));
   if (offline.firstVisit) {  // first visit on this browser: these aren't news, so one summary instead of a popup each
-    if (changes.offline.length) showOfflineNotice({ title: `${manyOutlets(changes.offline.length)} offline right now`, detail: "Open Store Uptime to see which", open: () => openOfflineOutlet() });
+    if (changes.offline.length) showOfflineNotice({ title: `${manyOutlets(changes.offline.length)} offline right now`, detail: "Open Offline hours to see which", open: () => openOfflineOutlet() });
   } else {
     showChanges(offline.fresh, (r) => ({ title: `${r.outlet} went offline`, detail: `${r.brand} · ${r.platform}`, when: noticeTime(r.since) }),
       `${manyOutlets(offline.fresh.length)} went offline`, false);
@@ -2655,6 +2656,65 @@ const offlineFor = (e) => downtimeText(e.downtime_minutes) || "under a minute";
 
 let uptimeAll = false, uptimeCity = "";
 const UP_TOP = 10;
+
+// ---------- Estimated revenue loss: a slide-over panel (Offline hours page and the Overview tile) ----------
+function openLossPanel(data, focusId) {
+  if (!data || !(data.high > 0)) return;
+  document.querySelector(".lp-root")?.remove();
+  const root = document.createElement("div");
+  root.className = "lp-root";
+  const period = data.period ? `${shortDate(data.period.start)} – ${shortDate(data.period.end)}` : periodLabel();
+  const rows = data.outlets || [];
+  const maxHigh = Math.max(1, ...rows.map((o) => o.high));
+  const nameCount = rows.reduce((m, o) => m.set(o.name, (m.get(o.name) || 0) + 1), new Map());
+  const where = (o) => [o.city, nameCount.get(o.name) > 1 ? o.outlet_name : ""].filter(Boolean).join(" · ");  // the outlet's own name only where two share an area
+  let focus = focusId != null ? rows.find((o) => String(o.outlet_id) === String(focusId)) : null;
+  const close = () => { root.classList.remove("open"); document.removeEventListener("keydown", onKey); setTimeout(() => root.remove(), 380); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  const countUp = (el, a, b, ms = 900) => {
+    if (matchMedia("(prefers-reduced-motion: reduce)").matches) { el.textContent = `${rupeesShort(a)} – ${rupeesShort(b)}`; return; }
+    const t0 = performance.now() + 250;
+    const step = (now) => { const p = Math.min(1, Math.max(0, (now - t0) / ms)), e = 1 - Math.pow(1 - p, 3); el.textContent = `${rupeesShort(a * e)} – ${rupeesShort(b * e)}`; if (p < 1) requestAnimationFrame(step); };
+    el.textContent = `${rupeesShort(0)} – ${rupeesShort(0)}`; requestAnimationFrame(step);
+  };
+  const draw = () => {
+    const o = focus;
+    root.innerHTML = `<div class="lp-scrim"></div>
+      <aside class="lp-panel" role="dialog" aria-label="Estimated revenue loss">
+        <header class="lp-head"><div>${o ? `<button class="lp-back" type="button">‹ All outlets</button>` : ""}<h3>${o ? esc(o.name) : "Estimated revenue loss"}</h3>
+          <p>${o ? `${esc(where(o))} · ${esc(period)}` : `from being offline · ${esc(period)}`}</p></div><button class="lp-x" type="button" aria-label="Close">×</button></header>
+        <section class="lp-hero"><span class="lp-label">${o ? "Sales we think were missed" : "Sales we think you missed"}</span>
+          <b class="lp-big" id="lpBig">${rupeesShort(o ? o.low : data.low)} – ${rupeesShort(o ? o.high : data.high)}</b>
+          <small>${o ? `${plural(o.offline_days, "day")} with offline time${o.avg_offline_pct != null ? `, offline about ${o.avg_offline_pct}% of opening hours on those days` : ""}` : `across ${plural(rows.length, "outlet")}`}</small></section>
+        ${o ? dayView(o) : listView()}
+        <footer class="lp-foot"><details><summary>How this is worked out</summary>
+          <ol><li>Zomato and Swiggy tell us how much of each day an outlet was online.</li><li>We look at what it sold in those hours.</li><li>We estimate the rest of that day, then show a range: some customers order later or elsewhere, so not every missed order is a lost one.</li></ol></details>
+          ${data.outlet_days_unestimated ? `<p class="muted">${plural(data.outlet_days_unestimated, "outlet-day")} left out: not enough sales data to estimate.</p>` : ""}</footer>
+      </aside>`;
+    root.querySelector(".lp-scrim").onclick = close;
+    root.querySelector(".lp-x").onclick = close;
+    root.querySelector(".lp-back")?.addEventListener("click", () => { focus = null; draw(); });
+    root.querySelectorAll("[data-lp]").forEach((b) => b.addEventListener("click", () => { focus = rows.find((r) => String(r.outlet_id) === b.dataset.lp); draw(); root.querySelector(".lp-panel").scrollTop = 0; }));
+    const big = root.querySelector("#lpBig"); countUp(big, o ? o.low : data.low, o ? o.high : data.high);
+  };
+  const listView = () => `<section class="lp-body"><h4>Outlets, biggest loss first</h4>
+    ${rows.map((o, i) => `<button class="lp-row" type="button" data-lp="${o.outlet_id}" style="--i:${Math.min(i, 14)}">
+      <span class="lp-name" title="${esc(o.outlet_name || "")}">${esc(o.name)} <small class="muted">${esc(where(o))}</small></span>
+      <span class="lp-bar"><i style="width:${Math.max(3, (o.high / maxHigh) * 100)}%"></i></span>
+      <b>${rupeesShort(o.low)} – ${rupeesShort(o.high)}</b></button>`).join("")}</section>`;
+  const dayView = (o) => {
+    const days = o.days || [], top = Math.max(1, ...days.map((d) => d.high));
+    return `<section class="lp-body"><h4>Day by day</h4>
+      <div class="lp-days">${days.map((d, i) => `<div class="lp-day" style="--i:${Math.min(i, 30)}" title="${esc(shortDate(d.date))}: offline ${d.offline_pct}% · ${rupeesShort(d.low)} – ${rupeesShort(d.high)} · ${esc(d.source)}">
+        <i style="height:${Math.max(4, (d.high / top) * 100)}%"></i><span>${esc(shortDate(d.date).replace(" ", " "))}</span></div>`).join("")}</div>
+      <ul class="lp-list">${days.slice().sort((a, b) => b.high - a.high).slice(0, 6).map((d) => `<li><span>${esc(shortDate(d.date))}</span><span class="muted">offline ${d.offline_pct}% · ${esc(d.source)}</span><b>${rupeesShort(d.low)} – ${rupeesShort(d.high)}</b></li>`).join("")}</ul></section>`;
+  };
+  document.body.appendChild(root);
+  draw();
+  document.addEventListener("keydown", onKey);
+  requestAnimationFrame(() => requestAnimationFrame(() => root.classList.add("open")));
+}
+
 async function renderUptime(page) {
   const params = () => filterParams({ limit: 500, status: uptimeFilters.status, outlet_id: uptimeFilters.outlet || state.locationId });
   const [summary, episodes, offLoss] = await Promise.all([
@@ -2695,7 +2755,7 @@ async function renderUptime(page) {
     <div class="so-hero">
       <div><span class="so-live"><i></i> Live</span>
         <div class="so-big">${inr.format(summary.offline_now)}<small> outlet${summary.offline_now === 1 ? "" : "s"} offline right now</small></div>
-        ${offLoss && offLoss.high > 0 ? `<p class="so-loss" title="${esc(offLoss.method)}"><b>≈ ${rupeesShort(offLoss.low)} – ${rupeesShort(offLoss.high)}</b> estimated sales lost to being offline in this period, worked out from Zomato's and Swiggy's own Online %${offLoss.outlet_days_unestimated ? ` <small class="muted">(${offLoss.outlet_days_unestimated} outlet-days left out: not enough data)</small>` : ""}</p>` : ""}
+        ${offLoss && offLoss.high > 0 ? `<p><button class="lp-btn" id="lossBtn" type="button"><span>₹</span> Check estimated revenue loss <i>›</i></button></p>` : ""}
         <p>Zomato · during opening hours · ${summary.last_checked_at ? `last checked ${timeAgo(summary.last_checked_at)}` : "no checks yet"}</p>
         <p>${plural(summary.events, "offline event")} · avg downtime ${downtimeText(summary.avg_downtime) || (summary.offline_now ? "n/a, none back yet" : "—")} · total ${downtimeText(summary.total_downtime) || "0m"}</p></div>
       <div class="so-now">Uptime<b>${summary.uptime_pct == null ? "—" : `${summary.uptime_pct.toFixed(1)}%`}</b></div>
@@ -2711,7 +2771,7 @@ async function renderUptime(page) {
     <div class="so-section"><h3>Outlets <small>${dayList.length > 1 ? `${squaresNote}daily uptime, one square per day` : "uptime in this period"}, worst first · ${uptimeAll ? `all ${shown.length}` : `worst ${Math.min(UP_TOP, shown.length)} of ${shown.length}`}${uptimeCity ? ` in ${esc(uptimeCity)}` : ""} · click to filter</small></h3>
       <div class="up-heat">${(uptimeAll ? shown : shown.slice(0, UP_TOP)).map((o) => `
         <button class="up-row ${String(uptimeFilters.outlet) === String(o.id) ? "on" : ""}" data-outlet="${o.id}" title="${esc(o.name)}">
-          <span class="up-name">${esc(o.name)} <small class="muted">${esc(o.city || "")}</small>${o.offline_since ? ' <em class="uptime-off">offline</em>' : ""}${lossOf.get(o.id) ? ` <small class="up-loss" title="Estimated sales lost to being offline: ${esc(rupeesShort(lossOf.get(o.id).low))} to ${esc(rupeesShort(lossOf.get(o.id).high))}">≈ ${rupeesShort(lossOf.get(o.id).high)} lost</small>` : ""}${o.zomato_hours ? ` <small class="up-zh" title="Zomato's own count of hours this outlet was offline in this period">Zomato: ${o.zomato_hours.toFixed(1)} h offline</small>` : ""}</span>
+          <span class="up-name">${esc(o.name)} <small class="muted">${esc(o.city || "")}</small>${o.offline_since ? ' <em class="uptime-off">offline</em>' : ""}${lossOf.get(o.id) ? ` <small class="up-loss" data-loss="${o.id}" role="button" tabindex="0">Check estimated revenue loss ›</small>` : ""}${o.zomato_hours ? ` <small class="up-zh" title="Zomato's own count of hours this outlet was offline in this period">Zomato: ${o.zomato_hours.toFixed(1)} h offline</small>` : ""}</span>
           ${dayList.length > 1 ? `<span class="up-cells">${dayList.map((d) => { const v = dayOf(o)[d], zh = (o.zomato_days || {})[d]; const zc = zh == null ? null : zh >= 3 ? "#e5484d" : zh >= 0.5 ? "#f5a524" : "#cfe8d6";
           const day = new Date(d).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
           const what = v == null ? (zh != null ? "none of our checks that day" : "no checks recorded that day") : `${v.toFixed(1)}% uptime (${v >= 95 ? "online all day" : v >= 85 ? "a little downtime" : v >= 70 ? "some downtime" : "mostly offline"})`;
@@ -2734,6 +2794,12 @@ async function renderUptime(page) {
           <td>${offlineFor(e)}</td></tr>`).join("")}</tbody></table>`
         : `<div class="empty-state"><h3>No offline events match</h3><p>Every checked outlet stayed online.</p></div>`}
     </div>`;
+  // the revenue-loss panel: from the header button, or from an outlet's own link (which must not also filter the list)
+  $("#lossBtn")?.addEventListener("click", () => openLossPanel(offLoss));
+  page.querySelectorAll("[data-loss]").forEach((b) => {
+    const open = (e) => { e.stopPropagation(); e.preventDefault(); openLossPanel(offLoss, b.dataset.loss); };
+    b.addEventListener("click", open); b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") open(e); });
+  });
   page.querySelectorAll("[data-outlet]").forEach((b) => b.addEventListener("click", () => {
     uptimeFilters.outlet = String(uptimeFilters.outlet) === b.dataset.outlet ? "" : b.dataset.outlet;
     renderUptime(page);

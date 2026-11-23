@@ -21,8 +21,8 @@ SOURCES = [
     ("sales", "Sales & KPIs", MetricDaily, "updated_at", 36, ("zomato", "swiggy")),
     ("orders", "Order history", OrderLine, "created_at", 36, ("zomato", "swiggy")),
     ("item_sales", "Item sales", ItemSalesDaily, "day", 60, ("zomato", "swiggy")),
-    ("uptime", "Store uptime", UptimeDaily, "updated_at", 12, ("zomato",)),
-    ("stock_outs", "Stock-outs", StockOut, "last_detected_at", 24, ("zomato", "swiggy")),
+    ("uptime", "Offline hours", UptimeDaily, "updated_at", 12, ("zomato",)),
+    ("stock_outs", "Out of stock", StockOut, "last_detected_at", 24, ("zomato", "swiggy")),
     ("reviews", "Reviews", Review, "created_at", 72, ("zomato", "swiggy")),
     ("payouts", "Payouts", PayoutCycle, "fetched_at", 48, ("zomato", "swiggy")),
 ]

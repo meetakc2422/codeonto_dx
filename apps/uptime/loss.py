@@ -95,7 +95,7 @@ def offline_loss(request, brand_id):
     unestimated = used_monitor = 0
     for (oid, plat), rows in by_series.items():
         baseline = _usual_day([(d, s, off) for d, s, off, _ in rows])
-        o = outlets.setdefault(oid, {"outlet_id": oid, "central": 0.0, "offline_days": 0, "offline_sum": 0.0, "days": 0, "platforms": set(), "monitor_days": 0})
+        o = outlets.setdefault(oid, {"outlet_id": oid, "central": 0.0, "offline_days": 0, "offline_sum": 0.0, "days": 0, "platforms": set(), "monitor_days": 0, "day_rows": []})
         for d, s, off, src in rows:
             if not (start <= d <= end):
                 continue
@@ -109,6 +109,8 @@ def offline_loss(request, brand_id):
                 o["offline_sum"] += off
                 o["platforms"].add(plat)
                 o["central"] += lost
+                o["day_rows"].append({"date": d.isoformat(), "platform": plat, "offline_pct": round(off * 100, 1), "low": round(lost * LOW_SHARE), "high": round(lost),
+                                      "source": "Zomato's own Online %" if src == "platform" and plat == "zomato" else "Swiggy's own Online %" if src == "platform" else "our monitor"})
                 if src == "monitor":
                     o["monitor_days"] += 1
                     used_monitor += 1
@@ -120,10 +122,10 @@ def offline_loss(request, brand_id):
         if o["central"] <= 0:
             continue
         b = info.get(oid)
-        rows.append({"outlet_id": oid, "name": (b.area or b.outlet_name) if b else str(oid), "city": b.city if b else "",
+        rows.append({"outlet_id": oid, "name": (b.area or b.outlet_name) if b else str(oid), "city": b.city if b else "", "outlet_name": b.outlet_name if b else "",
                      "low": round(o["central"] * LOW_SHARE), "high": round(o["central"]), "offline_days": o["offline_days"],
                      "avg_offline_pct": round(o["offline_sum"] / o["offline_days"] * 100, 1) if o["offline_days"] else None,
-                     "platforms": sorted(o["platforms"]), "from_monitor_days": o["monitor_days"]})
+                     "platforms": sorted(o["platforms"]), "from_monitor_days": o["monitor_days"], "days": sorted(o["day_rows"], key=lambda r: r["date"])})
     rows.sort(key=lambda r: -r["high"])
     return Response({"low": sum(r["low"] for r in rows), "high": sum(r["high"] for r in rows), "outlets": rows,
                      "outlet_days": sum(o["days"] for o in outlets.values()), "outlet_days_unestimated": unestimated, "outlet_days_from_monitor": used_monitor,
