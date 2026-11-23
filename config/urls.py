@@ -24,7 +24,7 @@ from apps.reviews import service_api as reply_service
 from apps.stockouts import api as stockouts
 from apps.complaints import api as complaints
 from apps.insights import api as insights
-from apps.uptime import api as uptime
+from apps.uptime import api as uptime, loss as uptime_loss
 from apps.payouts import ads as payout_ads
 from apps.payouts import api as payouts
 from apps.payouts import dining_api as payout_dining
@@ -130,6 +130,7 @@ api = [
     path("brands/<int:brand_id>/freshness", freshness.brand_freshness),
     path("brands/<int:brand_id>/uptime/summary", uptime.uptime_summary),
     path("brands/<int:brand_id>/uptime/episodes", uptime.offline_episodes),
+    path("brands/<int:brand_id>/uptime/loss", uptime_loss.offline_loss),
     path("brands/<int:brand_id>/listings", listings.brand_listings),
     path("brands/<int:brand_id>/competition", competition.competition),
     path("brands/<int:brand_id>/competition/<int:outlet_id>/locate", competition.locate),

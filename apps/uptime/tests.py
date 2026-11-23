@@ -162,3 +162,28 @@ class UptimeTests(TestCase):
             cur.execute("SELECT set_config('app.scope', %s, true)", ["forged:nope"])
             cur.execute("SELECT count(*) FROM assistant.offline_episodes")
             self.assertEqual(cur.fetchone()[0], 0)
+
+
+class OfflineLossTests(__import__("django.test", fromlist=["SimpleTestCase"]).SimpleTestCase):
+    """The per-day estimate behind /uptime/loss."""
+
+    def test_extrapolates_from_the_hours_it_was_online(self):
+        from .loss import lost_for_day
+        self.assertAlmostEqual(lost_for_day(9000, 0.1, None), 1000.0)  # sold 9,000 in 90% of the day: about 1,000 in the other 10%
+
+    def test_a_mostly_offline_day_uses_the_usual_day(self):
+        from .loss import lost_for_day
+        self.assertAlmostEqual(lost_for_day(1000, 0.8, 5000), 4000.0)
+        self.assertIsNone(lost_for_day(1000, 0.8, None))  # nothing to base a guess on
+
+    def test_noise_and_missing_data(self):
+        from .loss import lost_for_day
+        self.assertEqual(lost_for_day(500, 0.005, None), 0.0)
+        self.assertIsNone(lost_for_day(None, 0.3, None))
+
+    def test_usual_day_needs_three_good_days(self):
+        from datetime import date
+        from .loss import _usual_day
+        d = date(2026, 11, 1)
+        self.assertIsNone(_usual_day([(d, 100, 0.0), (d, 200, 0.0)]))
+        self.assertEqual(_usual_day([(d, 100, 0.0), (d, 300, 0.02), (d, 200, 0.0), (d, 9000, 0.6)]), 200)

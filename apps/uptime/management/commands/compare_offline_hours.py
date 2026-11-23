@@ -40,7 +40,7 @@ class Command(BaseCommand):
         for r in OfflineEpisode.objects.filter(outlet_id__in=ids, platform_id="zomato", log_date__gte=since).values("outlet_id", "log_date").annotate(m=Sum("downtime_minutes")):
             ours[(r["outlet_id"], r["log_date"])] = r["m"] / 60
         checks = {(r["outlet_id"], r["day"]): r["checks"] for r in UptimeDaily.objects.filter(outlet_id__in=ids, platform_id="zomato", day__gte=since).values("outlet_id", "day", "checks")}
-        names = dict(__import__("apps.outlets.models", fromlist=["BrandOutlet"]).BrandOutlet.objects.filter(id__in=ids).values_list("id", "outlet_name"))
+        names = {i: (area or n) for i, n, area in __import__("apps.outlets.models", fromlist=["BrandOutlet"]).BrandOutlet.objects.filter(id__in=ids).values_list("id", "outlet_name", "area")}
 
         covered = [(k, zh, ours.get(k, 0.0)) for k, zh in z.items() if checks.get(k, 0) >= MIN_CHECKS]
         uncovered = [k for k in z if checks.get(k, 0) < MIN_CHECKS]
@@ -79,7 +79,7 @@ class Command(BaseCommand):
         self.stdout.write(f"  within 3 points of each other: {within} of {len(both)} ({within / len(both) * 100:.0f}%)")
         self.stdout.write(f"  average: Zomato {sum(a for _, a, _, _ in both) / len(both):.1f}%, ours {sum(b for _, _, b, _ in both) / len(both):.1f}%")
         self.stdout.write(f"  Zomato higher by over 3 points: {sum(1 for d in diffs if d > 3)}   ours higher by over 3 points: {sum(1 for d in diffs if d < -3)}")
-        names = dict(__import__("apps.outlets.models", fromlist=["BrandOutlet"]).BrandOutlet.objects.filter(id__in={k[0] for k, *_ in both}).values_list("id", "outlet_name"))
+        names = {i: (area or n) for i, n, area in __import__("apps.outlets.models", fromlist=["BrandOutlet"]).BrandOutlet.objects.filter(id__in={k[0] for k, *_ in both}).values_list("id", "outlet_name", "area")}
         self.stdout.write("\nBiggest differences (outlet, day, Zomato %, our %, our checks):")
         for k, a, b, n in sorted(both, key=lambda c: -abs(c[1] - c[2]))[: o["detail"]]:
             self.stdout.write(f"  {names.get(k[0], k[0])[:34]:34} {k[1]}  zomato {a:5.1f}  ours {b:5.1f}  checks {n}")

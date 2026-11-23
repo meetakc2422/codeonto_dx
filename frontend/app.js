@@ -874,10 +874,11 @@ async function renderOverview(page) {
   const has = (code) => state.config.modules.some((m) => m.code === code);
   const opt = (p) => p.catch(() => null);
   const HEAD_KPIS = ["gross_revenue", "delivered_orders"].filter((c) => kpiMeta(c));  // the two tiles with a trend line
-  const [kpiRes, summary, uptime, stock, pay, payIssues, dropsRes, fresh, ...headTrends] = await Promise.all([
+  const [kpiRes, summary, uptime, offLoss, stock, pay, payIssues, dropsRes, fresh, ...headTrends] = await Promise.all([
     api(`/brands/${state.brandId}/kpis`, filterParams()),
     api(`/brands/${state.brandId}/reviews/summary`, filterParams()),
     has("store_uptime") ? opt(api(`/brands/${state.brandId}/uptime/summary`, filterParams())) : null,
+    has("store_uptime") ? opt(api(`/brands/${state.brandId}/uptime/loss`, filterParams())) : null,
     has("stock_outs") ? opt(api(`/brands/${state.brandId}/stock-outs/summary`, filterParams())) : null,
     has("reconciliation") ? opt(api(`/brands/${state.brandId}/payouts/summary`, filterParams())) : null,
     has("reconciliation") ? opt(api(`/brands/${state.brandId}/payouts/cycles`, filterParams({ status: "issues", limit: 500 }))) : null,
@@ -922,7 +923,8 @@ async function renderOverview(page) {
     tiles.push(T(recentOut ? "amber" : "ok", "#/stock_outs", "Items out of stock", inr.format(recentOut), stock.active ? `across ${plural(stock.outlets_affected, "outlet")}${stock.long_off ? ` · +${inr.format(stock.long_off)} off ${stock.long_off_days}+ days` : ""}` : "Full menu live"));
   }
   if (uptime) tiles.push(T(offline.length ? "red" : "ok", "#/store_uptime", "Outlets offline", inr.format(offline.length),
-    offline.length ? "Not taking orders right now" : `All online${uptime.uptime_pct != null ? ` · ${fmt(uptime.uptime_pct, "percent")} uptime` : ""}`));
+    offline.length ? "Not taking orders right now" : `All online${uptime.uptime_pct != null ? ` · ${fmt(uptime.uptime_pct, "percent")} uptime` : ""}`, "",
+    offLoss && offLoss.high > 0 ? `<span class="ov-loss" title="${esc(offLoss.method)}">≈ ${rupeesShort(offLoss.low)} – ${rupeesShort(offLoss.high)} sales lost to being offline, ${periodLabel()}</span>` : ""));
   tiles.push(T(summary.pending ? (summary.negative ? "red" : "amber") : "ok", "#/reviews", "Reviews to reply", inr.format(summary.pending),
     summary.pending ? `${inr.format(summary.negative)} negative in this period` : "All replied"));
   if (pay?.cycles) tiles.push(T(pay.with_issues ? "red" : "ok", "#/reconciliation", "Payouts to check", inr.format(pay.with_issues),
@@ -2655,10 +2657,12 @@ let uptimeAll = false, uptimeCity = "";
 const UP_TOP = 10;
 async function renderUptime(page) {
   const params = () => filterParams({ limit: 500, status: uptimeFilters.status, outlet_id: uptimeFilters.outlet || state.locationId });
-  const [summary, episodes] = await Promise.all([
+  const [summary, episodes, offLoss] = await Promise.all([
     api(`/brands/${state.brandId}/uptime/summary`, filterParams()),
     api(`/brands/${state.brandId}/uptime/episodes`, params()),
+    api(`/brands/${state.brandId}/uptime/loss`, filterParams()).catch(() => null),
   ]);
+  const lossOf = new Map((offLoss?.outlets || []).map((o) => [o.outlet_id, o]));
   if (summary.uptime_pct == null && !episodes.length && !uptimeFilters.status && !uptimeFilters.outlet) {
     page.innerHTML = `<div class="card empty-state">${icon("store_uptime")}
       <h3>No uptime checks for this period</h3>
@@ -2691,6 +2695,7 @@ async function renderUptime(page) {
     <div class="so-hero">
       <div><span class="so-live"><i></i> Live</span>
         <div class="so-big">${inr.format(summary.offline_now)}<small> outlet${summary.offline_now === 1 ? "" : "s"} offline right now</small></div>
+        ${offLoss && offLoss.high > 0 ? `<p class="so-loss" title="${esc(offLoss.method)}"><b>≈ ${rupeesShort(offLoss.low)} – ${rupeesShort(offLoss.high)}</b> estimated sales lost to being offline in this period, worked out from Zomato's and Swiggy's own Online %${offLoss.outlet_days_unestimated ? ` <small class="muted">(${offLoss.outlet_days_unestimated} outlet-days left out: not enough data)</small>` : ""}</p>` : ""}
         <p>Zomato · during opening hours · ${summary.last_checked_at ? `last checked ${timeAgo(summary.last_checked_at)}` : "no checks yet"}</p>
         <p>${plural(summary.events, "offline event")} · avg downtime ${downtimeText(summary.avg_downtime) || (summary.offline_now ? "n/a, none back yet" : "—")} · total ${downtimeText(summary.total_downtime) || "0m"}</p></div>
       <div class="so-now">Uptime<b>${summary.uptime_pct == null ? "—" : `${summary.uptime_pct.toFixed(1)}%`}</b></div>
@@ -2706,7 +2711,7 @@ async function renderUptime(page) {
     <div class="so-section"><h3>Outlets <small>${dayList.length > 1 ? `${squaresNote}daily uptime, one square per day` : "uptime in this period"}, worst first · ${uptimeAll ? `all ${shown.length}` : `worst ${Math.min(UP_TOP, shown.length)} of ${shown.length}`}${uptimeCity ? ` in ${esc(uptimeCity)}` : ""} · click to filter</small></h3>
       <div class="up-heat">${(uptimeAll ? shown : shown.slice(0, UP_TOP)).map((o) => `
         <button class="up-row ${String(uptimeFilters.outlet) === String(o.id) ? "on" : ""}" data-outlet="${o.id}" title="${esc(o.name)}">
-          <span class="up-name">${esc(o.name)} <small class="muted">${esc(o.city || "")}</small>${o.offline_since ? ' <em class="uptime-off">offline</em>' : ""}${o.zomato_hours ? ` <small class="up-zh" title="Zomato's own count of hours this outlet was offline in this period">Zomato: ${o.zomato_hours.toFixed(1)} h offline</small>` : ""}</span>
+          <span class="up-name">${esc(o.name)} <small class="muted">${esc(o.city || "")}</small>${o.offline_since ? ' <em class="uptime-off">offline</em>' : ""}${lossOf.get(o.id) ? ` <small class="up-loss" title="Estimated sales lost to being offline: ${esc(rupeesShort(lossOf.get(o.id).low))} to ${esc(rupeesShort(lossOf.get(o.id).high))}">≈ ${rupeesShort(lossOf.get(o.id).high)} lost</small>` : ""}${o.zomato_hours ? ` <small class="up-zh" title="Zomato's own count of hours this outlet was offline in this period">Zomato: ${o.zomato_hours.toFixed(1)} h offline</small>` : ""}</span>
           ${dayList.length > 1 ? `<span class="up-cells">${dayList.map((d) => { const v = dayOf(o)[d], zh = (o.zomato_days || {})[d]; const zc = zh == null ? null : zh >= 3 ? "#e5484d" : zh >= 0.5 ? "#f5a524" : "#cfe8d6";
           const day = new Date(d).toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short", year: "numeric" });
           const what = v == null ? (zh != null ? "none of our checks that day" : "no checks recorded that day") : `${v.toFixed(1)}% uptime (${v >= 95 ? "online all day" : v >= 85 ? "a little downtime" : v >= 70 ? "some downtime" : "mostly offline"})`;
