@@ -2688,7 +2688,10 @@ function openLossPanel(data, focusId) {
           <small>${o ? `${plural(o.offline_days, "day")} with offline time${o.avg_offline_pct != null ? `, offline about ${o.avg_offline_pct}% of opening hours on those days` : ""}` : `across ${plural(rows.length, "outlet")}`}</small></section>
         ${o ? dayView(o) : listView()}
         <footer class="lp-foot"><details><summary>How this is worked out</summary>
-          <ol><li>Zomato and Swiggy tell us how much of each day an outlet was online.</li><li>We look at what it sold in those hours.</li><li>We estimate the rest of that day, then show a range: some customers order later or elsewhere, so not every missed order is a lost one.</li></ol></details>
+          <p>We take the share of each day an outlet was <b>offline</b>, from Zomato's and Swiggy's own online-time figure. Then we look at what that outlet <b>normally sells on that weekday</b>, using its last six weeks of normal days.</p>
+          <p class="lp-formula">Usual sales for that weekday × share of the day offline</p>
+          <p>Because not every missed order is lost, since some customers come back later or order elsewhere, we show a range. The bottom of the range is 60% of the full estimate.</p>
+          <ul><li>It is an estimate, not a measurement: nobody can know which orders would have come.</li><li>It is the same idea as Zomato's own "Est. lost sales", and it covers Swiggy as well.</li><li>A day with no sales or online-time data is left out, not guessed.</li></ul></details>
           ${data.outlet_days_unestimated ? `<p class="muted">${plural(data.outlet_days_unestimated, "outlet-day")} left out: not enough sales data to estimate.</p>` : ""}</footer>
       </aside>`;
     root.querySelector(".lp-scrim").onclick = close;

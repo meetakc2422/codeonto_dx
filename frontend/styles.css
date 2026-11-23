@@ -1409,3 +1409,5 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
   .lp-root.open .lp-day i { animation: lp-grow .6s cubic-bezier(.2,.8,.2,1) both; animation-delay: calc(.4s + var(--i, 0) * 25ms); }
 }
 @media (prefers-reduced-motion: reduce) { .lp-panel, .lp-scrim { transition-duration: .01s; } }
+.lp-foot details p { margin: 8px 0 0; line-height: 1.5; } .lp-foot ul { margin: 8px 0 0 18px; padding: 0; line-height: 1.5; }
+.lp-formula { padding: 8px 12px; border-radius: 10px; background: #f4f7fb; color: var(--text); font-weight: 600; }
