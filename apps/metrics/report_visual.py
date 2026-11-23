@@ -162,17 +162,112 @@ def _trend(d, r, x, y, w, h):
         _text(d, x + w - 10, y + h - 15, "Payout", 7, True, colors.HexColor("#6F7FD1"), "end")
 
 
-def build_drawing(r: dict) -> Drawing:
-    d = Drawing(W, H)
-    _tiles(d, r, H)
+def _section(r, key):
+    return next((s for s in r["sections"] if s["key"] == key), None)
+
+
+def _ratings(d, r, x, y, w, h):
+    sec = _section(r, "reputation")
+    _card(d, x, y, w, h, "Ratings")
+    tot = (sec or {}).get("total") or {}
+    val = (tot.get("listing_rating") or {}).get("value")
+    if val is None:
+        _text(d, x + 10, y + h / 2 - 6, "No rating data in this period", 8, color=MUTE)
+        return
+    _text(d, x + 10, y + h - 46, f"{val:.2f}", 22, True)
+    _text(d, x + 62, y + h - 44, "★", 16, True, colors.HexColor("#F5A524"))
+    cnt = (tot.get("rating_count") or {}).get("value")
+    if cnt:
+        _text(d, x + 10, y + h - 60, f"{P.fmt(cnt, 'count', short=True)} ratings", 7.5, color=MUTE)
+    rows = [(q["name"].split(" · ")[-1], (q.get("listing_rating") or {}).get("value")) for q in (sec or {}).get("rows", [])]
+    rows = sorted([q for q in rows if q[1]], key=lambda q: -q[1])[:3]
+    for k, (name, v) in enumerate(rows):
+        by = y + h - 84 - k * 15
+        _text(d, x + 10, by, name[:18], 7.5)
+        d.add(Rect(x + 90, by - 2, w - 90 - 50, 8, rx=2, ry=2, fillColor=colors.white, strokeColor=None))
+        d.add(Rect(x + 90, by - 2, max(2, (w - 90 - 50) * v / 5), 8, rx=2, ry=2, fillColor=P.GREEN if v >= 4 else colors.HexColor("#F5A524") if v >= 3.5 else P.RED, strokeColor=None))
+        _text(d, x + w - 10, by, f"{v:.2f}", 7.5, True, anchor="end")
+
+
+def _complaints(d, r, x, y, w, h):
+    sec = _section(r, "complaints")
+    tot = (sec or {}).get("total") or {}
+    items = [(label, tot.get(k), f"{tot.get(k):,.0f}") for k, label in ((c["code"], c["name"]) for c in (sec or {}).get("columns", [])) if k not in ("total", "per_100_orders") and tot.get(k)]
+    items.sort(key=lambda i: -i[1])
+    sub = f"{tot['total']:,.0f} complaints" + (f" · {tot['per_100_orders']:.1f} per 100 orders" if tot.get("per_100_orders") is not None else "") if tot.get("total") else ""
+    _bars(d, x, y, w, h, "Customer complaints" + (f" ({sub})" if sub and w > 260 else ""), items, lambda k, _l: P.RED if k == 0 else colors.HexColor("#E8A09D"), "No complaints in this period")
+
+
+def _payouts(d, r, x, y, w, h):
+    sec = _section(r, "payouts")
+    tot = (sec or {}).get("total") or {}
+    pairs = [("Net order value", tot.get("net_order_value"), P.BLUE), ("GST collected", tot.get("gst"), colors.HexColor("#8A94A6")), ("Platform fees", tot.get("fees"), P.RED),
+             ("Deductions", tot.get("deductions"), colors.HexColor("#E8A09D")), ("Payout", tot.get("payout"), P.GREEN)]
+    pairs = [p for p in pairs if p[1]]
+    _card(d, x, y, w, h, "Payouts from order statements")
+    if not pairs:
+        _text(d, x + 10, y + h / 2 - 6, "No payout statements in this period", 8, color=MUTE)
+        return
+    top = max(abs(v) for _, v, _ in pairs) or 1
+    row = min(22, (h - 40) / len(pairs))
+    for k, (label, v, colr) in enumerate(pairs):
+        by = y + h - 36 - k * row
+        _text(d, x + 10, by, label, 7.5)
+        d.add(Rect(x + 92, by - 2, w - 92 - 70, 9, rx=2, ry=2, fillColor=colors.white, strokeColor=None))
+        d.add(Rect(x + 92, by - 2, max(2, (w - 92 - 70) * abs(v) / top), 9, rx=2, ry=2, fillColor=colr, strokeColor=None))
+        _text(d, x + w - 8, by, P.fmt(v, "currency", short=True), 7.5, True, anchor="end")
+
+
+# which module draws which panel(s), and how many of the three columns each needs
+PANELS = {"overall": [(_platforms, 1), (_outlets, 1)], "growth": [(_funnel, 1)], "ads": [(_losses, 1)], "reputation": [(_ratings, 1)],
+          "complaints": [(_complaints, 1)], "payouts": [(_payouts, 1)], "months": [(_trend, 2)]}
+
+
+def _rows_of(cells):
+    """Pack panels into rows of three columns."""
+    rows, cur, used = [], [], 0
+    for fn, wt in cells:
+        if used + wt > 3:
+            rows.append(cur); cur, used = [], 0
+        cur.append((fn, wt)); used += wt
+    rows.append(cur)
+    return rows
+
+
+def build_drawings(r: dict) -> list[Drawing]:
+    """The picture pages: the headline tiles, then one panel for each module asked for, in the order asked, three to a row and
+    two rows to a page (more panels carry on to a second page)."""
+    order = r.get("module_order") or list(PANELS)
+    cells = [(fn, wt) for m in order for fn, wt in PANELS.get(m, [])]
     gap = 8
-    row_h = (H - 52 - 3 * gap - 0) / 2
-    y2 = 0
-    y1 = row_h + gap
-    third = (W - 2 * gap) / 3
-    _platforms(d, r, 0, y1, third, row_h)
-    _funnel(d, r, third + gap, y1, third, row_h)
-    _losses(d, r, 2 * (third + gap), y1, third, row_h)
-    _outlets(d, r, 0, y2, third * 1.0, row_h)
-    _trend(d, r, third + gap, y2, third * 2 + gap, row_h)
-    return d
+    first = Drawing(W, H)
+    _tiles(first, r, H)
+    if not cells:
+        _text(first, 0, H - 90, "No sections picked: the headline numbers above are all this report holds.", 9, color=MUTE)
+        return [first]
+    rows = _rows_of(cells)
+    col = (W - 2 * gap) / 3
+    row_h = (H - 52 - 3 * gap) / 2  # the height a full page gives each of its two rows
+
+    def lay(d, chunk, top, h):
+        for i, row in enumerate(chunk):
+            y = top - (i + 1) * h - i * gap
+            x = 0
+            for fn, wt in row:
+                w = col * wt + gap * (wt - 1)
+                fn(d, r, x, y, w, h)
+                x += w + gap
+
+    lay(first, rows[:2], H - 52 - gap, min(row_h, 200) if len(rows) > 1 else min(row_h, 170))
+    pages = [first]
+    rest = rows[2:]
+    for k in range(0, len(rest), 2):
+        chunk = rest[k:k + 2]
+        d = Drawing(W, len(chunk) * row_h + (len(chunk) - 1) * gap)
+        lay(d, chunk, d.height, row_h)
+        pages.append(d)
+    return pages
+
+
+def build_drawing(r: dict) -> Drawing:
+    return build_drawings(r)[0]

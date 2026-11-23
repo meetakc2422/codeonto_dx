@@ -227,9 +227,10 @@ def build_pdf(r: dict) -> bytes:
     story = [band, Spacer(1, 6), Paragraph(r["brand"], st["title"]),
              Paragraph(f'{r["outlets"]} outlets &nbsp;|&nbsp; {p["days"]} days &nbsp;|&nbsp; compared with {nice(p["prev_start"])} to {nice(p["prev_end"])}', st["sub"]), Spacer(1, 5)]
     if r.get("visual", True):
-        from .report_visual import build_drawing
+        from .report_visual import build_drawings
 
-        story += [build_drawing(r)]
+        for k, page_drawing in enumerate(build_drawings(r)):
+            story += [PageBreak(), page_drawing] if k else [page_drawing]
         if not r.get("tables"):  # the picture page alone, with a one-line data check under it
             if not cov["days"]:
                 note = cov.get("note", "")

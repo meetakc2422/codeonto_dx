@@ -540,7 +540,7 @@ function addPerfTabs(page, route) {
 }
 
 // ---------- Export reports: pick the modules and the dates, check the data, download Excel or PDF ----------
-const expState = { start: "", end: "", mods: null, preset: "", tables: false };
+const expState = { start: "", end: "", order: null, preset: "", tables: false };
 const exSvg = (d, c = "currentColor") => `<svg class="ex-ico" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const EX_ICON = {
   pdf: exSvg('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>'),
@@ -553,34 +553,118 @@ async function renderReport(page) {
   const yest = new Date(); yest.setDate(yest.getDate() - 1);
   if (!expState.start) { const r = range(); expState.start = r.start; expState.end = r.end; }
   const meta = await api(`/brands/${state.brandId}/report`, { ...exportFilters(), check: 1 });
-  if (!expState.mods) expState.mods = new Set(meta.modules.map((m) => m.key));
+  const mods = new Map(meta.modules.map((m) => [m.key, m]));
+  if (!expState.order) expState.order = meta.modules.map((m) => m.key);
+  expState.order = expState.order.filter((k) => mods.has(k));
   const presets = [["7", "Last 7 days"], ["30", "Last 30 days"], ["month", "This month"], ["last", "Last month"]];
   const platName = state.platform ? platformName() : "All platforms";
-  page.innerHTML = `<div class="card ex">
+  page.innerHTML = `<div class="ex-wrap"><div class="card ex">
     <h3>Export a report</h3>
-    <p class="muted" style="margin:2px 0 14px">Pick the dates and what to include, then download it as Excel or PDF. The same numbers go into both.</p>
+    <p class="muted" style="margin:2px 0 14px">Pick the dates, drag what to include, and watch the preview. Download it as Excel or PDF, or send it.</p>
     <div class="ex-label">Dates</div>
     <div class="ex-row">${presets.map(([k, t]) => `<button type="button" class="chip-btn" data-preset="${k}">${t}</button>`).join("")}
       <span class="ex-dates"><label>From <input type="date" id="exStart" max="${isoDate(new Date())}"></label><label>To <input type="date" id="exEnd" max="${isoDate(new Date())}"></label></span></div>
-    <div class="ex-label">What to include <button type="button" class="link-btn" id="exAll">all</button> · <button type="button" class="link-btn" id="exNone">none</button></div>
-    <div class="ex-mods">${meta.modules.map((m) => `<label class="ex-mod"><input type="checkbox" data-mod="${m.key}" ${expState.mods.has(m.key) ? "checked" : ""}><span><b>${esc(m.name)}</b><small class="muted">${esc(m.about)}</small></span></label>`).join("")}</div>
+    <div class="ex-label">What to include <small class="muted">drag between the lists, or drag to reorder</small> <button type="button" class="link-btn" id="exAll">all</button> · <button type="button" class="link-btn" id="exNone">none</button></div>
+    <div class="ex-dnd">
+      <div class="ex-col"><h4>In the report <small class="muted">in this order</small></h4><div class="ex-list" id="exIn" data-zone="in"></div></div>
+      <div class="ex-col"><h4>Left out</h4><div class="ex-list" id="exOut" data-zone="out"></div></div>
+    </div>
     <p class="muted" style="font-size:12.5px;margin:12px 0 10px">${esc(outletsLabel())} · ${esc(platName)}. Change these with the filters at the top of the page.</p>
     <div id="exCheck" class="rp-data">Checking the data…</div>
-    <label class="ex-tables"><input type="checkbox" id="exTables" ${expState.tables ? "checked" : ""}><span><b>Include the detailed tables in the PDF</b><small class="muted">Off: a one-page picture summary. On: the picture page plus every number, outlet by outlet.</small></span></label>
+    <label class="ex-tables"><input type="checkbox" id="exTables" ${expState.tables ? "checked" : ""}><span><b>Include the detailed tables in the PDF</b><small class="muted">Off: the picture pages only. On: the picture pages plus every number, outlet by outlet.</small></span></label>
     <div class="ex-actions">
       <div class="ex-group"><span class="ex-glabel">Download</span><button class="btn light ex-btn" id="exPdf">${EX_ICON.pdf}PDF</button><button class="btn light ex-btn" id="exXlsx">${EX_ICON.xlsx}Excel</button></div>
       <div class="ex-group"><span class="ex-glabel">Share the PDF</span><button class="btn light ex-btn" id="exWa">${EX_ICON.wa}WhatsApp</button><button class="btn light ex-btn" id="exMail">${EX_ICON.mail}Email</button></div>
-    </div></div>`;
+    </div></div>
+    <aside class="ex-side"><div class="card ex-prev">
+      <div class="ex-prev-head"><b>Preview</b><span class="muted" id="exPrevState"></span></div>
+      <div class="ex-frame-wrap"><iframe id="exFrame" title="Report preview"></iframe><div class="ex-busy" id="exBusy">Building the preview…</div></div>
+      <div class="ex-send"><div class="ex-chip" id="exChip" draggable="true" title="Drag me onto WhatsApp or Email">${EX_ICON.pdf}<span><b id="exChipName">report.pdf</b><small class="muted">drag me to send</small></span></div>
+        <div class="ex-drop" data-via="wa">${EX_ICON.wa}<span>WhatsApp</span></div><div class="ex-drop" data-via="mail">${EX_ICON.mail}<span>Email</span></div></div>
+    </div></aside></div>`;
+  const wrap = page.querySelector(".ex-wrap");  // per-render handlers go on this, not on `page`, which outlives the render
   const $s = $("#exStart"), $e = $("#exEnd");
   $s.value = expState.start; $e.value = expState.end;
-  let cov = null, timer = null;
+  let cov = null, timer = null, prevTimer = null, prevSeq = 0, prevUrl = null, prevBlob = null, prevSig = "";
   const nm = (g) => `${g.name} (${g.platform === "swiggy" ? "Swiggy" : "Zomato"})`;
   const dayLbl = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+  const fileName = () => `report_${expState.start}_to_${expState.end}.pdf`;
+  const sig = () => JSON.stringify([expState.start, expState.end, state.locationId, state.platform, expState.order, expState.tables]);
+  const pdfUrl = () => {  // modules is always sent: an empty list means "none", not "all"
+    const url = new URL(`${API}/brands/${state.brandId}/report/pdf`, location.origin);
+    const f = exportFilters();
+    ["start", "end", "outlet_id", "platform"].forEach((k) => { if (f[k] !== "" && f[k] != null) url.searchParams.set(k, f[k]); });
+    url.searchParams.set("modules", expState.order.join(","));
+    if (expState.tables) url.searchParams.set("tables", "1");
+    return url;
+  };
+  const okToExport = () => expState.start && expState.end && expState.end >= expState.start && expState.order.length > 0;
   const paint = () => {
     page.querySelectorAll("[data-preset]").forEach((b) => b.classList.toggle("on", b.dataset.preset === expState.preset));
-    const ok = expState.start && expState.end && expState.end >= expState.start && expState.mods.size > 0;
-    $("#exPdf").disabled = $("#exXlsx").disabled = $("#exWa").disabled = $("#exMail").disabled = !ok;
+    $("#exPdf").disabled = $("#exXlsx").disabled = $("#exWa").disabled = $("#exMail").disabled = !okToExport();
+    $("#exChip").classList.toggle("off", !okToExport());
+    $("#exChipName").textContent = fileName();
   };
+  // ---- the PDF, built once per set of choices and reused by the preview, Download and Share ----
+  const getPdf = async () => {
+    if (prevBlob && prevSig === sig()) return prevBlob;
+    const res = await apiFetch(pdfUrl());
+    if (!res.ok) throw userError("The file couldn't be made right now. Please try again in a moment.");
+    return res.blob();
+  };
+  const refreshPreview = () => {
+    clearTimeout(prevTimer);
+    prevTimer = setTimeout(async () => {
+      const seq = ++prevSeq, mine = sig(), busy = $("#exBusy"), st = $("#exPrevState");
+      if (!busy) return;
+      if (!okToExport()) { busy.textContent = expState.order.length ? "Pick a start date that is on or before the end date." : "Nothing is picked yet: drag a section into the report."; busy.classList.add("show"); st.textContent = ""; return; }
+      busy.textContent = "Building the preview…"; busy.classList.add("show"); st.textContent = "updating";
+      try {
+        const res = await apiFetch(pdfUrl());
+        if (!res.ok) throw new Error("preview failed");
+        const blob = await res.blob();
+        if (seq !== prevSeq || !$("#exFrame")) return;  // a newer choice has been made since
+        if (prevUrl) URL.revokeObjectURL(prevUrl);
+        prevBlob = blob; prevSig = mine; prevUrl = URL.createObjectURL(blob);
+        $("#exFrame").src = `${prevUrl}#toolbar=0&navpanes=0&view=FitH`;
+        busy.classList.remove("show"); st.textContent = "up to date";
+      } catch (err) {
+        if (seq !== prevSeq) return;
+        busy.textContent = "The preview couldn't be built right now. The download still works."; busy.classList.add("show"); st.textContent = "";
+      }
+    }, 550);
+  };
+  // ---- the two lists: what is in the report, in order, and what is left out ----
+  const item = (k, inList) => { const m = mods.get(k); return `<div class="ex-item" draggable="true" data-key="${k}"><span class="ex-grip" aria-hidden="true">⠿</span><span class="ex-item-text"><b>${esc(m.name)}</b><small class="muted">${esc(m.about)}</small></span><button type="button" class="ex-x" data-toggle="${k}" aria-label="${inList ? "Leave out" : "Add to the report"} ${esc(m.name)}" title="${inList ? "Leave out" : "Add to the report"}">${inList ? "×" : "+"}</button></div>`; };
+  const drawLists = () => {
+    const out = meta.modules.map((m) => m.key).filter((k) => !expState.order.includes(k));
+    $("#exIn").innerHTML = expState.order.map((k) => item(k, true)).join("") || `<p class="ex-empty muted">Drag sections here to put them in the report.</p>`;
+    $("#exOut").innerHTML = out.map((k) => item(k, false)).join("") || `<p class="ex-empty muted">Everything is in the report.</p>`;
+    paint();
+  };
+  const changed = () => { drawLists(); refreshPreview(); };
+  const move = (key, zone, index) => {
+    expState.order = expState.order.filter((k) => k !== key);
+    if (zone === "in") expState.order.splice(Math.min(index ?? expState.order.length, expState.order.length), 0, key);
+    changed();
+  };
+  const dropIndex = (list, y) => {  // where among the items a pointer at height y would drop
+    const items = [...list.querySelectorAll(".ex-item:not(.dragging)")];
+    const i = items.findIndex((el) => { const r = el.getBoundingClientRect(); return y < r.top + r.height / 2; });
+    return i < 0 ? items.length : i;
+  };
+  let dragKey = null;
+  page.querySelectorAll(".ex-list").forEach((list) => {
+    list.addEventListener("dragover", (e) => { if (!dragKey) return; e.preventDefault(); list.classList.add("over"); const i = dropIndex(list, e.clientY); list.querySelectorAll(".ex-item").forEach((el) => el.classList.remove("before", "after")); const its = [...list.querySelectorAll(".ex-item:not(.dragging)")]; if (its[i]) its[i].classList.add("before"); else if (its.length) its[its.length - 1].classList.add("after"); });
+    list.addEventListener("dragleave", (e) => { if (!list.contains(e.relatedTarget)) { list.classList.remove("over"); list.querySelectorAll(".ex-item").forEach((el) => el.classList.remove("before", "after")); } });
+    list.addEventListener("drop", (e) => { if (!dragKey) return; e.preventDefault(); const key = dragKey; dragKey = null; const zone = list.dataset.zone, idx = zone === "in" ? dropIndex(list, e.clientY) : null; list.classList.remove("over"); move(key, zone, idx); });
+  });
+  wrap.addEventListener("dragstart", (e) => { const it = e.target.closest?.(".ex-item"); if (!it) return; dragKey = it.dataset.key; it.classList.add("dragging"); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", dragKey); });
+  wrap.addEventListener("dragend", (e) => { dragKey = null; wrap.querySelectorAll(".dragging, .over, .before, .after").forEach((el) => el.classList.remove("dragging", "over", "before", "after")); });
+  wrap.addEventListener("click", (e) => { const t = e.target.closest?.("[data-toggle]"); if (!t) return; const k = t.dataset.toggle; move(k, expState.order.includes(k) ? "out" : "in", null); });
+  $("#exAll").onclick = () => { expState.order = meta.modules.map((m) => m.key); changed(); };
+  $("#exNone").onclick = () => { expState.order = []; changed(); };
+  // ---- the data check ----
   const check = async () => {
     paint();
     const box = $("#exCheck");
@@ -598,7 +682,7 @@ async function renderReport(page) {
     } catch (err) { cov = null; box.className = "rp-data warn"; box.textContent = userMessage(err); }
   };
   const later = () => { clearTimeout(timer); timer = setTimeout(check, 350); };
-  const setDates = (a, b, preset = "") => { expState.start = a; expState.end = b; expState.preset = preset; $s.value = a; $e.value = b; later(); paint(); };
+  const setDates = (a, b, preset = "") => { expState.start = a; expState.end = b; expState.preset = preset; $s.value = a; $e.value = b; later(); paint(); refreshPreview(); };
   page.querySelectorAll("[data-preset]").forEach((b) => b.onclick = () => {
     const end = new Date(yest), k = b.dataset.preset;
     if (k === "7" || k === "30") { const st = new Date(end); st.setDate(end.getDate() - (Number(k) - 1)); setDates(isoDate(st), isoDate(end), k); }
@@ -607,10 +691,9 @@ async function renderReport(page) {
   });
   $s.onchange = () => setDates($s.value, expState.end);
   $e.onchange = () => setDates(expState.start, $e.value);
-  page.querySelectorAll("[data-mod]").forEach((c) => c.onchange = () => { c.checked ? expState.mods.add(c.dataset.mod) : expState.mods.delete(c.dataset.mod); paint(); });
-  $("#exTables").onchange = (e) => { expState.tables = e.target.checked; };
-  $("#exAll").onclick = () => { page.querySelectorAll("[data-mod]").forEach((c) => { c.checked = true; expState.mods.add(c.dataset.mod); }); paint(); };
-  $("#exNone").onclick = () => { page.querySelectorAll("[data-mod]").forEach((c) => { c.checked = false; }); expState.mods.clear(); paint(); };
+  $("#exTables").onchange = (e) => { expState.tables = e.target.checked; refreshPreview(); };
+  // ---- Download ----
+  const saveBlob = (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); };
   const download = (kind) => async (e) => {
     const btn = e.currentTarget, label = btn.lastChild.textContent;
     if (cov && !cov.complete && cov.days) {  // tell them before the file is made, not after
@@ -619,50 +702,59 @@ async function renderReport(page) {
     }
     btn.disabled = true; btn.lastChild.textContent = "Preparing…";
     try {
-      const url = new URL(`${API}/brands/${state.brandId}/report/${kind}`, location.origin);
-      Object.entries(exportFilters()).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
-      if (kind === "pdf" && expState.tables) url.searchParams.set("tables", "1");
-      const res = await apiFetch(url);
-      if (!res.ok) throw userError("The file couldn't be made right now. Please try again in a moment.");
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(await res.blob()); a.download = `report_${expState.start}_to_${expState.end}.${kind === "pdf" ? "pdf" : "xlsx"}`; a.click(); URL.revokeObjectURL(a.href);
+      if (kind === "pdf") saveBlob(await getPdf(), fileName());
+      else {
+        const url = new URL(`${API}/brands/${state.brandId}/report/xlsx`, location.origin);
+        Object.entries(exportFilters()).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
+        const res = await apiFetch(url);
+        if (!res.ok) throw userError("The file couldn't be made right now. Please try again in a moment.");
+        saveBlob(await res.blob(), `report_${expState.start}_to_${expState.end}.xlsx`);
+      }
     } catch (err) { toast(userMessage(err)); }
     btn.disabled = false; btn.lastChild.textContent = label; paint();
   };
   $("#exXlsx").onclick = download("xlsx");
   $("#exPdf").onclick = download("pdf");
-  // Share the PDF: the phone's share sheet when it can attach the file, else download it and open WhatsApp / mail with the message ready
-  const share = (via) => async (e) => {
-    const btn = e.currentTarget, label = btn.lastChild.textContent;
-    btn.disabled = true; btn.lastChild.textContent = "Preparing…";
+  // ---- Share the PDF: the phone's share sheet when it can attach the file, else download it and open WhatsApp / mail with the message ready ----
+  const sharePdf = async (via, btn) => {
+    if (!okToExport()) { toast("Pick the dates and at least one section first."); return; }
+    const label = btn?.lastChild?.textContent;
+    if (btn) { btn.disabled = true; btn.lastChild.textContent = "Preparing…"; }
     try {
-      const url = new URL(`${API}/brands/${state.brandId}/report/pdf`, location.origin);
-      Object.entries(exportFilters()).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
-      if (kind === "pdf" && expState.tables) url.searchParams.set("tables", "1");
-      const res = await apiFetch(url);
-      if (!res.ok) throw userError("The file couldn't be made right now. Please try again in a moment.");
-      const blob = await res.blob(), name = `report_${expState.start}_to_${expState.end}.pdf`;
+      const blob = await getPdf(), name = fileName();
       const file = new File([blob], name, { type: "application/pdf" });
       const title = `${dayLbl(expState.start)} – ${dayLbl(expState.end)} report`;
       if (navigator.canShare?.({ files: [file] })) { try { await navigator.share({ files: [file], title, text: title }); } catch (err) { if (err.name !== "AbortError") throw err; } }
       else {
-        const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href);
+        saveBlob(blob, name);
         const msg = `${title}. The PDF is attached.`;
         if (via === "wa") window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
         else location.href = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(msg)}`;
         toast(`PDF downloaded: attach ${name} in ${via === "wa" ? "WhatsApp" : "your mail"}`);
       }
     } catch (err) { toast(userMessage(err)); }
-    btn.disabled = false; btn.lastChild.textContent = label; paint();
+    if (btn) { btn.disabled = false; btn.lastChild.textContent = label; paint(); }
   };
-  $("#exWa").onclick = share("wa");
-  $("#exMail").onclick = share("mail");
+  $("#exWa").onclick = (e) => sharePdf("wa", e.currentTarget);
+  $("#exMail").onclick = (e) => sharePdf("mail", e.currentTarget);
+  // ---- drag the report chip onto WhatsApp or Email ----
+  const chip = $("#exChip");
+  chip.addEventListener("dragstart", (e) => { if (!okToExport()) { e.preventDefault(); return; } dragKey = null; e.dataTransfer.effectAllowed = "copy"; e.dataTransfer.setData("text/plain", fileName()); wrap.classList.add("sending"); });
+  chip.addEventListener("dragend", () => wrap.classList.remove("sending"));
+  page.querySelectorAll(".ex-drop").forEach((z) => {
+    z.addEventListener("dragover", (e) => { if (wrap.classList.contains("sending")) { e.preventDefault(); z.classList.add("over"); } });
+    z.addEventListener("dragleave", () => z.classList.remove("over"));
+    z.addEventListener("drop", (e) => { e.preventDefault(); z.classList.remove("over"); wrap.classList.remove("sending"); sharePdf(z.dataset.via, null); });
+    z.addEventListener("click", () => sharePdf(z.dataset.via, null));
+  });
+  drawLists();
   check();
+  refreshPreview();
 }
 
 // the filters an export uses: the page's own dates and modules, plus the outlet and platform picked at the top
 function exportFilters() {
-  return { start: expState.start, end: expState.end, outlet_id: state.locationId, platform: state.platform, modules: [...(expState.mods || [])].join(",") };
+  return { start: expState.start, end: expState.end, outlet_id: state.locationId, platform: state.platform, modules: (expState.order || []).join(",") };
 }
 
 // Sidebar page "Slots & offers": dining offers and bookable slots, for brands that have a dining outlet.

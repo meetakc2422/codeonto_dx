@@ -136,8 +136,10 @@ def build(request, brand_id: int) -> dict:
     period = {"start": start.isoformat(), "end": end.isoformat(), "days": span.days, "prev_start": p_start.isoformat(), "prev_end": p_end.isoformat()}
     if request.query_params.get("check"):  # the Export page asks only for the data check while a person picks dates
         return {"brand": brand.name, "period": period, "outlets": len(outlets), "coverage": cov, "modules": [{"key": k, "name": n, "about": a} for k, n, a in MODULES]}
-    asked = {m for m in (request.query_params.get("modules") or "").split(",") if m}
-    wanted = (asked & {k for k, _, _ in MODULES}) or {k for k, _, _ in MODULES}
+    valid = [k for k, _, _ in MODULES]
+    raw = request.query_params.get("modules")  # absent: every module; present but empty: none (the headline numbers only)
+    order = valid if raw is None else list(dict.fromkeys(m for m in raw.split(",") if m in valid))  # the order asked for is the order shown
+    wanted = set(order)
     codes = [c for _, _, cs in SECTIONS for c in cs]
     meta = {k.code: k for k in Kpi.objects.filter(code__in=codes)}
     meta["sales"] = _Sales
@@ -264,7 +266,8 @@ def build(request, brand_id: int) -> dict:
         by_platform.append({"code": code, "name": name, "sales": sales, "orders": t.get("delivered_orders"), "aov": t.get("avg_order_value"),
                             "rating": t.get("listing_rating"), "cancellation": t.get("cancellation_rate"),
                             "share": round(sales / total_sales * 100, 1) if sales and total_sales else None})
-    return {"brand": brand.name, "period": period, "outlets": len(outlets), "coverage": cov, "headline": headline, "platforms": by_platform, "highlights": notes[:6], "sections": sections, "months": months}
+    sections.sort(key=lambda sec: order.index(sec["key"]) if sec["key"] in order else 99)
+    return {"brand": brand.name, "period": period, "outlets": len(outlets), "coverage": cov, "headline": headline, "platforms": by_platform, "highlights": notes[:6], "sections": sections, "months": months, "module_order": order}
 
 
 @api_view(["GET"])
