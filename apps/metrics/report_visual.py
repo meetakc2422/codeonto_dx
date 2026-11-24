@@ -208,14 +208,22 @@ def _payouts(d, r, x, y, w, h):
     if not pairs:
         _text(d, x + 10, y + h / 2 - 6, "No payout statements in this period", 8, color=MUTE)
         return
+    split = next((q for q in r["sections"] if q["title"] == "Payouts by platform"), None)  # present when both platforms are in the report
     top = max(abs(v) for _, v, _ in pairs) or 1
-    row = min(22, (h - 40) / len(pairs))
+    room = 14 + 11 * len(split["rows"]) if split else 0  # the space under the bars for one line per platform
+    row = min(22, (h - 40 - room) / len(pairs))
     for k, (label, v, colr) in enumerate(pairs):
         by = y + h - 36 - k * row
         _text(d, x + 10, by, label, 7.5)
         d.add(Rect(x + 92, by - 2, w - 92 - 70, 9, rx=2, ry=2, fillColor=colors.white, strokeColor=None))
         d.add(Rect(x + 92, by - 2, max(2, (w - 92 - 70) * abs(v) / top), 9, rx=2, ry=2, fillColor=colr, strokeColor=None))
         _text(d, x + w - 8, by, P.fmt(v, "currency", short=True), 7.5, True, anchor="end")
+    if split:
+        _text(d, x + 10, y + 8 + 11 * len(split["rows"]), "By platform: net order value / payout", 6.8, True, color=MUTE)
+        for k, q in enumerate(split["rows"]):
+            by = y + 8 + 11 * (len(split["rows"]) - 1 - k)
+            _text(d, x + 10, by, q["name"], 7.5, True)
+            _text(d, x + w - 8, by, f'{P.fmt(q["net_order_value"], "currency", short=True)} / {P.fmt(q["payout"], "currency", short=True)}', 7.5, anchor="end")
 
 
 # which module draws which panel(s), and how many of the three columns each needs

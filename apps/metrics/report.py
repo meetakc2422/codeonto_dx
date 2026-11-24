@@ -171,6 +171,16 @@ def coverage(outlets: dict, names: dict, platform, start: date, end: date) -> di
             "note": "Swiggy's newest two days are not final yet, so they are not counted as missing."}
 
 
+def _operating(outlets: dict, platform, start: date, end: date) -> set:
+    """The outlets with any data at all in the period (a figure, or a payout order). An outlet with none is not operating, so the report leaves it out."""
+    ids = list(outlets)
+    md = MetricDaily.objects.filter(outlet_id__in=ids, metric_date__range=(start, end))
+    po = PayoutOrder.objects.filter(cycle__outlet_id__in=ids, order_date__date__range=(start, end))
+    if platform:
+        md, po = md.filter(platform_id=platform), po.filter(cycle__platform_id=platform)
+    return set(md.values_list("outlet_id", flat=True).distinct()) | set(po.values_list("cycle__outlet_id", flat=True).distinct())
+
+
 def build(request, brand_id: int) -> dict:
     brand = get_brand(request.user, brand_id)
     start, end = _range(request)
@@ -182,6 +192,9 @@ def build(request, brand_id: int) -> dict:
     outlets = {o.id: o for o in in_scope(brand.outlets.filter(is_active=True).select_related("zomato"), request.user, "id")}
     if f["outlet_id"]:
         outlets = {k: v for k, v in outlets.items() if k in set(f["outlet_id"])}
+    live = _operating(outlets, f["platform"], start, end)
+    if live:  # an outlet with no data at all in the period is not operating: it is left out of the report, with no mention (if none has data, all stay so the report says so)
+        outlets = {k: v for k, v in outlets.items() if k in live}
     names = {k: (f"{o.outlet_name} · {o.area}" if o.area and o.area.lower() not in o.outlet_name.lower() else o.outlet_name) for k, o in outlets.items()}
 
     cov = coverage(outlets, names, f["platform"], start, end)
@@ -272,6 +285,34 @@ def build(request, brand_id: int) -> dict:
                                      {"code": "gst", "name": "GST collected", "unit": "currency"}, {"code": "fees", "name": "Platform fees", "unit": "currency"},
                                      {"code": "deductions", "name": "Net deductions", "unit": "currency"}, {"code": "payout", "name": "Payout", "unit": "currency"}],
                          "rows": p_rows, "total": {k: sum(r[k] for r in p_rows) for k in keys}})
+
+    # with both platforms in the report, the same payouts split by platform, and outlet by outlet within each platform
+    if p_rows and not f["platform"]:
+        by_plat = defaultdict(dict)
+        for r_ in pq.values("cycle__outlet_id", "cycle__platform_id").annotate(n=Count("id"), net=Sum("net_order_value"), gst=Sum("gst_collected"),
+                                                                              fees=Sum("fees_total"), ded=Sum("net_deductions"), pay=Sum("payout")):
+            by_plat[r_["cycle__platform_id"]][r_["cycle__outlet_id"]] = {"orders": r_["n"], "net_order_value": float(r_["net"] or 0), "gst": float(r_["gst"] or 0),
+                                                                          "fees": float(r_["fees"] or 0), "deductions": float(r_["ded"] or 0), "payout": float(r_["pay"] or 0)}
+        plats = [p_ for p_ in ("zomato", "swiggy") if p_ in by_plat] + [p_ for p_ in sorted(by_plat) if p_ not in ("zomato", "swiggy")]
+        if len(plats) > 1:
+            keys = ["orders", "net_order_value", "gst", "fees", "deductions", "payout"]
+            cols = sections[[sec["key"] for sec in sections].index("payouts")]["columns"]
+            sections.append({"key": "payouts", "title": "Payouts by platform", "kind": "payouts", "first": "Platform", "columns": cols,
+                             "rows": [{"outlet_id": 0, "name": pl.title(), **{k: sum(v[k] for v in by_plat[pl].values()) for k in keys}} for pl in plats],
+                             "total": {k: sum(v[k] for pl in plats for v in by_plat[pl].values()) for k in keys}})
+            m_cols = [c for pl in plats for c in ({"code": f"{pl}_net", "name": f"{pl.title()} net order value", "unit": "currency"},
+                                                   {"code": f"{pl}_payout", "name": f"{pl.title()} payout", "unit": "currency"})] + [{"code": "payout", "name": "Total payout", "unit": "currency"}]
+            m_rows = []
+            for oid in sorted(outlets, key=lambda i: names[i]):
+                row = {"outlet_id": oid, "name": names[oid], "payout": 0.0}
+                for pl in plats:
+                    v = by_plat[pl].get(oid)
+                    row[f"{pl}_net"], row[f"{pl}_payout"] = (v["net_order_value"], v["payout"]) if v else (None, None)
+                    row["payout"] += v["payout"] if v else 0.0
+                if any(row[f"{pl}_net"] is not None for pl in plats):
+                    m_rows.append(row)
+            sections.append({"key": "payouts", "title": "Payouts by outlet and platform", "kind": "payouts", "columns": m_cols, "rows": m_rows,
+                             "total": {c["code"]: sum(r[c["code"]] or 0 for r in m_rows) for c in m_cols}})
 
     # month by month (calendar months ending with the month of the end date)
     months = []
