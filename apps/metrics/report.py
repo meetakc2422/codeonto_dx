@@ -307,16 +307,76 @@ def brand_report_xlsx(request, brand_id):
     return resp
 
 
-@api_view(["GET"])
-def brand_report_pdf(request, brand_id):
+def _pdf_bytes(request, brand_id):
+    """(pdf bytes, start, end) for the same filters the PDF download takes. Raises ValueError on bad dates."""
     from .report_pdf import build_pdf
 
+    data = build(request, brand_id)
+    data["tables"] = request.query_params.get("tables") == "1"
+    p = data["period"]
+    return build_pdf(data), p["start"], p["end"]
+
+
+@api_view(["GET"])
+def brand_report_pdf(request, brand_id):
     try:
-        data = build(request, brand_id)
+        pdf, start, end = _pdf_bytes(request, brand_id)
     except ValueError:
         return Response({"detail": "Dates must look like 2026-11-20"}, status=400)
-    p = data["period"]
-    data["tables"] = request.query_params.get("tables") == "1"
-    resp = HttpResponse(build_pdf(data), content_type="application/pdf")
-    resp["Content-Disposition"] = f'attachment; filename="report_{p["start"]}_to_{p["end"]}.pdf"'
+    resp = HttpResponse(pdf, content_type="application/pdf")
+    resp["Content-Disposition"] = f'attachment; filename="report_{start}_to_{end}.pdf"'
+    return resp
+
+
+SHARE_DAYS = 7  # a shared report link works this long
+
+
+@api_view(["POST"])
+def brand_report_share(request, brand_id):
+    """Build the same PDF as /report/pdf, keep it under a long random address and return that address, so the report can be sent
+    as a link (a browser on a computer cannot attach a file to WhatsApp). The link needs no login and stops working after SHARE_DAYS."""
+    import os
+    import secrets
+    import time
+    from pathlib import Path
+
+    from django.conf import settings
+
+    try:
+        pdf, start, end = _pdf_bytes(request, brand_id)
+    except ValueError:
+        return Response({"detail": "Dates must look like 2026-11-20"}, status=400)
+    root = Path(settings.SHARED_REPORTS_DIR)
+    root.mkdir(parents=True, exist_ok=True)
+    cutoff = time.time() - SHARE_DAYS * 86400
+    for old in root.glob("*.pdf"):  # tidy up expired files whenever a new one is made
+        try:
+            if old.stat().st_mtime < cutoff:
+                os.remove(old)
+        except OSError:
+            pass
+    token = secrets.token_urlsafe(24)
+    (root / f"{token}.pdf").write_bytes(pdf)
+    return Response({"path": f"/r/{token}/report_{start}_to_{end}.pdf", "expires_days": SHARE_DAYS})
+
+
+def shared_report(request, token, name):
+    """The public side of a shared report: the file for this token while it is still fresh. `name` is only for how the link looks."""
+    import re
+    import time
+    from pathlib import Path
+
+    from django.conf import settings
+    from django.http import FileResponse, Http404
+
+    if not re.fullmatch(r"[A-Za-z0-9_-]{20,64}", token):
+        raise Http404
+    f = Path(settings.SHARED_REPORTS_DIR) / f"{token}.pdf"
+    if not f.is_file() or f.stat().st_mtime < time.time() - SHARE_DAYS * 86400:
+        raise Http404
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", name)[:80] or "report.pdf"
+    resp = FileResponse(open(f, "rb"), content_type="application/pdf")
+    resp["Content-Disposition"] = f'inline; filename="{safe}"'
+    resp["Cache-Control"] = "private, max-age=0"
+    resp["X-Robots-Tag"] = "noindex"
     return resp

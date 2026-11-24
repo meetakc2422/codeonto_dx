@@ -13,3 +13,4 @@ collector/logs/*
 collector/playwright_data/
 /sessions/
 collector/reports/
+/shared_reports/

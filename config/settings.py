@@ -127,6 +127,7 @@ USE_TZ = True
 STATIC_URL = "static/"
 STATIC_ROOT = BASE_DIR / "staticfiles"
 FRONTEND_DIR = BASE_DIR / "frontend"
+SHARED_REPORTS_DIR = env("SHARED_REPORTS_DIR", str(BASE_DIR / "shared_reports"))  # PDFs behind shared report links
 
 REST_FRAMEWORK = {
     # Same login as Django admin (session cookie); every API call needs a logged-in user,

@@ -115,6 +115,7 @@ api = [
     path("brands/<int:brand_id>/report", report.brand_report),
     path("brands/<int:brand_id>/report/xlsx", report.brand_report_xlsx),
     path("brands/<int:brand_id>/report/pdf", report.brand_report_pdf),
+    path("brands/<int:brand_id>/report/share", report.brand_report_share),
     path("brands/<int:brand_id>/dining/payouts", payout_dining.brand_dining_payouts),
     path("brands/<int:brand_id>/payouts/summary", payouts.payout_summary),
     path("brands/<int:brand_id>/payouts/line-types/<int:line_id>", payouts.review_line),
@@ -173,6 +174,7 @@ urlpatterns = [
     path("g/oauth/callback/", google_oauth.callback),
     path("codeonto/googleservices/oauth/callback/", google_oauth.callback),  # same handler under the api.codeonto.com address
     *[path(f"api/{p.pattern}", p.callback) for p in api],
+    path("r/<str:token>/<str:name>", report.shared_report),  # a shared report link: no login, long random address, expires
     re_path(r"^m(?:/(?P<path>.*))?$", mobile_web),
     # Dashboard (static SPA)
     path("", serve, {"path": "index.html", "document_root": settings.FRONTEND_DIR}),

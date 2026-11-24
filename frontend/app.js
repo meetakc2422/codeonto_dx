@@ -730,11 +730,25 @@ async function renderReport(page) {
       if (navigator.canShare?.({ files: [file] }) && (via === "system" || touch)) { try { await navigator.share({ files: [file], title, text: title }); } catch (err) { if (err.name !== "AbortError") throw err; } }
       else if (via === "system") { saveBlob(blob, name); toast(`PDF downloaded: ${name}`); }
       else {
-        saveBlob(blob, name);
-        const msg = `${title}. The PDF is attached.`;
-        if (via === "wa") window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
-        else location.href = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(msg)}`;
-        toast(`PDF downloaded: attach ${name} in ${via === "wa" ? "WhatsApp" : "your mail"}`);
+        // a browser on a computer can't attach a file to WhatsApp or mail, so the PDF is kept on the server under a long random address and the message carries that link
+        let link = "";
+        try {
+          const url = pdfUrl(); url.pathname = url.pathname.replace(/\/report\/pdf$/, "/report/share");
+          const res = await apiFetch(url, { method: "POST" });
+          if (res.ok) link = location.origin + (await res.json()).path;
+        } catch (e) { /* falls back to downloading the file below */ }
+        if (link) {
+          const msg = `${title}\n${link}`;
+          if (via === "wa") window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
+          else location.href = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(msg)}`;
+          toast("Link ready: it opens the PDF and works for 7 days");
+        } else {
+          saveBlob(blob, name);
+          const msg = `${title}.`;
+          if (via === "wa") window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank", "noopener");
+          else location.href = `mailto:?subject=${encodeURIComponent(title)}&body=${encodeURIComponent(msg)}`;
+          toast(`PDF downloaded: attach ${name} in ${via === "wa" ? "WhatsApp" : "your mail"}`);
+        }
       }
     } catch (err) { toast(userMessage(err)); }
     if (btn) { btn.disabled = false; btn.lastChild.textContent = label; paint(); }
