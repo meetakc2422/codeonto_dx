@@ -12,7 +12,7 @@ import re
 import time
 from datetime import date, timedelta
 
-from core import alerts, config as cfg, db, derive
+from core import alerts, config as cfg, db, derive, report_rows
 from core.refusals import Refusals
 from core.common import ConfigError, log, note_skipped, require_env
 
@@ -56,8 +56,9 @@ def _val(cell):
 _listed: set = set()
 
 
-def _fetch(cookies: dict, res_id: str, start: date, end: date) -> dict[tuple, dict[date, float]]:
-    """{(section, metric): {day: number}} for the window."""
+def _fetch(cookies: dict, res_id: str, start: date, end: date, keep: list | None = None) -> dict[tuple, dict[date, float]]:
+    """{(section, metric): {day: number}} for the window. Given a list as `keep`, every row of the report is added to it as
+    (section, metric, day, text as shown, number), mapped or not."""
     import requests
 
     s, e = start.isoformat(), end.isoformat()
@@ -84,6 +85,7 @@ def _fetch(cookies: dict, res_id: str, start: date, end: date) -> dict[tuple, di
     else:
         resp.raise_for_status()
     out: dict[tuple, dict[date, float]] = {}
+    seen: set = set()
     for sec in (resp.json().get("data") or {}).get("sections") or []:
         heading = sec.get("heading")
         heading = _val(heading)
@@ -94,6 +96,12 @@ def _fetch(cookies: dict, res_id: str, start: date, end: date) -> dict[tuple, di
         for row in rows:
             metric = _val(row.get("metric"))
             key = (heading, metric)
+            if keep is not None and key not in seen:  # the first occurrence of each row, like the mapped figures
+                seen.add(key)
+                for k, cell in row.items():
+                    if k.isdigit() and len(k) == 8:
+                        shown = _val(cell)
+                        keep.append((heading, metric, date(int(k[:4]), int(k[4:6]), int(k[6:])), None if shown is None else str(shown), parse(shown)))
             if os.getenv("LIST_METRICS") and (heading, metric) not in _listed:  # LIST_METRICS=1: show everything Zomato returns, mapped or not
                 _listed.add((heading, metric))
                 log.info("zomato business metric: %s | %s%s", heading, metric, "" if key in WANTED else "   (not saved)")
@@ -160,7 +168,8 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         try:
             n = 0
             for start, stop in windows:
-                rows = derive.kpi_rows(_fetch(cookies, s["res_id"], start, stop), _MAP)
+                everything: list = []
+                rows = derive.kpi_rows(_fetch(cookies, s["res_id"], start, stop, keep=everything), _MAP)
                 too_big = [(d, v) for code, d, v, _ in rows if code == "delivered_orders" and v > MAX_DAILY_ORDERS]
                 if too_big:
                     d, v = max(too_big, key=lambda x: x[1])
@@ -173,6 +182,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                     note_skipped("zomato business", f"{s['brand']} · {s['outlet_name']} ({s['res_id']})", "report looks wrong")
                     break
                 with db.transaction() as cur:
+                    report_rows.save(cur, s["outlet_id"], "zomato", everything)  # the whole report, not only the mapped rows
                     for code, day, value, weight in rows:
                         cur.execute(
                             """INSERT INTO metric_daily (outlet_id, platform, kpi_id, metric_date, value, weight, updated_at)

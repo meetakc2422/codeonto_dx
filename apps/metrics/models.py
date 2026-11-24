@@ -21,6 +21,26 @@ class MetricDaily(models.Model):
         indexes = [models.Index(fields=["kpi", "metric_date"])]
 
 
+class ReportRow(models.Model):
+    """Every row of a platform's business report, kept as it came: nothing is thrown away because we don't map it yet.
+    MetricDaily holds the figures the dashboard uses; this holds the whole report, so a figure added to the dashboard later
+    (customer segmentation, say) already has its history. One row per outlet, platform, section, metric and day."""
+
+    outlet = models.ForeignKey("outlets.BrandOutlet", on_delete=models.CASCADE, related_name="report_rows")
+    platform = models.ForeignKey("masters.Platform", on_delete=models.PROTECT, related_name="+", db_column="platform")
+    metric_date = models.DateField()
+    section = models.CharField(max_length=120, help_text="The section heading in the report, e.g. Customer segmentation")
+    metric = models.CharField(max_length=200, help_text="The row name as the platform shows it")
+    text = models.CharField(max_length=120, blank=True, help_text="The cell as the platform shows it, e.g. '₹30,164' or '3.4%'")
+    value = models.DecimalField(max_digits=18, decimal_places=4, null=True, blank=True, help_text="The number in it (seconds for times), empty when the cell is not a number")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "report_rows"
+        constraints = [models.UniqueConstraint(fields=["outlet", "platform", "section", "metric", "metric_date"], name="uniq_report_row")]
+        indexes = [models.Index(fields=["outlet", "metric_date"]), models.Index(fields=["section", "metric"])]
+
+
 class DiningOfferSnapshot(models.Model):
     """One reading of a dining offer on Zomato's table-booking page: what the offer is and how many slots were left
     when we looked. Every collector run adds rows; comparing runs shows how fast an offer sells."""

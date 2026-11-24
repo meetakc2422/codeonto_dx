@@ -13,7 +13,7 @@ from collections import defaultdict
 from datetime import date, datetime, timedelta
 from io import BytesIO
 
-from core import config as cfg, db, derive
+from core import config as cfg, db, derive, report_rows
 from core.common import ConfigError, log, require_env
 
 from zomato.business import parse  # '₹37137.02' -> 37137.02, '17.22 min' -> seconds, '77%' -> 77
@@ -85,8 +85,9 @@ def _request(token: str, rids: list[int], start: date, end: date) -> str:
 _listed: set = set()
 
 
-def _read(link: str) -> dict[int, dict[tuple, dict[date, float]]]:
-    """{outlet id: {(overview, metric): {day: number}}}"""
+def _read(link: str, keep: dict | None = None) -> dict[int, dict[tuple, dict[date, float]]]:
+    """{outlet id: {(overview, metric): {day: number}}}. Given a dict as `keep`, every row of the sheet is added to it, per outlet, as
+    (overview, metric, day, text as shown, number), mapped or not."""
     import openpyxl
     import requests
 
@@ -106,6 +107,11 @@ def _read(link: str) -> dict[int, dict[tuple, dict[date, float]]]:
             if os.getenv("LIST_METRICS") and key not in _listed:  # LIST_METRICS=1: show everything Swiggy returns, mapped or not
                 _listed.add(key)
                 log.info("swiggy business metric: %s | %s%s", key[0], key[1], "" if key in WANTED else "   (not saved)")
+            if row[i_id] is not None and keep is not None:
+                mine, seen_keys = keep.setdefault(int(row[i_id]), []), keep.setdefault(("seen", int(row[i_id])), set())
+                if key not in seen_keys:  # the first occurrence of each row, like the mapped figures
+                    seen_keys.add(key)
+                    mine.extend((key[0], key[1], day, None if row[i] is None else str(row[i]), parse(row[i])) for i, day in days.items())
             if row[i_id] is None or key not in WANTED:
                 continue
             series = out[int(row[i_id])].setdefault(key, {})  # first occurrence wins
@@ -171,9 +177,11 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             for start, stop in windows:
                 for i in range(0, len(rids), BATCH):
                     batch = rids[i:i + BATCH]
-                    report = _read(_request(token, batch, start, stop))
+                    everything: dict = {}
+                    report = _read(_request(token, batch, start, stop), keep=everything)
                     with db.transaction() as cur:
                         for rid in batch:
+                            report_rows.save(cur, by_rid[rid]["outlet_id"], "swiggy", everything.get(rid, []))  # the whole sheet, not only the mapped rows
                             rows = derive.kpi_rows(report.get(rid, {}), _MAP)
                             for code, day, value, weight in rows:
                                 cur.execute(
