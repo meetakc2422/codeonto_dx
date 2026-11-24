@@ -262,6 +262,20 @@ def build_pdf(r: dict) -> bytes:
                 story.append(PageBreak())
         for k, page_drawing in enumerate(drawings):
             story += [PageBreak(), page_drawing] if k else [page_drawing]
+        extra = []  # a page set for each platform when there are two or more, then the best and worst outlets
+        if r.get("compact"):
+            from .report_compact import outlet_page, platform_pages
+
+            plats = r["compact"]["platforms"]
+            if len(plats) > 1:
+                for pl in plats:
+                    ps = platform_pages(r, pl)
+                    for k, pg in enumerate(ps):
+                        extra += [PageBreak(), Paragraph(pl["name"] + (" (continued)" if k else ""), st["title"]), Paragraph("Every section you ticked, for this platform only", st["sub"]), Spacer(1, 6), pg]
+            op = outlet_page(r)
+            if op is not None:
+                extra += [PageBreak(), Paragraph("Best and weakest outlets", st["title"]), Paragraph("Ranked by sales, platforms added together", st["sub"]), Spacer(1, 6), op]
+        story += extra
         if not r.get("tables"):  # the picture page alone, with a one-line data check under it
             if not cov["days"]:
                 note = cov.get("note", "")

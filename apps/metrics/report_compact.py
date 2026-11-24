@@ -115,3 +115,143 @@ def payouts_page(r) -> Drawing:
         items.append((name, o["payout"], P.fmt(o["payout"], "currency", short=True) + (f"   ({split})" if len(both) > 1 else "")))
     _bars(d, 0, 0, W, oh, f"Payout by outlet (top {len(top)})" if len(outs) > len(top) else "Payout by outlet", items, lambda k, _l: P.BLUE, "No payout statements in this period", label_w=130, chars=28)
     return d
+
+
+# ---------- the full report: one set of pages per platform, then the best and worst outlets ----------
+def _tile_card(d, x, y, w, h, title, items):
+    """A card of mini tiles (two across). items: [(label, value text, change or None, higher is better)]."""
+    _card(d, x, y, w, h, title)
+    rows = (len(items) + 1) // 2
+    gap = 6
+    tw = (w - 20 - gap) / 2
+    th = min(40, (h - 30 - gap * (rows - 1)) / max(1, rows))
+    for i, (label, value, ch, hib) in enumerate(items):
+        r_, c_ = divmod(i, 2)
+        _tile(d, x + 10 + c_ * (tw + gap), y + h - 26 - th - r_ * (th + gap), tw, th, label, value, ch, good_when_up=hib)
+
+
+def _panels_for(pl, order):
+    """The panels one platform's page holds for the sections that were ticked: [(draw function, columns it takes)]."""
+    mins = lambda v: "-" if v is None else f"{v / 60:.0f} min"
+    pay = pl["pay"]
+    p = []
+
+    def sales(d, x, y, w, h):
+        _tile_card(d, x, y, w, h, "Sales", [("Sales", _fmt(pl["sales"], "currency"), pl["sales_change"], True), ("Orders", _fmt(pl["orders"], "count"), pl["orders_change"], True),
+                                           ("Average order value", _fmt(pl["aov"], "currency"), None, True), ("Cancelled", _fmt(pl["cancellation"], "percent"), None, False)])
+
+    def ops(d, x, y, w, h):
+        _tile_card(d, x, y, w, h, "Operations", [("Online time", _fmt(pl["online"], "percent"), None, True), ("Delayed orders", _fmt(pl["delayed"], "percent"), None, False),
+                                                ("Kitchen prep time", mins(pl["prep"]), None, False), ("Order-ready accuracy", _fmt(pl["accuracy"], "percent"), None, True)])
+
+    def ratings(d, x, y, w, h):
+        _tile_card(d, x, y, w, h, "Ratings", [("Rating", _fmt(pl["rating"], "rating"), None, True), ("Number of ratings", _fmt(pl["rating_count"], "count"), None, True),
+                                             ("Reviews", _fmt(pl["reviews"], "count"), None, True), ("Menu score", _fmt(pl["menu_score"], "percent"), None, True)])
+
+    def ads(d, x, y, w, h):
+        _tile_card(d, x, y, w, h, "Marketing", [("Ad spend", _fmt(pl["ad_spend"], "currency"), None, False), ("Sales from ads", _fmt(pl["ad_sales"], "currency"), None, True),
+                                               ("Return on ads", _fmt(pl["ad_roi"], "ratio"), None, True), ("Discounts given", _fmt(pl["discount"], "currency"), None, False)])
+
+    def funnel(d, x, y, w, h):
+        steps = [("Saw the listing", pl["funnel"][0]), ("Opened the menu", pl["funnel"][1]), ("Added to cart", pl["funnel"][2]), ("Ordered", pl["funnel"][3])]
+        items = [(n, v, f"{v:,.0f}") for n, v in steps if v]
+        _bars(d, x, y, w, h, "Customer funnel", items, lambda k, _l: P.BLUE if k < len(items) - 1 else P.GREEN, "No funnel data in this period")
+
+    def complaints(d, x, y, w, h):
+        names = {"packaging": "Packaging", "quality": "Quality", "wrong_items": "Wrong item", "missing_items": "Missing item", "quantity": "Quantity", "other": "Other"}
+        items = sorted([(names.get(k, k), v, str(v)) for k, v in pl["complaints"].items() if v], key=lambda i: -i[1])
+        _bars(d, x, y, w, h, f'Complaints ({pl["complaints_total"]})' if pl["complaints_total"] else "Complaints", items, lambda k, _l: P.RED if k == 0 else WEEKEND_COLOR, "No complaints in this period")
+
+    def payouts(d, x, y, w, h):
+        items = [("Net order value", pay["net"], P.fmt(pay["net"], "currency", short=True) if pay["net"] else ""), ("GST collected", pay["gst"], P.fmt(pay["gst"], "currency", short=True)),
+                 ("Platform fees", pay["fees"], P.fmt(pay["fees"], "currency", short=True)), ("Deductions", pay["deductions"], P.fmt(pay["deductions"], "currency", short=True)),
+                 ("Payout", pay["payout"], P.fmt(pay["payout"], "currency", short=True) if pay["payout"] else "")]
+        cs = [P.BLUE, colors.HexColor("#8A94A6"), P.RED, WEEKEND_COLOR, P.GREEN]
+        _bars(d, x, y, w, h, "Payouts" + (f' ({pay["kept"]:.0f}% of order value paid out)' if pay["kept"] is not None else ""), items, lambda k, _l: cs[k % len(cs)], "No payout statements in this period")
+
+    def weekdays(d, x, y, w, h):
+        _weekday_card(d, x, y, w, h, [pl])
+
+    table = {"overall": [(sales, 1), (ops, 1)], "reputation": [(ratings, 1)], "ads": [(ads, 1)], "growth": [(funnel, 1)], "complaints": [(complaints, 1)], "payouts": [(payouts, 1)],
+             "weekdays": [(weekdays, 2)]}
+    for m in order:
+        p += table.get(m, [])
+    return p
+
+
+def platform_pages(r, pl) -> list:
+    """The pages for one platform: its panels for every ticked section, three to a row and three rows to a page."""
+    order = r.get("module_order") or list(("overall", "reputation", "ads", "growth", "complaints", "payouts", "weekdays"))
+    cells = _panels_for(pl, order)
+    if not cells:
+        return []
+    rows, cur, used = [], [], 0
+    for fn, wt in cells:
+        if used + wt > 3:
+            rows.append(cur); cur, used = [], 0
+        cur.append((fn, wt)); used += wt
+    rows.append(cur)
+    col, rh = (W - 2 * GAP) / 3, 120
+    pages = []
+    for k in range(0, len(rows), 3):
+        chunk = rows[k:k + 3]
+        d = Drawing(W, len(chunk) * rh + (len(chunk) - 1) * GAP)
+        for i, row in enumerate(chunk):
+            y = d.height - (i + 1) * rh - i * GAP
+            x = 0
+            for fn, wt in row:
+                w = col * wt + GAP * (wt - 1)
+                fn(d, x, y, w, rh)
+                x += w + GAP
+        pages.append(d)
+    return pages
+
+
+def _combined(card):
+    """One outlet's key figures with its platforms added together (ratings and percentages averaged over the platforms that have them)."""
+    vals = list(card.values())
+    s = lambda k: sum(v.get(k) or 0 for v in vals) or None
+    avg = lambda k: (sum(v[k] for v in vals if v.get(k) is not None) / len([v for v in vals if v.get(k) is not None])) if any(v.get(k) is not None for v in vals) else None
+    spend = sum(v.get("ad_spend") or 0 for v in vals)
+    roi = sum((v.get("ad_roi") or 0) * (v.get("ad_spend") or 0) for v in vals) / spend if spend else None
+    return {"sales": s("sales"), "orders": s("orders"), "rating": avg("rating"), "online": avg("online"), "delayed": avg("delayed"), "ad_roi": roi, "complaints": s("complaints"), "payout": s("payout")}
+
+
+def _outlet_rank(d, x, y, w, h, title, rows, color, top):
+    _card(d, x, y, w, h, title)
+    cols = [("Orders", 166), ("Rating", 114), ("Online", 62), ("Ads return", 10)]  # right edges, counted from the card's right side
+    for label, off in cols:
+        _text(d, x + w - off, y + h - 15, label, 6.8, color=MUTE, anchor="end")
+    if not rows:
+        _text(d, x + 10, y + h / 2 - 6, "No outlets to compare in this period", 8, color=MUTE)
+        return
+    rh = min(34, (h - 34) / len(rows))
+    peak = max(c["sales"] or 0 for _, c in rows) or 1
+    bar_w = w - 28 - 166 - 30 - 54
+    for i, (name, c) in enumerate(rows):
+        by = y + h - 36 - i * rh
+        d.add(Rect(x + 8, by - 2, 14, 14, rx=7, ry=7, fillColor=color, strokeColor=None))
+        _text(d, x + 15, by + 2, str(i + 1), 7.4, True, colors.white, "middle")
+        _text(d, x + 28, by + 7, (name if len(name) <= 26 else name[:25] + "…"), 8, True)
+        d.add(Rect(x + 28, by - 4, bar_w, 6, rx=3, ry=3, fillColor=colors.white, strokeColor=None))
+        d.add(Rect(x + 28, by - 4, max(2, bar_w * (c["sales"] or 0) / peak), 6, rx=3, ry=3, fillColor=color, strokeColor=None))
+        _text(d, x + 28 + bar_w + 6, by - 3, P.fmt(c["sales"], "currency", short=True) if c["sales"] else "-", 7.4, True)
+        for text, (label, off) in zip((_fmt(c["orders"], "count"), _fmt(c["rating"], "rating"), _fmt(c["online"], "percent"), _fmt(c["ad_roi"], "ratio")), cols):
+            _text(d, x + w - off, by + 1, text, 7.6, anchor="end")
+
+
+def outlet_page(r):
+    """The five best and five worst outlets by sales, each with its platforms added together. None when there are fewer than two outlets."""
+    cards = [(c["name"].split(" · ")[-1] if " · " in c["name"] else c["name"], _combined(c["by"])) for c in r["compact"]["scorecards"]]
+    cards = [c for c in cards if c[1]["sales"]]
+    if len(cards) < 2:
+        return None
+    cards.sort(key=lambda c: -c[1]["sales"])
+    n = min(5, len(cards) // 2) if len(cards) < 10 else 5
+    best, worst = cards[:n], list(reversed(cards[-n:]))
+    rh = 40 + 34 * n
+    d = Drawing(W, rh)
+    half = (W - GAP) / 2
+    _outlet_rank(d, 0, 0, half, rh, f"Best {n} outlets by sales", best, P.GREEN, True)
+    _outlet_rank(d, half + GAP, 0, half, rh, f"Weakest {n} outlets by sales", worst, P.RED, False)
+    return d

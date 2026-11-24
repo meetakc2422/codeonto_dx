@@ -124,31 +124,51 @@ def _avg_days(by_day: dict) -> tuple:
 
 
 def _compact(outlets, names, f, base, start, end, p_start, p_end) -> dict:
-    """What the short report needs, platform by platform: the headline figures, ads, payouts and the weekday/weekend averages, plus payouts outlet by outlet."""
+    """What the short report and the platform and outlet pages need, platform by platform: the headline figures, funnel, ads, complaints, payouts and the
+    weekday/weekend averages; plus the same key figures for every outlet on every platform (the scorecards) and payouts outlet by outlet."""
     mapped = [p for p in ("zomato", "swiggy") if (not f["platform"] or f["platform"] == p) and any(getattr(o, f"{p}_id") for o in outlets.values())]
-    out = []
+    out, card = [], defaultdict(dict)
     for pl in mapped:
         pb = {**base, "platform": pl}
         t = {r["code"]: r["value"] for r in _aggregate(False, False, start=start, end=end, **pb)}
         tp = {r["code"]: r["value"] for r in _aggregate(False, False, start=p_start, end=p_end, **pb)}
-        sales, sales_prev = sum(_sales(outlets, pl, start, end).values()) or None, sum(_sales(outlets, pl, p_start, p_end).values()) or None
+        sales_by_outlet = _sales(outlets, pl, start, end)
+        sales, sales_prev = sum(sales_by_outlet.values()) or None, sum(_sales(outlets, pl, p_start, p_end).values()) or None
         po = PayoutOrder.objects.filter(cycle__outlet_id__in=list(outlets), cycle__platform_id=pl, order_date__date__range=(start, end)).aggregate(
             n=Count("id"), net=Sum("net_order_value"), gst=Sum("gst_collected"), fees=Sum("fees_total"), ded=Sum("net_deductions"), pay=Sum("payout"))
         net, pay = (float(po["net"]) if po["net"] is not None else None), (float(po["pay"]) if po["pay"] is not None else None)
         ads_daily = {r["metric_date"]: r["value"] for r in _aggregate(True, False, start=start, end=end, **pb) if r["code"] == "ad_spend" and r["value"] is not None}
+        cq = Complaint.objects.filter(outlet_id__in=list(outlets), platform_id=pl, raised_at__date__range=(start, end))
+        cby = {r["issue_type"] or "other": r["n"] for r in cq.values("issue_type").annotate(n=Count("id"))}
+        c_out = {r["outlet_id"]: r["n"] for r in cq.values("outlet_id").annotate(n=Count("id"))}
         out.append({"code": pl, "name": pl.title(), "sales": sales, "sales_change": _pct_change(sales, sales_prev), "orders": t.get("delivered_orders"),
                     "orders_change": _pct_change(t.get("delivered_orders"), tp.get("delivered_orders")), "aov": t.get("avg_order_value"), "rating": t.get("listing_rating"),
+                    "rating_count": t.get("rating_count"), "reviews": t.get("total_reviews"), "menu_score": t.get("menu_score"), "cancellation": t.get("cancellation_rate"),
                     "online": t.get("online_pct"), "delayed": t.get("delayed_orders_pct"), "prep": t.get("avg_prep_time"), "accuracy": t.get("mfr_accuracy"),
-                    "ad_spend": t.get("ad_spend"), "ad_sales": t.get("ad_sales"), "ad_roi": t.get("ad_roi"), "discount": t.get("discount_given"), "discount_pct": t.get("discount_pct_revenue"),
+                    "ad_spend": t.get("ad_spend"), "ad_sales": t.get("ad_sales"), "ad_roi": t.get("ad_roi"), "ad_orders": t.get("ad_orders"),
+                    "discount": t.get("discount_given"), "discount_pct": t.get("discount_pct_revenue"),
+                    "funnel": [t.get(c) for c in ("impressions", "menu_views", "add_to_cart", "funnel_orders")], "complaints": cby, "complaints_total": sum(cby.values()),
                     "pay": {"orders": po["n"], "net": net, "gst": float(po["gst"] or 0), "fees": float(po["fees"] or 0), "deductions": float(po["ded"] or 0), "payout": pay,
                             "kept": round(pay / net * 100, 1) if pay is not None and net else None},
                     "weekday": {"sales": _avg_days(_sales_daily(outlets, pl, start, end)), "ad_spend": _avg_days(ads_daily)}})
+        by_out = defaultdict(dict)
+        for r_ in _aggregate(False, True, start=start, end=end, **pb):
+            if r_["outlet_id"] in outlets:
+                by_out[r_["outlet_id"]][r_["code"]] = r_["value"]
+        for oid in outlets:
+            v = by_out.get(oid, {})
+            row = {"sales": sales_by_outlet.get(oid), "orders": v.get("delivered_orders"), "aov": v.get("avg_order_value"), "rating": v.get("listing_rating"), "online": v.get("online_pct"),
+                   "delayed": v.get("delayed_orders_pct"), "ad_spend": v.get("ad_spend"), "ad_roi": v.get("ad_roi"), "complaints": c_out.get(oid)}
+            if any(x is not None for x in row.values()):
+                card[oid][pl] = row
     rows = defaultdict(dict)
     for r_ in PayoutOrder.objects.filter(cycle__outlet_id__in=list(outlets), order_date__date__range=(start, end), **({"cycle__platform_id": f["platform"]} if f["platform"] else {})
                                          ).values("cycle__outlet_id", "cycle__platform_id").annotate(net=Sum("net_order_value"), pay=Sum("payout")):
         rows[r_["cycle__outlet_id"]][r_["cycle__platform_id"]] = (float(r_["net"] or 0), float(r_["pay"] or 0))
+        card[r_["cycle__outlet_id"]].setdefault(r_["cycle__platform_id"], {})["payout"] = float(r_["pay"] or 0)
     by_outlet = [{"name": names[oid], **{pl: rows[oid].get(pl) for pl in mapped}, "payout": sum(v[1] for v in rows[oid].values())} for oid in sorted(outlets, key=lambda i: names[i]) if rows.get(oid)]
-    return {"platforms": out, "outlets": by_outlet}
+    scorecards = [{"name": names[oid], "by": card[oid]} for oid in sorted(outlets, key=lambda i: -(sum((v.get("sales") or 0) for v in card[oid].values()))) if card.get(oid)]
+    return {"platforms": out, "outlets": by_outlet, "scorecards": scorecards}
 
 
 def _pct_change(cur, prev):
@@ -410,8 +430,7 @@ def build(request, brand_id: int) -> dict:
         result["overview"] = insights.overview(result)
     if "recommendations" in wanted:
         result["recommendations"] = insights.recommendations(result)
-    if request.query_params.get("layout") == "compact":
-        result["compact"] = _compact(outlets, names, f, base, start, end, p_start, p_end)
+    result["compact"] = _compact(outlets, names, f, base, start, end, p_start, p_end)  # platform pages and outlet scorecards, and the whole short report
     return result
 
 
@@ -451,7 +470,7 @@ def _pdf_bytes(request, brand_id):
     data = build(request, brand_id)
     data["tables"] = request.query_params.get("tables") == "1"
     p = data["period"]
-    return (build_compact_pdf(data) if data.get("compact") else build_pdf(data)), p["start"], p["end"]
+    return (build_compact_pdf(data) if request.query_params.get("layout") == "compact" else build_pdf(data)), p["start"], p["end"]
 
 
 @api_view(["GET"])
