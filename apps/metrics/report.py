@@ -21,7 +21,7 @@ from apps.masters.models import Kpi
 from apps.outlets.access import get_brand, in_scope
 from apps.payouts.models import PayoutOrder
 
-from .models import MetricDaily
+from .models import MetricDaily, ReportRow
 
 from . import report_insights as insights
 from .api import _aggregate, _filters, _range
@@ -141,12 +141,15 @@ def _compact(outlets, names, f, base, start, end, p_start, p_end) -> dict:
         cq = Complaint.objects.filter(outlet_id__in=list(outlets), platform_id=pl, raised_at__date__range=(start, end))
         cby = {r["issue_type"] or "other": r["n"] for r in cq.values("issue_type").annotate(n=Count("id"))}
         c_out = {r["outlet_id"]: r["n"] for r in cq.values("outlet_id").annotate(n=Count("id"))}
+        mix = _customer_mix(outlets, pl, start, end)
+        pmix = (_customer_mix(outlets, pl, p_start, p_end) or {}) if mix else {}
         out.append({"code": pl, "name": pl.title(), "sales": sales, "sales_change": _pct_change(sales, sales_prev), "orders": t.get("delivered_orders"),
                     "orders_change": _pct_change(t.get("delivered_orders"), tp.get("delivered_orders")), "aov": t.get("avg_order_value"), "rating": t.get("listing_rating"),
                     "rating_count": t.get("rating_count"), "reviews": t.get("total_reviews"), "menu_score": t.get("menu_score"), "cancellation": t.get("cancellation_rate"),
                     "online": t.get("online_pct"), "delayed": t.get("delayed_orders_pct"), "prep": t.get("avg_prep_time"), "accuracy": t.get("mfr_accuracy"),
                     "ad_spend": t.get("ad_spend"), "ad_sales": t.get("ad_sales"), "ad_roi": t.get("ad_roi"), "ad_orders": t.get("ad_orders"),
                     "discount": t.get("discount_given"), "discount_pct": t.get("discount_pct_revenue"),
+                    "customers": ({**mix, "change": {k: (round(mix[k] - pmix[k], 1) if pmix.get(k) is not None and mix.get(k) is not None else None) for k in ("new", "repeat", "lapsed")}} if mix else None),
                     "funnel": [t.get(c) for c in ("impressions", "menu_views", "add_to_cart", "funnel_orders")], "complaints": cby, "complaints_total": sum(cby.values()),
                     "pay": {"orders": po["n"], "net": net, "gst": float(po["gst"] or 0), "fees": float(po["fees"] or 0), "deductions": float(po["ded"] or 0), "payout": pay,
                             "kept": round(pay / net * 100, 1) if pay is not None and net else None},
@@ -169,6 +172,32 @@ def _compact(outlets, names, f, base, start, end, p_start, p_end) -> dict:
     by_outlet = [{"name": names[oid], **{pl: rows[oid].get(pl) for pl in mapped}, "payout": sum(v[1] for v in rows[oid].values())} for oid in sorted(outlets, key=lambda i: names[i]) if rows.get(oid)]
     scorecards = [{"name": names[oid], "by": card[oid]} for oid in sorted(outlets, key=lambda i: -(sum((v.get("sales") or 0) for v in card[oid].values()))) if card.get(oid)]
     return {"platforms": out, "outlets": by_outlet, "scorecards": scorecards}
+
+
+def _customer_mix(outlet_ids, platform, s, e) -> dict | None:
+    """New, repeat and lapsed customers as shares of the period, from the Customer funnel rows of the business report (kept in report_rows).
+    Zomato gives each as a percentage of that day's orders, so the days are weighted by their orders before they are added, and the three are then
+    scaled to add up to 100. None when the platform has no such rows in the period."""
+    names = {"New users": "new", "Repeat users": "repeat", "Lapsed users": "lapsed"}
+    ids = list(outlet_ids)
+    rows = ReportRow.objects.filter(outlet_id__in=ids, platform_id=platform, section="Customer funnel", metric__in=list(names), metric_date__range=(s, e)
+                                    ).values_list("outlet_id", "metric_date", "metric", "value")
+    orders = {(o, d): float(v) for o, d, v in MetricDaily.objects.filter(outlet_id__in=ids, platform_id=platform, kpi__code="delivered_orders", metric_date__range=(s, e)
+                                                                         ).values_list("outlet_id", "metric_date", "value")}
+    acc = {k: [0.0, 0.0] for k in names.values()}
+    days = set()
+    for o, d, m, v in rows:
+        w = orders.get((o, d))
+        if v is None or not w:
+            continue
+        acc[names[m]][0] += float(v) * w
+        acc[names[m]][1] += w
+        days.add(d)
+    avg = {k: (a / w if w else None) for k, (a, w) in acc.items()}
+    total = sum(v for v in avg.values() if v is not None)
+    if not total:
+        return None
+    return {**{k: (round(v / total * 100, 1) if v is not None else None) for k, v in avg.items()}, "days": len(days)}
 
 
 def _pct_change(cur, prev):

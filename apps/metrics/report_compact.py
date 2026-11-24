@@ -157,6 +157,29 @@ def _panels_for(pl, order):
         items = [(n, v, f"{v:,.0f}") for n, v in steps if v]
         _bars(d, x, y, w, h, "Customer funnel", items, lambda k, _l: P.BLUE if k < len(items) - 1 else P.GREEN, "No funnel data in this period")
 
+    def customers(d, x, y, w, h):
+        c = pl["customers"]
+        _card(d, x, y, w, h, "Customers")
+        parts = [("New", c["new"], P.BLUE), ("Repeat", c["repeat"], P.GREEN), ("Lapsed", c["lapsed"], WEEKEND_COLOR)]
+        cx, cy, rad = x + 54, y + h / 2 - 8, 34
+        start = 90.0
+        from reportlab.graphics.shapes import Circle, Wedge
+
+        for _n, v, colr in parts:
+            if v:
+                sweep = v / 100 * 360
+                d.add(Wedge(cx, cy, rad, start - sweep, start, fillColor=colr, strokeColor=colors.white, strokeWidth=1))
+                start -= sweep
+        d.add(Circle(cx, cy, rad * 0.58, fillColor=CARD, strokeColor=CARD))
+        for i, (name, v, colr) in enumerate(parts):
+            ly = y + h - 34 - i * 22
+            d.add(Rect(x + 104, ly, 8, 8, fillColor=colr, strokeColor=None))
+            _text(d, x + 118, ly, name, 8, True)
+            _text(d, x + w - 10, ly, "-" if v is None else f"{v:.0f}%", 9, True, anchor="end")
+            ch = c["change"].get(name.lower())
+            if ch is not None and abs(ch) >= 0.5:
+                _text(d, x + 118, ly - 10, f"{ch:+.0f} points vs previous period", 6.4, color=MUTE)
+
     def complaints(d, x, y, w, h):
         names = {"packaging": "Packaging", "quality": "Quality", "wrong_items": "Wrong item", "missing_items": "Missing item", "quantity": "Quantity", "other": "Other"}
         items = sorted([(names.get(k, k), v, str(v)) for k, v in pl["complaints"].items() if v], key=lambda i: -i[1])
@@ -172,7 +195,7 @@ def _panels_for(pl, order):
     def weekdays(d, x, y, w, h):
         _weekday_card(d, x, y, w, h, [pl])
 
-    table = {"overall": [(sales, 1), (ops, 1)], "reputation": [(ratings, 1)], "ads": [(ads, 1)], "growth": [(funnel, 1)], "complaints": [(complaints, 1)], "payouts": [(payouts, 1)],
+    table = {"overall": [(sales, 1), (ops, 1)], "reputation": [(ratings, 1)], "ads": [(ads, 1)], "growth": [(funnel, 1)] + [(customers, 1)] if pl.get("customers") else [(funnel, 1)], "complaints": [(complaints, 1)], "payouts": [(payouts, 1)],
              "weekdays": [(weekdays, 2)]}
     for m in order:
         p += table.get(m, [])
@@ -180,7 +203,7 @@ def _panels_for(pl, order):
 
 
 def platform_pages(r, pl) -> list:
-    """The pages for one platform: its panels for every ticked section, three to a row and three rows to a page."""
+    """The pages for one platform: its panels for every ticked section, three to a row and four rows to a page."""
     order = r.get("module_order") or list(("overall", "reputation", "ads", "growth", "complaints", "payouts", "weekdays"))
     cells = _panels_for(pl, order)
     if not cells:
@@ -191,10 +214,10 @@ def platform_pages(r, pl) -> list:
             rows.append(cur); cur, used = [], 0
         cur.append((fn, wt)); used += wt
     rows.append(cur)
-    col, rh = (W - 2 * GAP) / 3, 120
+    col, rh = (W - 2 * GAP) / 3, 104
     pages = []
-    for k in range(0, len(rows), 3):
-        chunk = rows[k:k + 3]
+    for k in range(0, len(rows), 4):
+        chunk = rows[k:k + 4]
         d = Drawing(W, len(chunk) * rh + (len(chunk) - 1) * GAP)
         for i, row in enumerate(chunk):
             y = d.height - (i + 1) * rh - i * GAP
