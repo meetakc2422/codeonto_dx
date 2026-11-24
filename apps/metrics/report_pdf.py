@@ -151,9 +151,10 @@ def _logo(name, height_mm):
 
 def _table(sec, st):
     cols = sec["columns"]
-    head = [Paragraph("Outlet", st["head"])] + [Paragraph(c["name"], st["headr"]) for c in cols]
+    head = [Paragraph(sec.get("first", "Outlet"), st["head"])] + [Paragraph(c["name"], st["headr"]) for c in cols]
     rows = [head] + [[Paragraph(r["name"], st["cell"])] + [_cell(c, r.get(c["code"]), st) for c in cols] for r in sec["rows"]]
-    if len(sec["rows"]) > 1:
+    totalled = len(sec["rows"]) > 1 and sec.get("kind") != "daytype"  # weekday/weekend rows are not parts of a whole
+    if totalled:
         rows.append([Paragraph(f'<font name="{FB}">Total</font>', st["cell"])] + [_cell(c, sec["total"].get(c["code"]), st) for c in cols])
     first = 128 if len(cols) > 6 else 170
     rest = (WIDTH - first) / len(cols)
@@ -161,7 +162,7 @@ def _table(sec, st):
     style = [("BACKGROUND", (0, 0), (-1, 0), NAVY), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, LIGHT]),
              ("LINEBELOW", (0, 0), (-1, -1), 0.2, RULE), ("TOPPADDING", (0, 0), (-1, -1), 2.2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2.2),
              ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4)]
-    if len(sec["rows"]) > 1:
+    if totalled:
         style += [("LINEABOVE", (0, -1), (-1, -1), 0.8, NAVY), ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#E7ECF4"))]
     t.setStyle(TableStyle(style))
     return t
@@ -310,7 +311,7 @@ def build_pdf(r: dict) -> bytes:
     story.append(Paragraph("Sales are each app's own figure: Zomato's Sales plus Swiggy's Net Sales. Payout figures are summed from the platforms' order statements.", st["small"]))
 
     for sec in r["sections"]:  # sections follow one another: a short table shares the page with the next one
-        block = [Paragraph(sec["title"], st["h2"]), _table(sec, st)]
+        block = [Paragraph(sec["title"], st["h2"]), _table(sec, st)] + ([Paragraph(sec["note"], st["small"])] if sec.get("note") else [])
         story += [KeepTogether(block)] if len(sec["rows"]) <= 12 else block
     chart = _month_chart(r["months"])
     if chart is not None:

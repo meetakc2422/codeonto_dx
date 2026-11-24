@@ -48,7 +48,14 @@ MODULES = [
     ("complaints", "Complaints", "Complaints by type, per outlet and per 100 orders"),
     ("payouts", "Payouts", "Net order value, GST, fees, deductions and payout from the order statements"),
     ("months", "Month by month", "Sales, payout, ads and discounts for the last 6 months"),
+    ("weekdays", "Weekdays vs weekends", "Average per day on weekdays (Mon-Fri) against weekends (Sat-Sun): sales, ads and the customer funnel"),
 ]
+# the weekday/weekend tables: (title, KPI codes). Ratios are worked out from the group's own totals, not by averaging daily ratios.
+DAYTYPE_TABLES = [("Sales, weekday vs weekend", ["sales", "delivered_orders", "avg_order_value"]),
+                  ("Ads, weekday vs weekend", ["ad_spend", "ad_sales", "ad_orders", "ad_roi"]),
+                  ("Funnel, weekday vs weekend", ["impressions", "menu_views", "add_to_cart", "funnel_orders", "menu_to_order_pct"])]
+DAYTYPE_RATIOS = {"avg_order_value": ("sales", "delivered_orders", 1), "ad_roi": ("ad_sales", "ad_spend", 1), "menu_to_order_pct": ("funnel_orders", "menu_views", 100)}
+WEEKEND = (5, 6)  # Saturday, Sunday
 # Each app reports its own sales figure under its own name: Zomato's "Sales" is saved as gross_revenue, Swiggy's "Net Sales" as net_revenue.
 # The report's Sales adds each platform's own figure, so Swiggy is counted too.
 SALES_SOURCES = (("zomato", "gross_revenue"), ("swiggy", "net_revenue"))
@@ -65,6 +72,48 @@ def _sales(outlet_ids, platform, s, e) -> dict[int, float]:
             q |= Q(platform_id=plat, kpi__code=code)
     rows = MetricDaily.objects.filter(q, outlet_id__in=list(outlet_ids), metric_date__range=(s, e)).values("outlet_id").annotate(v=Sum("value"))
     return {r["outlet_id"]: float(r["v"]) for r in rows if r["v"] is not None}
+
+
+def _sales_daily(outlet_ids, platform, s, e) -> dict[date, float]:
+    q = Q(pk__in=[])
+    for plat, code in SALES_SOURCES:
+        if not platform or platform == plat:
+            q |= Q(platform_id=plat, kpi__code=code)
+    rows = MetricDaily.objects.filter(q, outlet_id__in=list(outlet_ids), metric_date__range=(s, e)).values("metric_date").annotate(v=Sum("value"))
+    return {r["metric_date"]: float(r["v"]) for r in rows if r["v"] is not None}
+
+
+def _daytype_sections(series: dict, meta: dict) -> list[dict]:
+    """Average per day on weekdays and on weekends, from the daily series {code: {date: value}}. A day with no value for a figure is left out of that figure's average."""
+    def total(code, weekend):
+        days = [d for d, v in series.get(code, {}).items() if (d.weekday() in WEEKEND) == weekend]
+        return sum(series[code][d] for d in days), days
+
+    def value(code, weekend):
+        if code in DAYTYPE_RATIOS:
+            num, den, k = DAYTYPE_RATIOS[code]
+            both = [d for d in series.get(num, {}) if d in series.get(den, {}) and (d.weekday() in WEEKEND) == weekend]
+            n, d_ = sum(series[num][d] for d in both), sum(series[den][d] for d in both)
+            return n / d_ * k if d_ else None
+        t, days = total(code, weekend)
+        return t / len(days) if days else None
+
+    out = []
+    for title, codes in DAYTYPE_TABLES:
+        cols = [{"code": c, "name": meta[c].name, "unit": meta[c].unit, "higher_is_better": meta[c].higher_is_better} for c in codes if c in meta]
+        wd = {c["code"]: value(c["code"], False) for c in cols}
+        we = {c["code"]: value(c["code"], True) for c in cols}
+        if all(v is None for v in wd.values()) and all(v is None for v in we.values()):
+            continue
+        def diff(c):
+            pct = (we[c["code"]] - wd[c["code"]]) / wd[c["code"]] * 100
+            return f'{c["name"].lower()} {"about the same" if abs(pct) < 0.5 else f"{pct:+.0f}%"}'
+        diffs = [diff(c) for c in cols if we[c["code"]] is not None and wd[c["code"]]]
+        note = ("Weekends against weekdays: " + ", ".join(diffs) + ".") if diffs else "Not enough weekday and weekend days in this period to compare."
+        out.append({"key": "weekdays", "title": title, "kind": "daytype", "first": "Day type", "columns": cols, "note": note,
+                    "rows": [{"outlet_id": 0, "name": "Weekday average (Mon-Fri)", **wd}, {"outlet_id": 0, "name": "Weekend average (Sat-Sun)", **we}],
+                    "total": {}})
+    return out
 
 
 def _pct_change(cur, prev):
@@ -237,6 +286,15 @@ def build(request, brand_id: int) -> dict:
         months.append({"month": key, "sales": sales, "payout": float(mp[key]["pay"]) if key in mp and mp[key]["pay"] is not None else None,
                        "ads_pct": round(ads / sales * 100, 1) if sales and ads is not None else None,
                        "discount_pct": round(disc / sales * 100, 1) if sales and disc is not None else None})
+
+    # weekday and weekend averages
+    if "weekdays" in wanted:
+        series = defaultdict(dict)
+        for r_ in _aggregate(True, False, start=start, end=end, **base):
+            if r_["value"] is not None:
+                series[r_["code"]][r_["metric_date"]] = r_["value"]
+        series["sales"] = _sales_daily(outlets, f["platform"], start, end)
+        sections += _daytype_sections(series, meta)
 
     # what changed most, in plain words (only changes of 10% or more, and only where there was something before)
     notes = []

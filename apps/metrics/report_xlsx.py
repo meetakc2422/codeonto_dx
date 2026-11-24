@@ -165,7 +165,7 @@ def _section(wb, sec, r):
     ws["A2"].font = Font(name=FONT, size=9, color=GREY)
     top = 4
     width = 3 if with_change else 1
-    _head(ws.cell(row=top, column=1), "Outlet", "left")
+    _head(ws.cell(row=top, column=1), sec.get("first", "Outlet"), "left")
     if with_change:
         ws.merge_cells(start_row=top, start_column=1, end_row=top + 1, end_column=1)
     for i, c in enumerate(cols):
@@ -217,8 +217,10 @@ def _section(wb, sec, r):
     for rrow in sec["rows"]:
         put(row, rrow["name"], rrow)
         row += 1
-    if len(sec["rows"]) > 1:
+    if len(sec["rows"]) > 1 and sec.get("kind") != "daytype":
         put(row, "Total", sec["total"], bold=True)
+    if sec.get("note"):
+        ws.cell(row=row + 2, column=1, value=sec["note"]).font = Font(name=FONT, size=9, color=GREY)
     ws.freeze_panes = ws.cell(row=first, column=2)
     ws.page_setup.orientation, ws.page_setup.fitToWidth, ws.page_setup.fitToHeight = "landscape", 1, 0
     ws.sheet_properties.pageSetUpPr.fitToPage = True
