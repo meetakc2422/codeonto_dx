@@ -285,7 +285,8 @@ def build_drawings(r: dict, with_tiles: bool = True) -> list[Drawing]:
         rest = rows
     chunks = [rest[k:k + 2] for k in range(0, len(rest), 2)]
     if len(chunks) > 1 and len(chunks[-1]) == 1:  # same for the later pages: fold the lone row into the page before
-        chunks[-2] = chunks[-2] + chunks.pop()
+        last = chunks.pop()
+        chunks[-1] = chunks[-1] + last
     for chunk in chunks:
         h = row_h if len(chunk) < 3 else (2 * row_h + gap - (len(chunk) - 1) * gap) / len(chunk)
         d = Drawing(W, len(chunk) * h + (len(chunk) - 1) * gap)
