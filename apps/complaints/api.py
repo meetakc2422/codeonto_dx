@@ -9,6 +9,7 @@ from rest_framework.response import Response
 from apps.billing.access import require_module
 from apps.outlets.access import get_brand, in_scope, require_outlet_edit, outlet_ids
 
+from . import insights
 from .models import Complaint
 
 # the platform's response window ends within this many hours: shown as "expiring soon"
@@ -25,11 +26,15 @@ def _json(c: Complaint) -> dict:
             "resolved_at": c.resolved_at}
 
 
-def _filtered(request, brand_id):
+def _filtered(request, brand_id, prior=False):
+    """The complaints in view; prior=True gives the period just before it, of the same length, for "up or down"."""
     require_module(request.user, get_brand(request.user, brand_id), "tickets")
     qp = request.query_params
     end = date.fromisoformat(qp["end"]) if qp.get("end") else date.today()
     start = date.fromisoformat(qp["start"]) if qp.get("start") else end - timedelta(days=29)
+    if prior:
+        span = end - start + timedelta(days=1)
+        start, end = start - span, start - timedelta(days=1)
     qs = in_scope(Complaint.objects.filter(outlet__brand_id=brand_id, raised_at__date__range=(start, end)), request.user)
     if outlet_ids(qp.get("outlet_id")):
         qs = qs.filter(outlet_id__in=outlet_ids(qp.get("outlet_id")))
@@ -62,8 +67,9 @@ def complaints_summary(request, brand_id):
                           expiring=Count("id", filter=~Q(status="resolved") & Q(expires_at__gt=now,
                                                                               expires_at__lte=now + timedelta(hours=EXPIRING_HOURS))))
     totals["refunds"] = float(totals["refunds"] or 0)
+    insight = insights.build(qs.values_list("items", "issue_type", "issue_detail", "customer_context", "refund_amount", "outlet_id").iterator())
     return Response({
-        **totals,
+        **totals, **insight, "previous_total": _filtered(request, brand_id, prior=True)[0].count(),
         "by_issue": [{"issue_type": r["issue_type"] or "other", "count": r["count"], "refunds": float(r["refunds"] or 0)}
                      for r in qs.values("issue_type").annotate(count=Count("id"), refunds=Sum("refund_amount")).order_by("-count")],
         "by_outlet": [{"outlet_id": r["outlet_id"], "count": r["count"], "open": r["open"], "refunds": float(r["refunds"] or 0)}

@@ -46,6 +46,8 @@ def brand_reviews(request, brand_id):
         qs = qs.filter(outlet_id__in=outlet_ids(qp.get("outlet_id")))
     if qp.get("platform"):
         qs = qs.filter(platform_id=qp["platform"])
+    if qp.get("start") and qp.get("end"):  # the same dates the summary above counts, so a number and the list under it agree
+        qs = qs.filter(reviewed_at__date__range=(date.fromisoformat(qp["start"]), date.fromisoformat(qp["end"])))
     if qp.get("rating") in RATING_BANDS:
         lo, hi = RATING_BANDS[qp["rating"]]
         qs = qs.filter(rating__gte=lo, rating__lte=hi)
@@ -84,6 +86,19 @@ def _by_topic(qs) -> dict:
     return {"topics": rows, "no_text": no_text}
 
 
+def _links(qs) -> list[dict]:
+    """How often each rating band, topic, outlet and platform occur together, so the page can light up whatever is linked to a click."""
+    links = {}
+    for body, rating, outlet, platform in qs.values_list("body", "rating", "outlet_id", "platform_id").iterator():
+        band = "" if rating is None else "neg" if rating < 3 else "mid" if rating < 4 else "pos"
+        found = topics_of(body) if (body or "").strip() else []
+        for topic in (found or (["other"] if (body or "").strip() else [""])):
+            k = (band, topic, outlet, platform)
+            links[k] = links.get(k, 0) + 1
+    top = sorted(links.items(), key=lambda kv: -kv[1])[:800]
+    return [{"band": b, "topic": t, "outlet": o, "platform": p, "n": n} for (b, t, o, p), n in top]
+
+
 @api_view(["GET"])
 def reviews_summary(request, brand_id):
     get_brand(request.user, brand_id)
@@ -103,6 +118,7 @@ def reviews_summary(request, brand_id):
     return Response({
         **totals,
         "by_topic": _by_topic(qs),
+        "links": _links(qs),
         "by_rating": list(qs.annotate(stars=Floor("rating")).values("stars").annotate(count=Count("id")).order_by("-stars")),
         "by_platform": [{"platform": r["platform_id"], "count": r["count"],
                          "avg_rating": round(float(r["avg"]), 2) if r["avg"] is not None else None}

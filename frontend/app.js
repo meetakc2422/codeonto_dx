@@ -381,6 +381,7 @@ async function render() {
   ensureAssistant();
   renderSidebar();
   destroyCharts();
+  STAT_PCT = {};  // each page sets its own tile bars
   closePicker();
   const route = currentRoute();
   // a slow page (Overview makes 8 requests) must not paint over the page opened after it: once a newer render starts,
@@ -1227,10 +1228,82 @@ function funnelCard(kpis) {
     </div>`).join("")}</div>`;
 }
 
+// the outlets that need a look first: small cards (name, headline number, bar, badges); a click filters to that outlet, and the full table opens under them
+function attentionCard({ hint, items, total, allKey, showAll, tableHtml }) {
+  const card = (x) => `<button type="button" class="dn-ocard" data-outlet="${x.id}" title="${esc(x.full || "")}">
+    <b class="dn-oname">${esc(x.name)}</b><small>${x.sub}</small>
+    <i class="dn-obar"><u style="width:${Math.max(4, Math.round(x.pct))}%;background:${x.barColor}"></u></i>
+    <span class="dn-oval ${x.tone || ""}">${x.value}</span>
+    <span class="dn-pills">${(x.pills || []).map((t) => `<em class="${t.tone}">${t.text}</em>`).join("")}</span></button>`;
+  return `<div class="card cp-card dn-attn"><div class="cp-head"><h3>Needs attention</h3><span class="muted">${hint}</span>
+    ${total > items.length ? `<button type="button" class="dn-all" data-more="${allKey}">${showAll ? "Hide table" : `All ${total} outlets ›`}</button>` : ""}</div>
+    <div class="dn-ocards">${items.map(card).join("")}</div>${showAll ? tableHtml : ""}</div>`;
+}
+
+// summary tiles (reviews, complaints, ...): an icon, the big number, a small note and, where it makes sense, a bar showing the share it stands for
+const STAT_ICONS = [
+  [/rating|avg/i, '<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>'],
+  [/negative|open|expir/i, '<path d="M12 4l9 16H3z"/><path d="M12 10v4M12 17v.01"/>'],
+  [/pending|progress|window/i, '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>'],
+  [/resolved|replied/i, '<circle cx="12" cy="12" r="9"/><path d="M8 12.5l3 3 5-6"/>'],
+  [/review|complaint/i, '<path d="M4 5h16v11H9l-5 4z"/>'],
+  [/refund/i, '<path d="M7 5h10M7 9h10M7 5c5 0 5 7 0 7h-1l6 7"/>'],
+];
+let STAT_PCT = {};  // label -> 0..100, set by the page before it draws its tiles
+function statTile(label, value, tone = "", sub = "") {
+  const ico = (STAT_ICONS.find(([re]) => re.test(label)) || [0, '<path d="M5 19V9M12 19V5M19 19v-7"/>'])[1];
+  const pct = STAT_PCT[label];
+  return `<div class="cp-stat ${tone}"><span><i class="cs-ico"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ico}</svg></i>${label}</span>
+    <b>${value}</b>${sub ? `<small>${sub}</small>` : ""}${pct != null && isFinite(pct) ? `<em class="cs-bar"><u style="--w:${Math.max(2, Math.min(100, pct)).toFixed(0)}%"></u></em>` : ""}</div>`;
+}
+
+// ---------- donut cards: a share of the whole, each slice a click-to-filter button (the legend holds the exact numbers) ----------
+const shade = (hex, amt) => {  // mix a #rrggbb colour toward white (amt > 0) or black (amt < 0)
+  const n = parseInt(hex.slice(1), 16), t = amt < 0 ? 0 : 255, k = Math.abs(amt);
+  const mix = (c) => Math.round(c + (t - c) * k);
+  return `rgb(${mix(n >> 16)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
+};
+const DONUT_COLORS = ["#408fca", "#f59e0b", "#10b981", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#64748b"];
+function donutCard(id, title, hint, slices, centerLabel, cls = "", foot = "") {
+  slices = slices.filter((x) => x.count > 0);
+  if (!slices.length) return { html: "", mount() {} };
+  const total = slices.reduce((t, x) => t + x.count, 0), anyOn = slices.some((x) => x.on);
+  const html = `<div class="dn-ring ${cls}"><div class="dn-rh"><b>${title}</b>${hint ? `<small>${hint}</small>` : ""}</div>
+    <div class="dn-body"><div class="dn-chart"><canvas id="dn_${id}"></canvas><div class="dn-center"><b data-count="${total}">${inr.format(total)}</b><span>${centerLabel}</span></div></div>
+    <div class="dn-legend">${slices.map((x) => `<button type="button" class="dn-item ${x.on ? "on" : ""}" data-dn="${id}:${x.key}" ${x.attr || ""} title="${esc([x.tip, x.sub].filter(Boolean).join(" · "))}">
+      <i style="background:${x.color}"></i><span class="dn-name">${esc(x.label)}</span><b>${inr.format(x.count)}</b><span class="muted">${Math.round((x.count / total) * 100)}%</span></button>`).join("")}${foot}</div></div></div>`;
+  const mount = () => {
+    const el = document.getElementById(`dn_${id}`);
+    if (!el) return;
+    const ring = chart(el, { type: "doughnut",
+      data: { labels: slices.map((x) => x.label), datasets: [{ data: slices.map((x) => x.count), borderWidth: 2, borderColor: "#fff", hoverOffset: 12,
+        backgroundColor: (c) => {  // light on top, darker below: the ring looks like it has volume
+          const x = slices[c.dataIndex], a = c.chart.chartArea;
+          if (!x || !a) return x ? x.color : "#ccc";
+          const g = c.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
+          g.addColorStop(0, shade(x.color, 0.32)); g.addColorStop(0.55, x.color); g.addColorStop(1, shade(x.color, -0.28));
+          return anyOn && !x.on ? shade(x.color, 0.6) : g;
+        } }] },
+      options: { maintainAspectRatio: false, devicePixelRatio: Math.max(2, window.devicePixelRatio || 1), cutout: "68%", layout: { padding: 8 }, animation: { animateRotate: true, animateScale: true, duration: 900, easing: "easeOutQuart" }, plugins: { legend: { display: false }, tooltip: { displayColors: false, padding: 6, bodyFont: { size: 12 }, callbacks: { title: () => "", label: (c) => `${c.label}: ${inr.format(c.parsed)}` } } },
+        onClick: (e, els) => { if (els.length) document.querySelector(`[data-dn="${id}:${slices[els[0].index].key}"]`)?.click(); } } });
+    document.querySelectorAll(`[data-dn^="${id}:"]`).forEach((b, i) => {  // hovering a legend row pops its slice out
+      b.addEventListener("mouseenter", () => { ring.setActiveElements([{ datasetIndex: 0, index: i }]); ring.update(); });
+      b.addEventListener("mouseleave", () => { ring.setActiveElements([]); ring.update(); });
+    });
+    const num = el.parentElement.querySelector("[data-count]");  // the centre number counts up as the ring draws
+    if (num && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const end = Number(num.dataset.count), t0 = performance.now();
+      const tick = (t) => { const k = Math.min(1, (t - t0) / 900); num.textContent = inr.format(Math.round(end * (1 - Math.pow(1 - k, 3)))); if (k < 1) requestAnimationFrame(tick); };
+      requestAnimationFrame(tick);
+    }
+  };
+  return { html, mount };
+}
+
 // ---------- reviews inbox ----------
 const reviewFilters = { rating: "", status: "", q: "", contact: "", topic: "", offset: 0 };
-const reviewUi = { topicsAll: false, outletsAll: false };  // the topic and outlet lists show the top few until asked for all
-const REVIEW_TOP_TOPICS = 6, REVIEW_TOP_OUTLETS = 5;
+const reviewUi = { topicsAll: false, outletsAll: false, listOpen: false };  // the topic and outlet lists show the top few until asked for all
+const REVIEW_TOP_TOPICS = 5, REVIEW_TOP_OUTLETS = 5;
 
 let reviewRows = new Map();
 const RATING_BAND = { 1: "neg", 2: "neg", 3: "mid", 4: "pos", 5: "pos" };
@@ -1252,75 +1325,80 @@ async function renderReviews(page) {
   const short = (n) => n.split(" · ").slice(1).join(" · ") || n;
   const pct = (n, of = s.total) => (of ? `${Math.round((n / of) * 100)}%` : "—");
   const meter = (n, max) => `<span class="cp-meter"><i style="width:${(n / Math.max(1, max)) * 100}%"></i></span>`;
-  const stat = (label, value, tone = "", sub = "") => `<div class="cp-stat ${tone}"><span>${label}</span><b>${value}</b>${sub ? `<small class="muted" style="display:block;font-size:12px;margin-top:2px">${sub}</small>` : ""}</div>`;
+  const stat = statTile;
   const avg = (v) => (v == null ? "—" : `<span class="rv-avg ${v < 3.5 ? "cp-bad" : v < 4 ? "cp-warn" : ""}">${v.toFixed(2)} ★</span>`);
   const maxStar = Math.max(1, ...s.by_rating.map((r) => r.count));
   const maxPlat = Math.max(1, ...s.by_platform.map((r) => r.count));
   const maxNeg = Math.max(1, ...s.by_outlet.map((r) => r.negative));
   const allTopics = (s.by_topic?.topics || []).filter((t) => t.count).sort((a, b) => (b.slug === "food_safety" && b.negative) - (a.slug === "food_safety" && a.negative) || b.negative - a.negative || b.count - a.count);
   const topicList = reviewUi.topicsAll ? allTopics : allTopics.filter((t, i) => i < REVIEW_TOP_TOPICS || t.slug === reviewFilters.topic);
-  const outletList = reviewUi.outletsAll ? s.by_outlet : s.by_outlet.slice(0, REVIEW_TOP_OUTLETS);
+  const outletList = s.by_outlet;  // the full table, shown under the cards on request
+  const attentionItems = s.by_outlet.slice(0, 4).map((r) => ({ id: r.outlet_id, name: short(names.get(r.outlet_id) || `Outlet ${r.outlet_id}`), full: names.get(r.outlet_id) || "",
+    sub: `${inr.format(r.count)} review${r.count === 1 ? "" : "s"}`, value: r.avg_rating == null ? "—" : `${r.avg_rating.toFixed(2)} ★`, tone: r.avg_rating == null ? "" : r.avg_rating < 3.5 ? "bad" : r.avg_rating < 4 ? "warn" : "",
+    pct: (r.negative / maxNeg) * 100, barColor: r.negative ? "#dc2626" : "#cbd5e1",
+    pills: [r.negative ? { text: `${inr.format(r.negative)} negative`, tone: "bad" } : null, r.pending ? { text: `${inr.format(r.pending)} pending`, tone: "warn" } : null].filter(Boolean) }));
+  const ratingBands = [["neg", "1–2★", "#dc2626"], ["mid", "3★", "#f59e0b"], ["pos", "4–5★", "#16a34a"]];
+  const bandCount = (b) => s.by_rating.filter((r) => RATING_BAND[r.stars] === b).reduce((t, r) => t + r.count, 0);
+  const ratingDonut = donutCard("rating", "By rating", "click a slice to filter", ratingBands.map(([b, label, color]) => ({ key: b, label, color, count: bandCount(b), on: reviewFilters.rating === b, attr: `data-band="${b}"`, tip: b === "neg" ? "Negative reviews" : b === "pos" ? "Positive reviews" : "Neutral reviews" })), "reviews");
+  const platformDonut = donutCard("platform", "By platform", "where the reviews came from", s.by_platform.map((r, i) => ({ key: r.platform, label: r.platform === "zomato" ? "Zomato" : r.platform === "swiggy" ? "Swiggy" : r.platform, color: PLATFORM_COLORS[r.platform] || DONUT_COLORS[i % DONUT_COLORS.length], count: r.count, attr: `data-platform="${r.platform}"`, sub: r.avg_rating != null ? `avg ${r.avg_rating.toFixed(2)} ★` : "" })), "reviews");
+  const topicDonut = donutCard("topic", "What customers talk about", `${reviewFilters.topic ? "click again to clear" : "click a slice to filter"}${s.by_topic?.no_text ? ` · ${inr.format(s.by_topic.no_text)} rated with no text` : ""}`,
+    [...topicList.map((t, i) => ({ key: t.slug, label: t.slug === "other" ? "No specific topic" : t.label, color: t.slug === "food_safety" ? "#dc2626" : DONUT_COLORS[i % DONUT_COLORS.length], count: t.count, on: reviewFilters.topic === t.slug,
+        attr: `data-topic="${t.slug}"`, sub: t.negative ? `${inr.format(t.negative)} negative` : "", tip: `${t.count} review${t.count === 1 ? "" : "s"} mention this, ${t.negative} of them 1–2★` })),
+     ...(!reviewUi.topicsAll && allTopics.length > topicList.length ? [{ key: "more", label: `${allTopics.length - topicList.length} more topics`, color: "#94a3b8", attr: 'data-more="topicsAll"',
+        count: allTopics.filter((t) => !topicList.includes(t)).reduce((n, t) => n + t.count, 0) }] : [])], "mentions", "",
+    reviewUi.topicsAll && allTopics.length > REVIEW_TOP_TOPICS ? '<button type="button" class="dn-item dn-more" data-more="topicsAll">Show fewer</button>' : "");
+  const donuts = [ratingDonut, platformDonut, topicDonut];
+  STAT_PCT = { "Platform rating": listing ? (Number(listing.value) / 5) * 100 : null, "Avg of reviews received": s.avg_rating != null ? (s.avg_rating / 5) * 100 : null,
+    "Negative (1–2★)": s.total ? (s.negative / s.total) * 100 : null, "Pending reply": s.total ? (s.replied / s.total) * 100 : null };
+  const showList = reviewUi.listOpen || reviewFilters.rating || reviewFilters.topic || reviewFilters.status || reviewFilters.q || reviewFilters.contact;  // the list stays out of the way until a slice is clicked
   page.innerHTML = `
+    <i id="lkMarker" hidden></i>
     <div class="card cp-stats">
       ${listing ? stat("Platform rating", `${Number(listing.value).toFixed(2)} ★`, "", `${ratingTotal ? compactCount(ratingTotal.value) + " ratings" : ""}${ratingTrend}`.replace(/^ · /, "")) : stat("Avg of reviews received", s.avg_rating != null ? `${s.avg_rating} ★` : "—", "", "only orders where the customer left a review")}${reviewTotal ? stat("Total reviews", compactCount(reviewTotal.value), "", `${reviewTrend}${inr.format(s.total)} in the feed · avg ${s.avg_rating != null ? s.avg_rating + " ★" : "—"}`) : stat("Reviews", inr.format(s.total))}
       ${stat("Negative (1–2★)", inr.format(s.negative), s.negative ? "bad" : "")}${stat("Pending reply", inr.format(s.pending), s.pending ? "warn" : "", `${inr.format(s.replied)} replied · ${pct(s.replied)}`)}
     </div>
-    ${s.by_topic?.topics?.some((t) => t.count) ? `<div class="card cp-card rv-topics">
-      <div class="cp-head"><h3>What customers talk about</h3><span class="muted">${reviewFilters.topic ? "click again to clear" : "click a topic to filter the reviews"}${s.by_topic.no_text ? ` · ${inr.format(s.by_topic.no_text)} rated with no text` : ""}</span></div>
-      <div class="rv-topic-row">${topicList.map((t) =>
-        `<button type="button" class="rv-topic ${t.slug === "food_safety" ? "danger" : ""} ${reviewFilters.topic === t.slug ? "on" : ""}" data-topic="${t.slug}" title="${t.count} review${t.count === 1 ? "" : "s"} mention this, ${t.negative} of them 1–2★">${esc(t.label)} <b>${inr.format(t.count)}</b>${t.negative ? `<small>${inr.format(t.negative)} negative</small>` : ""}</button>`).join("")}${allTopics.length > REVIEW_TOP_TOPICS ? `<button type="button" class="btn light" data-more="topicsAll">${reviewUi.topicsAll ? "Show fewer" : `Show all ${allTopics.length}`}</button>` : ""}</div></div>` : ""}
-    ${s.total ? `<div class="cp-grid rv-grid ${s.by_platform.length > 1 ? "" : "two"}">
-      <div class="card cp-card"><div class="cp-head"><h3>By rating</h3><span class="muted">click to filter</span></div>
-        <table class="cp-table"><thead><tr><th>Stars</th><th class="num">#</th><th class="num">Share</th><th></th></tr></thead><tbody>
-        ${s.by_rating.map((r) => `<tr class="cp-click ${reviewFilters.rating === RATING_BAND[r.stars] ? "on" : ""}" data-band="${RATING_BAND[r.stars] || ""}">
-          <td>${stars(r.stars)}</td><td class="num"><b>${inr.format(r.count)}</b></td><td class="num muted">${pct(r.count)}</td>
-          <td class="cp-mcell">${meter(r.count, maxStar)}</td></tr>`).join("")}
-        </tbody></table></div>
-      ${s.by_platform.length > 1 ? `<div class="card cp-card"><div class="cp-head"><h3>By platform</h3></div>
-        <table class="cp-table"><thead><tr><th>Platform</th><th class="num">#</th><th class="num">Avg</th><th></th></tr></thead><tbody>
-        ${s.by_platform.map((r) => `<tr><td>${platformPill(r.platform)}</td><td class="num"><b>${inr.format(r.count)}</b></td>
-          <td class="num">${avg(r.avg_rating)}</td><td class="cp-mcell">${meter(r.count, maxPlat)}</td></tr>`).join("")}
-        </tbody></table></div>` : ""}
-      <div class="card cp-card rv-wide"><div class="cp-head"><h3>By outlet</h3><span class="muted">most negative first · click to filter</span></div>
-        <div class="cp-scroll"><table class="cp-table"><thead><tr><th>Outlet</th><th class="num">#</th><th class="num">Avg</th>
+    ${s.total ? `<div class="dn-rings">${ratingDonut.html}${s.by_platform.length > 1 ? platformDonut.html : ""}${topicDonut.html}</div>
+    ${attentionCard({ hint: "most negative first · click to filter", total: s.by_outlet.length, allKey: "outletsAll", showAll: reviewUi.outletsAll, items: attentionItems,
+      tableHtml: `        <div class="cp-scroll"><table class="cp-table"><thead><tr><th>Outlet</th><th class="num">#</th><th class="num">Avg</th>
           <th class="num">1–2★</th><th></th><th class="num">Pending</th></tr></thead><tbody>
         ${outletList.map((r) => `<tr class="cp-click" data-outlet="${r.outlet_id}">
           <td class="cp-ellip" title="${esc(names.get(r.outlet_id) || "")}">${esc(short(names.get(r.outlet_id) || `Outlet ${r.outlet_id}`))}</td>
           <td class="num">${inr.format(r.count)}</td><td class="num">${avg(r.avg_rating)}</td>
           <td class="num ${r.negative ? "cp-bad" : "muted"}">${inr.format(r.negative)}</td><td class="cp-mcell">${meter(r.negative, maxNeg)}</td>
           <td class="num ${r.pending ? "cp-warn" : "muted"}">${inr.format(r.pending)}</td></tr>`).join("")}
-        </tbody></table></div>${s.by_outlet.length > REVIEW_TOP_OUTLETS ? `<button type="button" class="btn light" data-more="outletsAll" style="margin-top:8px">${reviewUi.outletsAll ? "Show fewer" : `Show all ${s.by_outlet.length}`}</button>` : ""}</div>
-    </div>` : ""}
-    <div class="card cp-card">
+        </tbody></table></div>` })}` : ""}
+    ${showList ? `    <div class="card cp-card">
       <div class="toolbar cp-toolbar">
         <input id="rq" type="search" placeholder="Search review text…" value="${esc(reviewFilters.q)}">
         <select id="rRating"><option value="">All ratings</option><option value="neg">1–2 ★</option><option value="mid">3 ★</option><option value="pos">4–5 ★</option></select>
         <select id="rStatus"><option value="">Any status</option>${Object.entries(REPLY_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
         <label class="check nowrap" title="Customers who chose on Zomato to share their number with the restaurant"><input type="checkbox" id="rContact" ${reviewFilters.contact ? "checked" : ""}> Number shared</label>
         <span class="muted">click a row to read it and reply</span>
+        <button class="btn light" id="closeList" style="margin-left:auto">Hide list ✕</button>
       </div>
       <div class="table-wrap"><table class="cp-table cp-list"><thead><tr>
         <th>When</th><th>Outlet</th><th></th><th>Rating</th><th>Review</th><th>Customer</th><th>Reply</th></tr></thead>
         <tbody id="reviewList"></tbody></table></div>
       <div style="text-align:center;margin-top:8px"><button class="btn light" id="moreBtn">Load more</button></div>
-    </div>`;
-  $("#rRating").value = reviewFilters.rating;
-  $("#rStatus").value = reviewFilters.status;
+    </div>`
+      : `<div class="card cp-card dn-prompt"><span class="muted">Click a slice above to read those reviews.</span> <button class="btn light" id="showAll">Show all reviews</button></div>`}`;
+  if (showList) { $("#rRating").value = reviewFilters.rating; $("#rStatus").value = reviewFilters.status; }
+  donuts.forEach((d) => d.mount());
   let timer;
-  $("#rq").addEventListener("input", (e) => { clearTimeout(timer); timer = setTimeout(() => { reviewFilters.q = e.target.value; loadReviews(true); }, 300); });
-  $("#rRating").addEventListener("change", (e) => { reviewFilters.rating = e.target.value; render(); });
-  $("#rStatus").addEventListener("change", (e) => { reviewFilters.status = e.target.value; loadReviews(true); });
-  $("#rContact").addEventListener("change", (e) => { reviewFilters.contact = e.target.checked ? "shared" : ""; loadReviews(true); });
-  page.querySelectorAll("[data-topic]").forEach((b) => b.addEventListener("click", () => {
-    reviewFilters.topic = reviewFilters.topic === b.dataset.topic ? "" : b.dataset.topic; render();
-  }));
-  page.querySelectorAll("[data-band]").forEach((r) => r.addEventListener("click", () => {
-    reviewFilters.rating = reviewFilters.rating === r.dataset.band ? "" : r.dataset.band; render();
-  }));
-  page.querySelectorAll("[data-outlet]").forEach((r) => r.addEventListener("click", () => {
-    state.locationId = r.dataset.outlet; showSelectedOutlet(); render();
-  }));
+  $("#showAll")?.addEventListener("click", () => { reviewUi.listOpen = true; render(); });
+  $("#closeList")?.addEventListener("click", () => { Object.assign(reviewFilters, { rating: "", status: "", q: "", contact: "", topic: "" }); reviewUi.listOpen = false; render(); });
+  $("#rq")?.addEventListener("input", (e) => { clearTimeout(timer); timer = setTimeout(() => { reviewFilters.q = e.target.value; loadReviews(true); }, 300); });
+  $("#rRating")?.addEventListener("change", (e) => { reviewFilters.rating = e.target.value; render(); });
+  $("#rStatus")?.addEventListener("change", (e) => { reviewFilters.status = e.target.value; loadReviews(true); });
+  $("#rContact")?.addEventListener("change", (e) => { reviewFilters.contact = e.target.checked ? "shared" : ""; loadReviews(true); });
   page.querySelectorAll("[data-more]").forEach((b) => b.addEventListener("click", () => { reviewUi[b.dataset.more] = !reviewUi[b.dataset.more]; render(); }));
+  const cfg = { sel: reviewSel, types: ["band", "topic", "outlet", "platform"], noun: "review", noRead: ["platform"],
+    labelOf: (t, k) => (t === "outlet" ? names.get(Number(k)) || `Outlet ${k}` : t === "band" ? { neg: "1–2★ reviews", mid: "3★ reviews", pos: "4–5★ reviews" }[k] : t === "platform" ? (k === "zomato" ? "Zomato" : k === "swiggy" ? "Swiggy" : k) : (allTopics.find((x) => x.slug === k)?.label || k)) };
+  bindLinks(page, s, cfg, (type, key) => {  // "Read them": open the real reviews behind the highlight
+    if (type === "band") reviewFilters.rating = key; else if (type === "topic") reviewFilters.topic = key; else if (type === "outlet") { state.locationId = key; showSelectedOutlet(); }
+    reviewUi.listOpen = true; render();
+  }, reviewLinks);
+  if (!showList) return;
   $("#moreBtn").addEventListener("click", () => loadReviews(false));
   bindReviewTable($("#reviewList"));
   await loadReviews(true);
@@ -1329,7 +1407,7 @@ async function renderReviews(page) {
 async function loadReviews(reset) {
   if (reset) { reviewFilters.offset = 0; reviewRows = new Map(); }
   const rows = await api(`/brands/${state.brandId}/reviews`, {
-    outlet_id: state.locationId, platform: state.platform, reply_status: reviewFilters.status, q: reviewFilters.q,
+    ...range(), outlet_id: state.locationId, platform: state.platform, reply_status: reviewFilters.status, q: reviewFilters.q,
     rating: reviewFilters.rating, contact: reviewFilters.contact, topic: reviewFilters.topic, limit: 50, offset: reviewFilters.offset,
   });
   reviewFilters.offset += rows.length;
@@ -1522,6 +1600,88 @@ const ISSUE_LABELS = { missing_items: "Missing items", wrong_items: "Wrong items
   packaging: "Packaging / spillage", other: "Other" };
 const TICKET_STATUS = [["open", "Open"], ["in_progress", "In progress"], ["resolved", "Resolved"]];
 let complaintRows = new Map();
+const complaintUi = { listOpen: false, outletsAll: false };
+const EXPIRING_LABEL = "6 hours";
+
+// ---------- connected highlight: click an item and everything linked to it lights up, with lines between the dots ----------
+// cfg = { sel: {type, key}, types: [the kinds of clickable item, each marked data-<type>], labelOf(type, key), noRead: [types without a "Read them"] }
+const complaintSel = { type: "", key: "" }, reviewSel = { type: "", key: "" };
+function linkEls(page, type) { return [...page.querySelectorAll(`[data-${type}]`)].filter((el) => el.offsetParent !== null && el.tagName !== "TR"); }
+function applySelection(page, s, cfg) {
+  const sel = cfg.sel;
+  page.querySelectorAll(".lk-n").forEach((n) => n.remove());
+  page.querySelectorAll(".lk-rel, .lk-sel").forEach((el) => el.classList.remove("lk-rel", "lk-sel"));
+  page.classList.toggle("lk-on", !!sel.type);
+  page.querySelector("#lkSvg")?.remove(); page.querySelector("#lkBar")?.remove();
+  cfg.types.forEach((t) => linkEls(page, t).forEach((el) => el.classList.add("lk")));
+  if (!sel.type) return;
+  const { type, key } = sel;
+  const rows = (s.links || []).filter((l) => String(l[type]) === String(key));
+  const total = rows.reduce((t, l) => t + l.n, 0);
+  const weight = {};
+  cfg.types.filter((t) => t !== type).forEach((t) => {
+    weight[t] = new Map();
+    rows.forEach((l) => { const k = String(l[t]); if (k !== "") weight[t].set(k, (weight[t].get(k) || 0) + l.n); });
+  });
+  const selEl = linkEls(page, type).find((el) => el.dataset[type] === String(key));
+  if (selEl) selEl.classList.add("lk-sel");
+  const targets = [];
+  Object.keys(weight).forEach((t) => linkEls(page, t).forEach((el) => {
+    const n = weight[t].get(el.dataset[t]);
+    if (!n) return;
+    el.classList.add("lk-rel");
+    el.insertAdjacentHTML("beforeend", `<span class="lk-n">${inr.format(n)}</span>`);
+    targets.push({ el, n });
+  }));
+  page.insertAdjacentHTML("afterbegin", `<div id="lkBar" class="lk-bar"><span><b>${esc(cfg.labelOf(type, key))}</b> · ${inr.format(total)} ${cfg.noun || "item"}${total === 1 ? "" : "s"} linked</span>
+    ${(cfg.noRead || []).includes(type) ? "" : '<button type="button" class="btn blue" id="lkRead">Read them</button>'}<button type="button" class="btn light" id="lkClear">Clear</button></div>`);
+  if (!selEl || !targets.length) return;
+  requestAnimationFrame(() => drawLinks(page, selEl, targets));
+}
+// one click handler per page render: selects/clears the highlight, and "Read them" hands the selection to the page
+function bindLinks(page, s, cfg, readThem, holder) {
+  const marker = page.querySelector("#lkMarker");  // the handler lives only as long as this render, and never acts on another page
+  const sel = cfg.sel;
+  const onClick = (e) => {
+    if (!marker || !marker.isConnected) return;
+    if (e.target.closest("#lkClear")) { sel.type = ""; sel.key = ""; applySelection(page, s, cfg); return; }
+    if (e.target.closest("#lkRead")) { const { type, key } = sel; sel.type = ""; sel.key = ""; readThem(type, key); return; }
+    if (e.target.closest("#lkBar") || e.target.closest("#complaintList") || e.target.closest("#reviewList")) return;
+    const el = e.target.closest(cfg.types.map((t) => `[data-${t}]`).join(", "));
+    if (!el || !page.contains(el) || el.tagName === "TR") return;
+    const type = cfg.types.find((t) => el.dataset[t] != null);
+    sel.type = sel.key === String(el.dataset[type]) && sel.type === type ? "" : type;
+    sel.key = sel.type ? String(el.dataset[type]) : "";
+    applySelection(page, s, cfg);
+  };
+  if (holder.click) page.removeEventListener("click", holder.click);
+  holder.click = onClick; page.addEventListener("click", onClick);
+  if (holder.resize) window.removeEventListener("resize", holder.resize);
+  holder.resize = () => { if (sel.type && marker.isConnected) applySelection(page, s, cfg); };
+  window.addEventListener("resize", holder.resize);
+  requestAnimationFrame(() => requestAnimationFrame(() => applySelection(page, s, cfg)));
+}
+const complaintLinks = {}, reviewLinks = {};
+function drawLinks(page, selEl, targets) {
+  page.querySelector("#lkSvg")?.remove();
+  const base = page.getBoundingClientRect(), NS = "http://www.w3.org/2000/svg";
+  const svg = document.createElementNS(NS, "svg");
+  svg.id = "lkSvg"; svg.setAttribute("class", "lk-svg"); svg.setAttribute("width", page.scrollWidth); svg.setAttribute("height", page.scrollHeight);
+  const box = (el) => { const r = el.getBoundingClientRect(); return { l: r.left - base.left, r: r.right - base.left, t: r.top - base.top, b: r.bottom - base.top, cx: (r.left + r.right) / 2 - base.left, cy: (r.top + r.bottom) / 2 - base.top }; };
+  const a = box(selEl), max = Math.max(...targets.map((t) => t.n));
+  targets.forEach(({ el, n }, i) => {
+    const z = box(el); let d, p1, p2;
+    if (z.t >= a.b - 4) { p1 = [a.cx, a.b]; p2 = [z.cx, z.t]; const m = (p1[1] + p2[1]) / 2; d = `M${p1[0]} ${p1[1]} C${p1[0]} ${m},${p2[0]} ${m},${p2[0]} ${p2[1]}`; }
+    else if (z.b <= a.t + 4) { p1 = [a.cx, a.t]; p2 = [z.cx, z.b]; const m = (p1[1] + p2[1]) / 2; d = `M${p1[0]} ${p1[1]} C${p1[0]} ${m},${p2[0]} ${m},${p2[0]} ${p2[1]}`; }
+    else { const right = z.cx > a.cx; p1 = [right ? a.r : a.l, a.cy]; p2 = [right ? z.l : z.r, z.cy]; const m = (p1[0] + p2[0]) / 2; d = `M${p1[0]} ${p1[1]} C${m} ${p1[1]},${m} ${p2[1] === p1[1] ? p2[1] : p2[1]},${p2[0]} ${p2[1]}`; }
+    const path = document.createElementNS(NS, "path");
+    path.setAttribute("d", d); path.setAttribute("class", "lk-path"); path.setAttribute("stroke-width", (1.5 + 3 * (n / max)).toFixed(1));
+    svg.appendChild(path);
+    const len = path.getTotalLength(); path.style.strokeDasharray = len; path.style.strokeDashoffset = len; path.style.animationDelay = `${i * 60}ms`;
+    [p1, p2].forEach((pt, k) => { const c = document.createElementNS(NS, "circle"); c.setAttribute("cx", pt[0]); c.setAttribute("cy", pt[1]); c.setAttribute("r", 4.5); c.setAttribute("class", "lk-dot"); c.style.animationDelay = `${i * 60 + (k ? 450 : 0)}ms`; svg.appendChild(c); });
+  });
+  page.appendChild(svg);
+}
 
 async function renderComplaints(page) {
   const s = await api(`/brands/${state.brandId}/complaints/summary`, filterParams());
@@ -1531,52 +1691,85 @@ async function renderComplaints(page) {
   const maxIssue = Math.max(1, ...s.by_issue.map((r) => r.count));
   const maxOutlet = Math.max(1, ...s.by_outlet.map((r) => r.count));
   const meter = (n, max) => `<span class="cp-meter"><i style="width:${(n / max) * 100}%"></i></span>`;
-  const stat = (label, value, tone = "") => `<div class="cp-stat ${tone}"><span>${label}</span><b>${value}</b></div>`;
+  const stat = statTile;
+  const attentionItems = s.by_outlet.slice(0, 4).map((r) => ({ id: r.outlet_id, name: short(names.get(r.outlet_id) || `Outlet ${r.outlet_id}`), full: names.get(r.outlet_id) || "",
+    sub: `${inr.format(r.count)} complaint${r.count === 1 ? "" : "s"}`, value: r.open ? `${inr.format(r.open)} open` : "none open", tone: r.open ? "bad" : "",
+    pct: (r.count / maxOutlet) * 100, barColor: r.open ? "#dc2626" : "#cbd5e1", pills: r.refunds ? [{ text: `${rupees(r.refunds)} refunds`, tone: "warn" }] : [] }));
+  const issueColor = new Map(s.by_issue.map((r, i) => [r.issue_type, DONUT_COLORS[i % DONUT_COLORS.length]]));
+  const issueName = (t) => ISSUE_LABELS[t] || t;
+  const topIssue = s.by_issue[0], topDish = s.by_item?.[0], span = Math.max(1, Math.round((new Date(range().end) - new Date(range().start)) / 864e5) + 1);
+  const change = s.previous_total ? Math.round(((s.total - s.previous_total) / s.previous_total) * 100) : null;
+  const rep = s.repeat || { repeat: 0, first: 0 }, repPct = rep.repeat + rep.first ? Math.round((rep.repeat / (rep.repeat + rep.first)) * 100) : null;
+  const glance = s.total ? `<div class="card cp-card dn-glance">
+    <div class="dn-gline"><b>${inr.format(s.total)} complaint${s.total === 1 ? "" : "s"}</b> in the last ${span} day${span === 1 ? "" : "s"}${change == null ? "" : `, <span class="${change > 0 ? "up" : "down"}">${change > 0 ? "up" : "down"} ${Math.abs(change)}%</span> on the period before`}.
+      ${topIssue ? ` Mostly <b>${esc(issueName(topIssue.issue_type).toLowerCase())}</b> (${Math.round((topIssue.count / s.total) * 100)}%)` : ""}${topDish ? `, and <b>${esc(topDish.dish)}</b> is the dish people mention most (${inr.format(topDish.count)}).` : "."}</div>
+    <div class="dn-gfacts">${s.expiring ? `<span class="bad">${inr.format(s.expiring)} must be answered within ${EXPIRING_LABEL}</span>` : ""}${s.open ? `<span class="warn">${inr.format(s.open)} still open</span>` : `<span class="ok">Nothing open</span>`}${s.refunds ? `<span>${rupees(s.refunds)} refunded</span>` : ""}${repPct != null ? `<span>${repPct}% from repeat customers</span>` : ""}</div></div>` : "";
+  const maxDish = Math.max(1, ...(s.by_item || []).map((r) => r.count));
+  const dishes = s.by_item?.length ? `<div class="card cp-card dn-dishes"><div class="cp-head"><h3>Dishes behind the complaints</h3><span class="muted">click a dish to read its complaints</span></div>
+    ${s.by_item.map((r) => `<button type="button" class="dn-dish ${complaintFilters.q === r.dish ? "on" : ""}" data-dish="${esc(r.dish)}">
+      <span class="dn-dname" title="${esc(r.dish)}">${esc(r.dish)}</span>
+      <i class="dn-dbar"><u style="width:${Math.max(4, Math.round((r.count / maxDish) * 100))}%;background:${issueColor.get(r.issues[0]?.issue_type) || "#94a3b8"}"></u></i>
+      <b>${inr.format(r.count)}</b><em>${esc(r.issues.slice(0, 2).map((x) => issueName(x.issue_type)).join(", "))}</em></button>`).join("")}</div>` : "";
+  const reasons = s.by_reason?.length ? `<div class="card cp-card dn-reasons"><div class="cp-head"><h3>What exactly went wrong</h3><span class="muted">click to read them</span></div>
+    <div class="dn-chips">${s.by_reason.map((r) => `<button type="button" class="dn-chip ${complaintFilters.q === r.reason ? "on" : ""}" data-reason="${esc(r.reason)}">${esc(r.reason)} <b>${inr.format(r.count)}</b></button>`).join("")}</div></div>` : "";
+  const whoDonut = donutCard("who", "Who complains", "repeat customers are your regulars", [{ key: "repeat", label: "Repeat customers", color: "#f59e0b", count: rep.repeat }, { key: "first", label: "First-time customers", color: "#0a84ff", count: rep.first }], "customers");
+  const issueDonut = donutCard("issue", "By issue", "click a slice to filter", s.by_issue.map((r, i) => ({ key: r.issue_type, label: ISSUE_LABELS[r.issue_type] || r.issue_type, color: DONUT_COLORS[i % DONUT_COLORS.length],
+    count: r.count, on: complaintFilters.issue === r.issue_type, attr: `data-issue="${esc(r.issue_type)}"`, sub: r.refunds ? `${rupees(r.refunds)} refunds` : "" })), "complaints");
+  const statusDonut = donutCard("status", "By ticket status", "click a slice to filter", [["open", "Open", "#dc2626", s.open], ["in_progress", "In progress", "#f59e0b", s.in_progress], ["resolved", "Resolved", "#16a34a", s.resolved]]
+    .map(([key, label, color, count]) => ({ key, label, color, count, on: complaintFilters.status === key, attr: `data-status="${key}"` })), "complaints");
+  STAT_PCT = s.total ? { "Open": (s.open / s.total) * 100, "In progress": (s.in_progress / s.total) * 100, "Resolved": (s.resolved / s.total) * 100 } : {};
+  const showList = complaintUi.listOpen || complaintFilters.issue || complaintFilters.status || complaintFilters.q;  // the list stays out of the way until a slice is clicked
   page.innerHTML = `
+    <i id="lkMarker" hidden></i>
+    ${glance}
     <div class="card cp-stats">
       ${stat("Complaints", inr.format(s.total))}${stat("Open", inr.format(s.open), s.open ? "warn" : "")}
       ${stat("In progress", inr.format(s.in_progress))}${stat("Resolved", inr.format(s.resolved), "ok")}
-      ${stat("Refunds", rupees(s.refunds))}${stat("Avg / complaint", s.total ? rupees(s.refunds / s.total) : "—")}
+      ${stat("Refunds", rupees(s.refunds))}
       ${stat("Expiring ≤6h", inr.format(s.expiring), s.expiring ? "bad" : "")}
     </div>
-    ${s.total ? `<div class="cp-grid">
-      <div class="card cp-card"><div class="cp-head"><h3>By issue</h3><span class="muted">click to filter</span></div>
-        <table class="cp-table"><thead><tr><th>Issue</th><th class="num">#</th><th class="num">Share</th><th></th><th class="num">Refunds</th></tr></thead><tbody>
-        ${s.by_issue.map((r) => `<tr class="cp-click ${complaintFilters.issue === r.issue_type ? "on" : ""}" data-issue="${esc(r.issue_type)}">
-          <td>${esc(ISSUE_LABELS[r.issue_type] || r.issue_type)}</td><td class="num"><b>${inr.format(r.count)}</b></td>
-          <td class="num muted">${pct(r.count)}</td><td class="cp-mcell">${meter(r.count, maxIssue)}</td><td class="num">${rupees(r.refunds)}</td></tr>`).join("")}
-        </tbody></table></div>
-      <div class="card cp-card"><div class="cp-head"><h3>By outlet</h3><span class="muted">top ${s.by_outlet.length} · click to filter</span></div>
-        <div class="cp-scroll"><table class="cp-table"><thead><tr><th>Outlet</th><th class="num">#</th><th class="num">Open</th><th></th><th class="num">Refunds</th></tr></thead><tbody>
+    ${s.total ? `<div class="dn-rings">${issueDonut.html}${statusDonut.html}${rep.repeat + rep.first ? whoDonut.html : ""}</div>
+    <div class="dn-pair">${dishes}${reasons}</div>
+    ${attentionCard({ hint: "most complaints first · click to filter", total: s.by_outlet.length, allKey: "outletsAll", showAll: complaintUi.outletsAll, items: attentionItems,
+      tableHtml: `        <div class="cp-scroll"><table class="cp-table"><thead><tr><th>Outlet</th><th class="num">#</th><th class="num">Open</th><th></th><th class="num">Refunds</th></tr></thead><tbody>
         ${s.by_outlet.map((r) => `<tr class="cp-click" data-outlet="${r.outlet_id}">
           <td title="${esc(names.get(r.outlet_id) || "")}">${esc(short(names.get(r.outlet_id) || `Outlet ${r.outlet_id}`))}</td>
           <td class="num"><b>${inr.format(r.count)}</b></td><td class="num ${r.open ? "cp-warn" : "muted"}">${inr.format(r.open)}</td>
           <td class="cp-mcell">${meter(r.count, maxOutlet)}</td><td class="num">${rupees(r.refunds)}</td></tr>`).join("")}
-        </tbody></table></div></div>
-    </div>` : ""}
-    <div class="card cp-card">
+        </tbody></table></div>` })}` : ""}
+    ${showList ? `    <div class="card cp-card">
       <div class="toolbar cp-toolbar">
         <input id="cq" type="search" placeholder="Search order id, item, customer…" value="${esc(complaintFilters.q)}">
         <select id="cStatus"><option value="">Any status</option>${TICKET_STATUS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
         ${complaintFilters.issue ? `<button class="btn light" id="cClear">${esc(ISSUE_LABELS[complaintFilters.issue] || complaintFilters.issue)} ✕</button>` : ""}
         <span class="muted">click a row for details and notes</span>
+        <button class="btn light" id="closeList" style="margin-left:auto">Hide list ✕</button>
       </div>
       <div class="table-wrap"><table class="cp-table cp-list"><thead><tr>
         <th>Raised</th><th>Outlet</th><th></th><th>Issue</th><th>Items</th><th>Customer</th><th class="num">Refund</th>
         <th>Platform</th><th>Window</th><th>Ticket</th></tr></thead><tbody id="complaintList"></tbody></table></div>
       <div style="text-align:center;margin-top:8px"><button class="btn light" id="cMore">Load more</button></div>
-    </div>`;
-  $("#cStatus").value = complaintFilters.status;
+    </div>`
+      : `<div class="card cp-card dn-prompt"><span class="muted">Click a slice above to read those complaints.</span> <button class="btn light" id="showAll">Show all complaints</button></div>`}`;
+  if (showList) $("#cStatus").value = complaintFilters.status;
+  issueDonut.mount(); statusDonut.mount(); whoDonut.mount();
+  $("#showAll")?.addEventListener("click", () => { complaintUi.listOpen = true; render(); });
+  page.querySelectorAll("[data-more]").forEach((b) => b.addEventListener("click", () => { complaintUi[b.dataset.more] = !complaintUi[b.dataset.more]; render(); }));
+  $("#closeList")?.addEventListener("click", () => { Object.assign(complaintFilters, { issue: "", status: "", q: "" }); complaintUi.listOpen = false; render(); });
+  page.querySelectorAll("[data-status]").forEach((b) => b.addEventListener("click", () => {
+    complaintFilters.status = complaintFilters.status === b.dataset.status ? "" : b.dataset.status; render();
+  }));
   let timer;
-  $("#cq").addEventListener("input", (e) => { clearTimeout(timer); timer = setTimeout(() => { complaintFilters.q = e.target.value; loadComplaints(true); }, 300); });
-  $("#cStatus").addEventListener("change", (e) => { complaintFilters.status = e.target.value; loadComplaints(true); });
+  $("#cq")?.addEventListener("input", (e) => { clearTimeout(timer); timer = setTimeout(() => { complaintFilters.q = e.target.value; loadComplaints(true); }, 300); });
+  $("#cStatus")?.addEventListener("change", (e) => { complaintFilters.status = e.target.value; loadComplaints(true); });
   $("#cClear")?.addEventListener("click", () => { complaintFilters.issue = ""; render(); });
-  page.querySelectorAll("[data-issue]").forEach((r) => r.addEventListener("click", () => {
-    complaintFilters.issue = complaintFilters.issue === r.dataset.issue ? "" : r.dataset.issue; render();
-  }));
-  page.querySelectorAll("[data-outlet]").forEach((r) => r.addEventListener("click", () => {
-    state.locationId = r.dataset.outlet; showSelectedOutlet(); render();
-  }));
+  const cfg = { sel: complaintSel, types: ["dish", "issue", "outlet", "reason"], noun: "complaint",
+    labelOf: (t, k) => (t === "outlet" ? names.get(Number(k)) || `Outlet ${k}` : t === "issue" ? ISSUE_LABELS[k] || k : k) };
+  bindLinks(page, s, cfg, (type, key) => {  // "Read them": open the real complaints behind the highlight
+    if (type === "issue") complaintFilters.issue = key; else if (type === "outlet") { state.locationId = key; showSelectedOutlet(); } else complaintFilters.q = key;
+    complaintUi.listOpen = true; render();
+  }, complaintLinks);
+  if (!showList) return;
   $("#cMore").addEventListener("click", () => loadComplaints(false));
   bindComplaints($("#complaintList"));
   await loadComplaints(true);
@@ -1677,7 +1870,7 @@ const ITEM_COLS = [
 async function renderItems(page) {
   itemData = await api(`/brands/${state.brandId}/items`, filterParams());
   const t = itemData.totals;
-  const stat = (label, value, tone = "") => `<div class="cp-stat ${tone}"><span>${label}</span><b>${value}</b></div>`;
+  const stat = statTile;
   page.innerHTML = `
     <div class="card cp-stats">
       ${stat("Items sold", inr.format(t.items))}${stat("Item sales", compactINR(t.revenue))}
