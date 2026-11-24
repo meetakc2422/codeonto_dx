@@ -268,11 +268,16 @@ def statement_adjustments(breakdown: list[dict], order_additions: Decimal) -> De
     return adjustments
 
 
+# Zomato names some sections only by their title, so a title also makes a section known: ad spend taken for earlier weeks or other outlets
+ADJUSTMENT_TITLES = ("ads deductions",)
+
+
 def unknown_sections(breakdown: list[dict]) -> list[str]:
     """Statement sections with money in them that the check has no rule for. They are still counted as adjustments, but the cycle is
     flagged so a new Zomato layout shows up as a warning and not as a silently wrong difference."""
     known = ORDER_LEVEL_SECTIONS | ADDITION_SECTIONS | ADJUSTMENT_SECTIONS
-    return [s["id"] for s in breakdown if s.get("value") and s["id"] not in known and not s["id"].startswith(NOT_MONEY_PREFIXES)]
+    return [s["id"] for s in breakdown if s.get("value") and s["id"] not in known and not s["id"].startswith(NOT_MONEY_PREFIXES)
+            and not any(t in str(s.get("label", "")).lower() for t in ADJUSTMENT_TITLES)]
 
 
 def reconcile(statement: dict, orders: list[dict]) -> dict:

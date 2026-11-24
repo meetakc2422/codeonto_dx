@@ -171,6 +171,14 @@ class Checks(unittest.TestCase):
         r = reconcile({**self.statement(net_payout=D("850.00"), order_count=1), "breakdown": breakdown}, [o])
         self.assertEqual((r["adjustments"], r["discrepancy"]), (D("-50.00"), D("0.00")))
 
+    def test_ads_from_other_weeks_is_known(self):
+        """Seen live: ad spend for earlier weeks and other outlets is its own section, counted as an adjustment and not a warning."""
+        breakdown = [{"id": "total_order_value", "label": "x", "value": 100.0, "items": []},
+                     {"id": "some_new_id", "label": "Ads deductions from previous weeks or other outlets (I)", "value": -30.0, "items": []}]
+        r = reconcile({**self.statement(net_payout=D("70")), "breakdown": breakdown}, [order(payout=D("100"))])
+        self.assertNotIn("unknown_statement_section", r["issues"])
+        self.assertEqual(r["adjustments"], D("-30.00"))
+
     def test_unknown_section_is_flagged(self):
         breakdown = [{"id": "total_order_value", "label": "x", "value": 100.0, "items": []}, {"id": "brand_new_section", "label": "y", "value": -20.0, "items": []}]
         r = reconcile({**self.statement(net_payout=D("0")), "breakdown": breakdown}, [order()])

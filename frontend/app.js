@@ -2602,14 +2602,16 @@ async function togglePayoutDetail(tr, id) {
     : nFlag ? `${plural(nFlag, "order")} flagged` : "";
   // where the money went: what the orders earned, what ads and Hyperpure took off it, and what was paid. A payout of ₹0 is explained here, not flagged as an error.
   const sectionSum = (re) => d.breakdown.filter((x) => re.test(x.id || "")).reduce((t, x) => t + (Number(x.value) || 0), 0);
-  const ads = sectionSum(/^investments_in_growth/), hyper = sectionSum(/^hyperpure/);
+  const sectionTotal = (test) => d.breakdown.filter((x) => !ORDER_SECTIONS.includes(x.id) && test(`${x.id || ""} ${x.label || ""}`.toLowerCase())).reduce((t, x) => t + (Number(x.value) || 0), 0);
+  const ads = sectionTotal((t) => /investments_in_growth|\bads\b/.test(t)), hyper = sectionTotal((t) => /hyperpure/.test(t));  // by id or title: "Ads deductions from previous weeks or other outlets" counts as ads
   const flow = (() => {
     if (!d.reconciled || d.orders_total == null) return "";
     const earned = Number(d.orders_total), paid = Number(d.net_payout || 0), other = Number(d.adjustments || 0) - ads - hyper;
     const part = (label, v, cls = "") => (Math.abs(v) >= 1 ? `<span class="pf-step ${cls}"><small>${label}</small><b>${rupees(v)}</b></span>` : "");
     const taken = -(ads + hyper + other);
     const eaten = earned > 0 ? taken / earned : 0;
-    const note = !paid && earned > 0 && eaten >= 0.95 ? `Zomato paid ₹0 because ads and Hyperpure took the whole ₹${inr.format(Math.round(earned))} the orders earned.`
+    const bits = [ads && `ads ${rupees(-ads)}`, hyper && `Hyperpure ${rupees(-hyper)}`, Math.abs(other) >= 1 && `other ${rupees(-other)}`].filter(Boolean).join(", ");
+    const note = !paid && earned > 0 && eaten >= 0.95 ? `Zomato paid ₹0 because deductions (${bits}) took the whole ₹${inr.format(Math.round(earned))} the orders earned.`
       : hyper < 0 && earned > 0 && -hyper / earned >= 0.4 ? `Hyperpure took ${Math.round((-hyper / earned) * 100)}% of what the orders earned.`
       : ads < 0 && earned > 0 && -ads / earned >= 0.2 ? `Ads took ${Math.round((-ads / earned) * 100)}% of what the orders earned.` : "";
     return `<div class="payout-flow">
