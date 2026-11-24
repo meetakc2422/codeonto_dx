@@ -116,6 +116,41 @@ def _daytype_sections(series: dict, meta: dict) -> list[dict]:
     return out
 
 
+def _avg_days(by_day: dict) -> tuple:
+    """(weekday average, weekend average) of a {date: value} series, each over the days that have a value."""
+    wd = [v for d, v in by_day.items() if d.weekday() not in WEEKEND]
+    we = [v for d, v in by_day.items() if d.weekday() in WEEKEND]
+    return (sum(wd) / len(wd) if wd else None, sum(we) / len(we) if we else None)
+
+
+def _compact(outlets, names, f, base, start, end, p_start, p_end) -> dict:
+    """What the short report needs, platform by platform: the headline figures, ads, payouts and the weekday/weekend averages, plus payouts outlet by outlet."""
+    mapped = [p for p in ("zomato", "swiggy") if (not f["platform"] or f["platform"] == p) and any(getattr(o, f"{p}_id") for o in outlets.values())]
+    out = []
+    for pl in mapped:
+        pb = {**base, "platform": pl}
+        t = {r["code"]: r["value"] for r in _aggregate(False, False, start=start, end=end, **pb)}
+        tp = {r["code"]: r["value"] for r in _aggregate(False, False, start=p_start, end=p_end, **pb)}
+        sales, sales_prev = sum(_sales(outlets, pl, start, end).values()) or None, sum(_sales(outlets, pl, p_start, p_end).values()) or None
+        po = PayoutOrder.objects.filter(cycle__outlet_id__in=list(outlets), cycle__platform_id=pl, order_date__date__range=(start, end)).aggregate(
+            n=Count("id"), net=Sum("net_order_value"), gst=Sum("gst_collected"), fees=Sum("fees_total"), ded=Sum("net_deductions"), pay=Sum("payout"))
+        net, pay = (float(po["net"]) if po["net"] is not None else None), (float(po["pay"]) if po["pay"] is not None else None)
+        ads_daily = {r["metric_date"]: r["value"] for r in _aggregate(True, False, start=start, end=end, **pb) if r["code"] == "ad_spend" and r["value"] is not None}
+        out.append({"code": pl, "name": pl.title(), "sales": sales, "sales_change": _pct_change(sales, sales_prev), "orders": t.get("delivered_orders"),
+                    "orders_change": _pct_change(t.get("delivered_orders"), tp.get("delivered_orders")), "aov": t.get("avg_order_value"), "rating": t.get("listing_rating"),
+                    "online": t.get("online_pct"), "delayed": t.get("delayed_orders_pct"), "prep": t.get("avg_prep_time"), "accuracy": t.get("mfr_accuracy"),
+                    "ad_spend": t.get("ad_spend"), "ad_sales": t.get("ad_sales"), "ad_roi": t.get("ad_roi"), "discount": t.get("discount_given"), "discount_pct": t.get("discount_pct_revenue"),
+                    "pay": {"orders": po["n"], "net": net, "gst": float(po["gst"] or 0), "fees": float(po["fees"] or 0), "deductions": float(po["ded"] or 0), "payout": pay,
+                            "kept": round(pay / net * 100, 1) if pay is not None and net else None},
+                    "weekday": {"sales": _avg_days(_sales_daily(outlets, pl, start, end)), "ad_spend": _avg_days(ads_daily)}})
+    rows = defaultdict(dict)
+    for r_ in PayoutOrder.objects.filter(cycle__outlet_id__in=list(outlets), order_date__date__range=(start, end), **({"cycle__platform_id": f["platform"]} if f["platform"] else {})
+                                         ).values("cycle__outlet_id", "cycle__platform_id").annotate(net=Sum("net_order_value"), pay=Sum("payout")):
+        rows[r_["cycle__outlet_id"]][r_["cycle__platform_id"]] = (float(r_["net"] or 0), float(r_["pay"] or 0))
+    by_outlet = [{"name": names[oid], **{pl: rows[oid].get(pl) for pl in mapped}, "payout": sum(v[1] for v in rows[oid].values())} for oid in sorted(outlets, key=lambda i: names[i]) if rows.get(oid)]
+    return {"platforms": out, "outlets": by_outlet}
+
+
 def _pct_change(cur, prev):
     if cur is None or prev in (None, 0):
         return None
@@ -375,6 +410,8 @@ def build(request, brand_id: int) -> dict:
         result["overview"] = insights.overview(result)
     if "recommendations" in wanted:
         result["recommendations"] = insights.recommendations(result)
+    if request.query_params.get("layout") == "compact":
+        result["compact"] = _compact(outlets, names, f, base, start, end, p_start, p_end)
     return result
 
 
@@ -409,12 +446,12 @@ def brand_report_xlsx(request, brand_id):
 
 def _pdf_bytes(request, brand_id):
     """(pdf bytes, start, end) for the same filters the PDF download takes. Raises ValueError on bad dates."""
-    from .report_pdf import build_pdf
+    from .report_pdf import build_compact_pdf, build_pdf
 
     data = build(request, brand_id)
     data["tables"] = request.query_params.get("tables") == "1"
     p = data["period"]
-    return build_pdf(data), p["start"], p["end"]
+    return (build_compact_pdf(data) if data.get("compact") else build_pdf(data)), p["start"], p["end"]
 
 
 @api_view(["GET"])

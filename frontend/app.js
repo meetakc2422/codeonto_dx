@@ -541,7 +541,7 @@ function addPerfTabs(page, route) {
 }
 
 // ---------- Export reports: pick the modules and the dates, check the data, download Excel or PDF ----------
-const expState = { start: "", end: "", order: null, preset: "", tables: false };
+const expState = { start: "", end: "", order: null, preset: "", tables: false, compact: false };
 const exSvg = (d, c = "currentColor") => `<svg class="ex-ico" viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="${c}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${d}</svg>`;
 const EX_ICON = {
   pdf: exSvg('<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/>'),
@@ -573,6 +573,7 @@ async function renderReport(page) {
     </div>
     <p class="muted" style="font-size:12.5px;margin:12px 0 10px">${esc(outletsLabel())} · ${esc(platName)}. Change these with the filters at the top of the page.</p>
     <div id="exCheck" class="rp-data">Checking the data…</div>
+    <label class="ex-tables"><input type="checkbox" id="exCompact" ${expState.compact ? "checked" : ""}><span><b>Short report (3 pages)</b><small class="muted">Overview and next steps, Zomato and Swiggy side by side with weekdays against weekends, then payouts. Ignores the section list below.</small></span></label>
     <label class="ex-tables"><input type="checkbox" id="exTables" ${expState.tables ? "checked" : ""}><span><b>Include the detailed tables in the PDF</b><small class="muted">Off: the picture pages only. On: the picture pages plus every number, outlet by outlet.</small></span></label>
     <div class="ex-actions">
       <div class="ex-group"><span class="ex-glabel">Download</span><button class="btn light ex-btn" id="exPdf">${EX_ICON.pdf}PDF</button><button class="btn light ex-btn" id="exXlsx">${EX_ICON.xlsx}Excel</button></div>
@@ -591,13 +592,14 @@ async function renderReport(page) {
   const nm = (g) => `${g.name} (${g.platform === "swiggy" ? "Swiggy" : "Zomato"})`;
   const dayLbl = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
   const fileName = () => `report_${expState.start}_to_${expState.end}.pdf`;
-  const sig = () => JSON.stringify([expState.start, expState.end, state.locationId, state.platform, expState.order, expState.tables]);
+  const sig = () => JSON.stringify([expState.start, expState.end, state.locationId, state.platform, expState.order, expState.tables, expState.compact]);
   const pdfUrl = () => {  // modules is always sent: an empty list means "none", not "all"
     const url = new URL(`${API}/brands/${state.brandId}/report/pdf`, location.origin);
     const f = exportFilters();
     ["start", "end", "outlet_id", "platform"].forEach((k) => { if (f[k] !== "" && f[k] != null) url.searchParams.set(k, f[k]); });
     url.searchParams.set("modules", expState.order.join(","));
     if (expState.tables) url.searchParams.set("tables", "1");
+    if (expState.compact) { url.searchParams.set("layout", "compact"); url.searchParams.set("modules", "overview,recommendations"); }  // the short report brings its own pages: only the written part comes from the section list
     return url;
   };
   const okToExport = () => expState.start && expState.end && expState.end >= expState.start && expState.order.length > 0;
@@ -694,6 +696,7 @@ async function renderReport(page) {
   $s.onchange = () => setDates($s.value, expState.end);
   $e.onchange = () => setDates(expState.start, $e.value);
   $("#exTables").onchange = (e) => { expState.tables = e.target.checked; refreshPreview(); };
+  $("#exCompact").onchange = (e) => { expState.compact = e.target.checked; refreshPreview(); };
   // ---- Download ----
   const saveBlob = (blob, name) => { const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); };
   const download = (kind) => async (e) => {

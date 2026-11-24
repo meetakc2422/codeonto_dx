@@ -334,6 +334,78 @@ def build_pdf(r: dict) -> bytes:
     return _finish(story, r, p, nice, title)
 
 
+def _compact_header(r, st, nice, title):
+    p = r["period"]
+    logo = _logo("logo-full.png", 8)
+    band = Table([[logo or Paragraph("SocialSpork", st["head"]), Paragraph(f'<font color="white" name="{FS}">{title}</font> <font color="#9AA8C7">| {nice(p["start"])} to {nice(p["end"])}</font>',
+                                                                           ParagraphStyle("b", parent=st["cell"], alignment=2, fontSize=8.5, leading=11))]], colWidths=[WIDTH * 0.4, WIDTH * 0.6])
+    band.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), NAVY), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
+                              ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
+    return [band, Spacer(1, 6), Paragraph(r["brand"], st["title"]),
+            Paragraph(f'{r["outlets"]} outlets &nbsp;|&nbsp; {p["days"]} days &nbsp;|&nbsp; compared with {nice(p["prev_start"])} to {nice(p["prev_end"])}', st["sub"]), Spacer(1, 5)]
+
+
+def _weekday_drawing(plats, width=None):
+    """Weekday against weekend average per day, as two bars each, for sales and for ad spend on every platform."""
+    rows = [(pl, label, key, pl["weekday"][key]) for key, label in (("sales", "Sales per day"), ("ad_spend", "Ad spend per day")) for pl in plats]
+    rows = [x for x in rows if x[3][0] is not None or x[3][1] is not None]
+    if not rows:
+        return None
+    width = width or WIDTH
+    rh, h = 30, 22 + 30 * len(rows)
+    d = Drawing(width, h)
+    top = {key: max([max(v for v in x[3] if v is not None) for x in rows if x[2] == key] or [1]) or 1 for key in ("sales", "ad_spend")}
+    d.add(String(0, h - 10, "Weekday (Mon-Fri)", fontName=FS, fontSize=7, fillColor=BLUE))
+    d.add(String(92, h - 10, "Weekend (Sat-Sun)", fontName=FS, fontSize=7, fillColor=colors.HexColor("#E8A09D")))
+    bx, bw = 78, width - 78 - 118
+    for i, (pl, label, key, (wd, we)) in enumerate(rows):
+        y = h - 22 - (i + 1) * rh + 8
+        col = PLATFORM_COLOR.get(pl["code"], GREY)
+        d.add(String(0, y + 8, pl["name"], fontName=FB, fontSize=7.6, fillColor=col))
+        d.add(String(0, y - 2, label, fontName=F, fontSize=6.8, fillColor=GREY))
+        for k, (v, c) in enumerate(((wd, BLUE), (we, colors.HexColor("#E8A09D")))):
+            by = y + 9 - k * 11
+            if v is None:
+                continue
+            from reportlab.graphics.shapes import Rect
+
+            d.add(Rect(bx, by - 1, max(2, bw * v / top[key]), 8, fillColor=c, strokeColor=None))
+            d.add(String(bx + max(2, bw * v / top[key]) + 5, by, fmt(v, "currency", short=True), fontName=FS, fontSize=7, fillColor=colors.HexColor("#1B2333")))
+        if wd and we:
+            ch = (we - wd) / wd * 100
+            d.add(String(width - 4, y + 4, "about the same" if abs(ch) < 0.5 else f"weekends {ch:+.0f}%", fontName=FB, fontSize=7.4, textAnchor="end",
+                         fillColor=GREEN if ch > 0.5 and key == "sales" else GREY))
+    return d
+
+
+def build_compact_pdf(r: dict) -> bytes:
+    """The short report: three pages. 1) the headline numbers, the written overview and next steps, and each platform's share;
+    2) the platforms side by side (sales, operations, marketing, payouts) and weekdays against weekends; 3) payouts by platform and outlet."""
+    st = _styles()
+    p, c = r["period"], r["compact"]
+    nice = lambda iso: date.fromisoformat(iso).strftime("%d %b %Y").lstrip("0")
+    title = "Monthly report" if p["days"] >= 28 else "Report"
+    story = _compact_header(r, st, nice, title)
+    tiles = _tiles(r, st)
+    if tiles:
+        story += [tiles, Spacer(1, 8)]
+    if r.get("overview") or r.get("recommendations"):
+        story += [_written_block(r, st), Spacer(1, 8)]
+    plat = _platform_block(r, st)
+    if plat is not None:
+        story += [Paragraph("Where the sales come from", st["h2"]), plat]
+    cov = r["coverage"]
+    if cov["days"] and not cov["complete"]:
+        story += [Spacer(1, 6), Paragraph('<font color="#8A5A00"><b>Data check:</b> some days have no data and are left out of the totals.</font>', st["note"])]
+
+    from .report_compact import payouts_page, platforms_page
+
+    story += [PageBreak(), Paragraph("The platforms side by side", st["title"]), Paragraph("Sales, operations, ads and payouts for each platform, and weekdays against weekends", st["sub"]), Spacer(1, 6)]
+    story += [platforms_page(r)] if c["platforms"] else [Paragraph("No platform data in this period.", st["note"])]
+    story += [PageBreak(), Paragraph("Payouts", st["title"]), Paragraph("What the platforms' order statements add up to", st["sub"]), Spacer(1, 6), payouts_page(r)]
+    return _finish(story, r, p, nice, title)
+
+
 def _finish(story, r, p, nice, title):
     def footer(canvas, doc):
         canvas.saveState()
