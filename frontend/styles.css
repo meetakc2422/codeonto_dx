@@ -830,6 +830,14 @@ a.btn.disabled { opacity: .45; pointer-events: none; }
 .payout-issues a { color: inherit; text-decoration: none; } .payout-issues a .muted { text-decoration: underline; }
 .payout-orders-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin: 14px 0 8px; }
 .payout-orders-head h4 { margin: 0; }
+.payout-flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 0 0 14px; }
+.payout-flow .pf-step { display: flex; flex-direction: column; padding: 8px 14px; border-radius: 10px; background: #f1f5f9; min-width: 104px; }
+.payout-flow .pf-step small { font-size: 11px; color: var(--muted, #64748b); }
+.payout-flow .pf-step b { font-size: 16px; }
+.payout-flow .pf-earn { background: #eefaf3; }
+.payout-flow .pf-hot { background: #fff8eb; } .payout-flow .pf-hot b { color: #8a5300; }
+.payout-flow .pf-paid { background: #e8f0ff; }
+.payout-flow .pf-note { flex: 1 1 260px; align-self: center; font-size: 13px; font-weight: 600; color: #8a5300; }
 .payout-explain { font-size: 13px; padding: 4px 10px; border-radius: 8px; background: #f1f5f9; }
 .payout-explain.bad { background: #fff1f1; color: var(--red); font-weight: 600; }
 .payout-orders tr.flagged.gap td { background: #ffe4e4; }

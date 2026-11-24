@@ -24,6 +24,7 @@ ISSUE_LABELS = {
     "order_fee_math": "An order's service fee doesn't add up",
     "fee_rate_changed": "Base service fee % differs between orders",
     "paid_without_utr": "Paid, but has no UTR",
+    "unknown_statement_section": "Zomato's statement has a section we don't recognise, so the check may be off",
     "overdue": "Payout date has passed, not paid yet",
     "deductions_carried": "Deductions bigger than earnings, carried to next payout",
 }

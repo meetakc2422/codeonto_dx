@@ -148,6 +148,34 @@ class Checks(unittest.TestCase):
         self.assertEqual((r["orders_total"], r["adjustments"], r["expected_payout"], r["discrepancy"]), (D("12427.02"), D("-1783.78"), D("10643.24"), D("0.00")))
         self.assertEqual(r["issues"], [])
 
+    def test_newer_statement_layout_matches(self):
+        """A real cycle (9-15 Nov): 24 orders pay 12,753.69; ads and Hyperpure take all of it, so Zomato paid 0."""
+        def sec(i, v):
+            return {"id": i, "label": i, "value": v, "items": []}
+        breakdown = [sec("gross_order_value", 20941.5), sec("discounts_and_promotions", -2850.0), sec("net_order_value_subtotal", 18091.5),
+                     sec("service_fee", -3778.88), sec("investments_in_growth_v2", -2292.82), sec("tax_deductions_v2", -1558.93),
+                     sec("refunds_and_additions", 0.0), sec("penalties_and_other_deductions", 0.0),
+                     sec("food_delivery_statement_subtotal", 10460.87), sec("hyperpure_purchases", -10460.87), sec("est_net_payout_soa_v2", 0.0)]
+        o = order(payout=D("12753.69"), net_additions=D(0))
+        r = reconcile({**self.statement(net_payout=D("0.00"), order_count=1, utr=""), "breakdown": breakdown}, [o])
+        self.assertEqual((r["orders_total"], r["adjustments"], r["expected_payout"], r["discrepancy"]), (D("12753.69"), D("-12753.69"), D("0.00"), D("0.00")))
+        self.assertNotIn("payout_mismatch", r["issues"])
+
+    def test_penalty_is_already_in_the_orders(self):
+        """Cycle 7911: the order rows already carry the 129.54 customer compensation, so the penalty section must not be taken off again."""
+        def sec(i, v):
+            return {"id": i, "label": i, "value": v, "items": []}
+        breakdown = [sec("gross_order_value", 1000.0), sec("net_order_value_subtotal", 1000.0), sec("penalties_and_other_deductions", -100.0),
+                     sec("investments_in_growth_v2", -50.0), sec("est_net_payout_soa_v2", 850.0)]
+        o = order(payout=D("900.00"), net_additions=D(0))  # 1000 less the 100 penalty, already inside the payout
+        r = reconcile({**self.statement(net_payout=D("850.00"), order_count=1), "breakdown": breakdown}, [o])
+        self.assertEqual((r["adjustments"], r["discrepancy"]), (D("-50.00"), D("0.00")))
+
+    def test_unknown_section_is_flagged(self):
+        breakdown = [{"id": "total_order_value", "label": "x", "value": 100.0, "items": []}, {"id": "brand_new_section", "label": "y", "value": -20.0, "items": []}]
+        r = reconcile({**self.statement(net_payout=D("0")), "breakdown": breakdown}, [order()])
+        self.assertIn("unknown_statement_section", r["issues"])
+
     def test_short_payment_is_flagged(self):
         r = reconcile(self.statement(net_payout=D("10000.00")), [order()])
         self.assertEqual(r["discrepancy"], D("-643.24"))

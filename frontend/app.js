@@ -1008,7 +1008,7 @@ async function renderOverview(page) {
 
   // ---- the eight tiles: the numbers that matter, each linking to its page ----
   const PAY_SHORT = { payout_mismatch: "don't match orders", order_count_mismatch: "order count off", unsettled_orders: "orders unsettled",
-    order_payout_math: "order payout off", order_fee_math: "order fee off", fee_rate_changed: "fee % changed", paid_without_utr: "no UTR", overdue: "overdue", deductions_carried: "deductions carried over" };
+    order_payout_math: "order payout off", order_fee_math: "order fee off", fee_rate_changed: "fee % changed", paid_without_utr: "no UTR", unknown_statement_section: "new statement section", overdue: "overdue", deductions_carried: "deductions carried over" };
   const PAY_MONEY = new Set(["payout_mismatch", "overdue", "fee_rate_changed", "order_payout_math", "order_fee_math"]);
   const kpi = (code) => kpiRes.kpis.find((k) => k.code === code && k.value != null);
   const sparkOf = (code) => ((headTrends[HEAD_KPIS.indexOf(code)] || []).length > 1 ? sparkline(headTrends[HEAD_KPIS.indexOf(code)]) : "");
@@ -2585,7 +2585,8 @@ async function togglePayoutDetail(tr, id) {
   const flagged = (o) => reasons(o).length > 0;
   const orders = [...d.orders].sort((a, b) => (reasons(b).some((x) => x.gap) - reasons(a).some((x) => x.gap)) || (flagged(b) - flagged(a)));
   const carried = d.issues.includes("deductions_carried");
-  const ORDER_SECTIONS = ["total_order_value", "total_customer_paid", "total_fees", "total_taxes", "order_level_deductions", "tax_deductions", "additions", "complaint_cancellation_charges"];
+  const ORDER_SECTIONS = ["total_order_value", "total_customer_paid", "total_fees", "total_taxes", "order_level_deductions", "tax_deductions", "additions", "complaint_cancellation_charges",
+    "gross_order_value", "discounts_and_promotions", "net_order_value_subtotal", "service_fee", "tax_deductions_v2", "refunds_and_additions", "penalties_and_other_deductions"];  // Zomato's newer statement layout too
   const bigLines = d.breakdown.filter((sec) => !ORDER_SECTIONS.includes(sec.id)).flatMap((sec) => sec.items.filter((i) => i.value < 0).map((i) => ({ ...i, section: sec.label })))
     .sort((a, b) => a.value - b.value).slice(0, 3);
   const nGap = d.orders.filter((o) => reasons(o).some((x) => x.gap)).length;
@@ -2599,8 +2600,26 @@ async function togglePayoutDetail(tr, id) {
     : gap ? (nGap ? `${plural(nGap, "order")} ${nGap === 1 ? "has" : "have"} a payout equal to the gap, so ${nGap === 1 ? "it was" : "they were"} likely left out of the payout`
       : nFlag ? `${plural(nFlag, "order")} flagged below may explain it` : "No single order explains it: likely a deduction or adjustment the order report doesn't show")
     : nFlag ? `${plural(nFlag, "order")} flagged` : "";
+  // where the money went: what the orders earned, what ads and Hyperpure took off it, and what was paid. A payout of ₹0 is explained here, not flagged as an error.
+  const sectionSum = (re) => d.breakdown.filter((x) => re.test(x.id || "")).reduce((t, x) => t + (Number(x.value) || 0), 0);
+  const ads = sectionSum(/^investments_in_growth/), hyper = sectionSum(/^hyperpure/);
+  const flow = (() => {
+    if (!d.reconciled || d.orders_total == null) return "";
+    const earned = Number(d.orders_total), paid = Number(d.net_payout || 0), other = Number(d.adjustments || 0) - ads - hyper;
+    const part = (label, v, cls = "") => (Math.abs(v) >= 1 ? `<span class="pf-step ${cls}"><small>${label}</small><b>${rupees(v)}</b></span>` : "");
+    const taken = -(ads + hyper + other);
+    const eaten = earned > 0 ? taken / earned : 0;
+    const note = !paid && earned > 0 && eaten >= 0.95 ? `Zomato paid ₹0 because ads and Hyperpure took the whole ₹${inr.format(Math.round(earned))} the orders earned.`
+      : hyper < 0 && earned > 0 && -hyper / earned >= 0.4 ? `Hyperpure took ${Math.round((-hyper / earned) * 100)}% of what the orders earned.`
+      : ads < 0 && earned > 0 && -ads / earned >= 0.2 ? `Ads took ${Math.round((-ads / earned) * 100)}% of what the orders earned.` : "";
+    return `<div class="payout-flow">
+      ${part("Orders earned", earned, "pf-earn")}${part("Ads", ads, ads < 0 && -ads / (earned || 1) >= 0.2 ? "pf-hot" : "")}${part("Hyperpure", hyper, hyper < 0 && -hyper / (earned || 1) >= 0.4 ? "pf-hot" : "")}${part("Other", other)}
+      <span class="pf-step pf-paid"><small>${d.status === "PAID" ? "Paid" : "Payout"}</small><b>${rupees(paid)}</b></span>
+      ${note ? `<span class="pf-note">${esc(note)}</span>` : ""}</div>`;
+  })();
   row.innerHTML = `<td colspan="8">
     ${d.issues.length ? `<ul class="payout-issues warn">${d.issues.map((i) => `<li>${esc(label(i))}</li>`).join("")}</ul>` : ""}
+    ${flow}
     <div class="payout-columns">
       <div>
         <h4>${d.platform === "swiggy" ? "Swiggy" : "Zomato"}'s statement</h4>

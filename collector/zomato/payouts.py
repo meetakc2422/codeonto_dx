@@ -38,8 +38,17 @@ PAYOUT_TOLERANCE = Decimal("1.00")  # the platform rounds each line, so a rupee 
 ORDER_TOLERANCE = Decimal("0.05")
 
 # statement sections the order rows already add up to; anything else is an adjustment not tied to an order
-ORDER_LEVEL_SECTIONS = {"total_order_value", "order_level_deductions", "tax_deductions", "additions"}
-NOT_MONEY_PREFIXES = ("total_orders", "estimated_net_payout")  # also estimated_net_payout_with_non_zero_md on carried forward cycles
+# Zomato has two statement layouts: the older one (total_order_value ... hyperpure_deductions) and a newer one (gross_order_value ... est_net_payout_soa_v2)
+ORDER_LEVEL_SECTIONS = {"total_order_value", "order_level_deductions", "tax_deductions",
+                        "gross_order_value", "discounts_and_promotions", "net_order_value_subtotal", "service_fee", "tax_deductions_v2",
+                        # customer compensation / rejection penalties: already inside the order rows' payouts (all 11 cycles that had one add up only when it is left out)
+                        "penalties_and_other_deductions"}
+# sections that really are separate from the orders (ads, Hyperpure, earlier settlements, other deductions): counted as adjustments
+ADJUSTMENT_SECTIONS = {"investments_in_growth", "hyperpure_deductions", "investments_in_growth_v2", "hyperpure_purchases",
+                       "previous_settlements", "miscellaneous_deductions"}
+ADDITION_SECTIONS = {"additions", "refunds_and_additions"}  # order rows carry part of these; only the rest is an adjustment
+# totals the statement prints, not money of their own (estimated_net_payout_with_non_zero_md is on carried forward cycles)
+NOT_MONEY_PREFIXES = ("total_orders", "estimated_net_payout", "est_net_payout", "food_delivery_statement")
 
 MONTHS = {m: i for i, m in enumerate(("Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"), start=1)}
 
@@ -246,6 +255,26 @@ def parse_report(content: bytes) -> list[dict]:
     return orders
 
 
+def statement_adjustments(breakdown: list[dict], order_additions: Decimal) -> Decimal:
+    """What the statement carries that the order rows do not: ads, Hyperpure, penalties, earlier settlements and the part of
+    additions/refunds the orders don't hold. Sections the orders already add up to, and the statement's own totals, are left out."""
+    adjustments = Decimal(0)
+    for section in breakdown:
+        value = Decimal(str(section["value"])) if section["value"] is not None else Decimal(0)
+        if section["id"] in ADDITION_SECTIONS:
+            adjustments += value - order_additions  # additions the order rows don't carry
+        elif section["id"] not in ORDER_LEVEL_SECTIONS and not section["id"].startswith(NOT_MONEY_PREFIXES):
+            adjustments += value
+    return adjustments
+
+
+def unknown_sections(breakdown: list[dict]) -> list[str]:
+    """Statement sections with money in them that the check has no rule for. They are still counted as adjustments, but the cycle is
+    flagged so a new Zomato layout shows up as a warning and not as a silently wrong difference."""
+    known = ORDER_LEVEL_SECTIONS | ADDITION_SECTIONS | ADJUSTMENT_SECTIONS
+    return [s["id"] for s in breakdown if s.get("value") and s["id"] not in known and not s["id"].startswith(NOT_MONEY_PREFIXES)]
+
+
 def reconcile(statement: dict, orders: list[dict]) -> dict:
     """Check a paid cycle's statement against its orders. Adds 'issues' to each order; returns the cycle's result."""
     # the base rate is the contract; the total also carries a distance fee that varies order by order
@@ -266,19 +295,15 @@ def reconcile(statement: dict, orders: list[dict]) -> dict:
 
     orders_total = sum((o["payout"] for o in orders), Decimal(0))
     order_additions = sum((o["net_additions"] for o in orders), Decimal(0))
-    adjustments = Decimal(0)
-    for section in statement["breakdown"]:
-        value = Decimal(str(section["value"])) if section["value"] is not None else Decimal(0)
-        if section["id"] == "additions":
-            adjustments += value - order_additions  # additions the order rows don't carry
-        elif section["id"] not in ORDER_LEVEL_SECTIONS and not section["id"].startswith(NOT_MONEY_PREFIXES):
-            adjustments += value
+    adjustments = statement_adjustments(statement["breakdown"], order_additions)
     cents = Decimal("0.01")
     expected = (orders_total + adjustments).quantize(cents, ROUND_HALF_UP)
     net = statement["net_payout"]
     discrepancy = (net - expected) if net is not None else None
     if discrepancy is None or abs(discrepancy) > PAYOUT_TOLERANCE:
         found.add("payout_mismatch")
+    if unknown_sections(statement["breakdown"]):
+        found.add("unknown_statement_section")
     if statement["order_count"] and statement["order_count"] != len(orders):
         found.add("order_count_mismatch")
     if sum((o["unsettled_amount"] for o in orders), Decimal(0)) > ORDER_TOLERANCE:
