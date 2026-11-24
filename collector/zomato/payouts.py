@@ -45,7 +45,7 @@ ORDER_LEVEL_SECTIONS = {"total_order_value", "order_level_deductions", "tax_dedu
                         "penalties_and_other_deductions"}
 # sections that really are separate from the orders (ads, Hyperpure, earlier settlements, other deductions): counted as adjustments
 ADJUSTMENT_SECTIONS = {"investments_in_growth", "hyperpure_deductions", "investments_in_growth_v2", "hyperpure_purchases",
-                       "previous_settlements", "miscellaneous_deductions"}
+                       "previous_settlements", "miscellaneous_deductions", "misc_deductions"}
 ADDITION_SECTIONS = {"additions", "refunds_and_additions"}  # order rows carry part of these; only the rest is an adjustment
 # totals the statement prints, not money of their own (estimated_net_payout_with_non_zero_md is on carried forward cycles)
 NOT_MONEY_PREFIXES = ("total_orders", "estimated_net_payout", "est_net_payout", "food_delivery_statement")

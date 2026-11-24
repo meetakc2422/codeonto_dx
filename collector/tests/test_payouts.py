@@ -179,6 +179,13 @@ class Checks(unittest.TestCase):
         self.assertNotIn("unknown_statement_section", r["issues"])
         self.assertEqual(r["adjustments"], D("-30.00"))
 
+    def test_misc_deductions_is_known(self):
+        """Seen live (22 cycles): the same carried-forward deductions under the id misc_deductions."""
+        breakdown = [{"id": "total_order_value", "label": "x", "value": 100.0, "items": []}, {"id": "misc_deductions", "label": "Misc. deductions (J)", "value": -20.0, "items": []}]
+        r = reconcile({**self.statement(net_payout=D("80")), "breakdown": breakdown}, [order(payout=D("100"))])
+        self.assertNotIn("unknown_statement_section", r["issues"])
+        self.assertEqual(r["adjustments"], D("-20.00"))
+
     def test_unknown_section_is_flagged(self):
         breakdown = [{"id": "total_order_value", "label": "x", "value": 100.0, "items": []}, {"id": "brand_new_section", "label": "y", "value": -20.0, "items": []}]
         r = reconcile({**self.statement(net_payout=D("0")), "breakdown": breakdown}, [order()])
