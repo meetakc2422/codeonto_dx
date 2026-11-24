@@ -293,20 +293,21 @@ def build(request, brand_id: int) -> dict:
                                                                               fees=Sum("fees_total"), ded=Sum("net_deductions"), pay=Sum("payout")):
             by_plat[r_["cycle__platform_id"]][r_["cycle__outlet_id"]] = {"orders": r_["n"], "net_order_value": float(r_["net"] or 0), "gst": float(r_["gst"] or 0),
                                                                           "fees": float(r_["fees"] or 0), "deductions": float(r_["ded"] or 0), "payout": float(r_["pay"] or 0)}
-        plats = [p_ for p_ in ("zomato", "swiggy") if p_ in by_plat] + [p_ for p_ in sorted(by_plat) if p_ not in ("zomato", "swiggy")]
+        mapped = {p_ for p_ in ("zomato", "swiggy") if any(getattr(o, f"{p_}_id") for o in outlets.values())}  # a platform the outlets are on shows even with no statements, as "no data"
+        plats = [p_ for p_ in ("zomato", "swiggy") if p_ in by_plat or p_ in mapped] + [p_ for p_ in sorted(by_plat) if p_ not in ("zomato", "swiggy")]
         if len(plats) > 1:
             keys = ["orders", "net_order_value", "gst", "fees", "deductions", "payout"]
             cols = sections[[sec["key"] for sec in sections].index("payouts")]["columns"]
             sections.append({"key": "payouts", "title": "Payouts by platform", "kind": "payouts", "first": "Platform", "columns": cols,
-                             "rows": [{"outlet_id": 0, "name": pl.title(), **{k: sum(v[k] for v in by_plat[pl].values()) for k in keys}} for pl in plats],
-                             "total": {k: sum(v[k] for pl in plats for v in by_plat[pl].values()) for k in keys}})
+                             "rows": [{"outlet_id": 0, "name": pl.title(), **({k: sum(v[k] for v in by_plat[pl].values()) for k in keys} if by_plat.get(pl) else {k: None for k in keys})} for pl in plats],
+                             "total": {k: sum(v[k] for pl in plats for v in by_plat.get(pl, {}).values()) for k in keys}})
             m_cols = [c for pl in plats for c in ({"code": f"{pl}_net", "name": f"{pl.title()} net order value", "unit": "currency"},
                                                    {"code": f"{pl}_payout", "name": f"{pl.title()} payout", "unit": "currency"})] + [{"code": "payout", "name": "Total payout", "unit": "currency"}]
             m_rows = []
             for oid in sorted(outlets, key=lambda i: names[i]):
                 row = {"outlet_id": oid, "name": names[oid], "payout": 0.0}
                 for pl in plats:
-                    v = by_plat[pl].get(oid)
+                    v = by_plat.get(pl, {}).get(oid)
                     row[f"{pl}_net"], row[f"{pl}_payout"] = (v["net_order_value"], v["payout"]) if v else (None, None)
                     row["payout"] += v["payout"] if v else 0.0
                 if any(row[f"{pl}_net"] is not None for pl in plats):

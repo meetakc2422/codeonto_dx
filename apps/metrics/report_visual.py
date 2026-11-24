@@ -223,7 +223,8 @@ def _payouts(d, r, x, y, w, h):
         for k, q in enumerate(split["rows"]):
             by = y + 8 + 11 * (len(split["rows"]) - 1 - k)
             _text(d, x + 10, by, q["name"], 7.5, True)
-            _text(d, x + w - 8, by, f'{P.fmt(q["net_order_value"], "currency", short=True)} / {P.fmt(q["payout"], "currency", short=True)}', 7.5, anchor="end")
+            got = q["payout"] is not None
+            _text(d, x + w - 8, by, f'{P.fmt(q["net_order_value"], "currency", short=True)} / {P.fmt(q["payout"], "currency", short=True)}' if got else "no payout statements", 7.5, anchor="end", color=INK if got else MUTE)
 
 
 # which module draws which panel(s), and how many of the three columns each needs
