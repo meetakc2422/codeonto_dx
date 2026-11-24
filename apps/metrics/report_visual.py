@@ -271,26 +271,17 @@ def build_drawings(r: dict, with_tiles: bool = True) -> list[Drawing]:
 
     pages = []
     if with_tiles:
-        rest = rows[2:]
-        if len(rest) == 1:  # a lone last row would leave a near-empty page: fit all three rows on the first page
-            first = Drawing(W, H)
-            _tiles(first, r, H)
-            lay(first, rows, H - 52 - gap, (H - 52 - 4 * gap) / 3)
-            return [first]
         first = Drawing(W, H)
         _tiles(first, r, H)
         lay(first, rows[:2], H - 52 - gap, min(row_h, 200) if len(rows) > 1 else min(row_h, 170))
         pages.append(first)
+        rest = rows[2:]
     else:
         rest = rows
-    chunks = [rest[k:k + 2] for k in range(0, len(rest), 2)]
-    if len(chunks) > 1 and len(chunks[-1]) == 1:  # same for the later pages: fold the lone row into the page before
-        last = chunks.pop()
-        chunks[-1] = chunks[-1] + last
-    for chunk in chunks:
-        h = row_h if len(chunk) < 3 else (2 * row_h + gap - (len(chunk) - 1) * gap) / len(chunk)
-        d = Drawing(W, len(chunk) * h + (len(chunk) - 1) * gap)
-        lay(d, chunk, d.height, h)
+    for k in range(0, len(rest), 2):
+        chunk = rest[k:k + 2]
+        d = Drawing(W, len(chunk) * row_h + (len(chunk) - 1) * gap)
+        lay(d, chunk, d.height, row_h)
         pages.append(d)
     return pages
 
