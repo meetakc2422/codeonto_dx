@@ -351,7 +351,7 @@ def build_pdf(r: dict) -> bytes:
 def _compact_header(r, st, nice, title):
     p = r["period"]
     logo = _logo("logo-full.png", 8)
-    band = Table([[logo or Paragraph("SocialSpork", st["head"]), Paragraph(f'<font color="white" name="{FS}">{title}</font> <font color="#9AA8C7">| {nice(p["start"])} to {nice(p["end"])}</font>',
+    band = Table([[logo or Paragraph("Compass", st["head"]), Paragraph(f'<font color="white" name="{FS}">{title}</font> <font color="#9AA8C7">| {nice(p["start"])} to {nice(p["end"])}</font>',
                                                                            ParagraphStyle("b", parent=st["cell"], alignment=2, fontSize=8.5, leading=11))]], colWidths=[WIDTH * 0.4, WIDTH * 0.6])
     band.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), NAVY), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("LEFTPADDING", (0, 0), (-1, -1), 10), ("RIGHTPADDING", (0, 0), (-1, -1), 10),
                               ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))

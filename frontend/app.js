@@ -1266,7 +1266,7 @@ const shade = (hex, amt) => {  // mix a #rrggbb colour toward white (amt > 0) or
   const mix = (c) => Math.round(c + (t - c) * k);
   return `rgb(${mix(n >> 16)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
 };
-const DONUT_COLORS = ["#408fca", "#f59e0b", "#10b981", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#64748b"];
+const DONUT_COLORS = ["#d9480f", "#f59e0b", "#10b981", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#64748b"];
 function donutCard(id, title, hint, slices, centerLabel, cls = "", foot = "") {
   slices = slices.filter((x) => x.count > 0);
   if (!slices.length) return { html: "", mount() {} };
