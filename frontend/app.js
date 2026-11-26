@@ -791,7 +791,8 @@ function exportFilters() {
 // Sidebar page "Slots & offers": dining offers and bookable slots, for brands that have a dining outlet.
 async function renderDiningPage(page) {
   const v = state.diningTab === "menu" ? "menu" : "offers";
-  page.innerHTML = `<div class="segmented recon-toggle" style="margin-bottom:16px;width:fit-content"><button data-v="offers" class="${v === "offers" ? "active" : ""}">Offers</button><button data-v="menu" class="${v === "menu" ? "active" : ""}">Menu</button></div><div id="diningView"></div>`;
+  page.innerHTML = `<div class="segmented recon-toggle" style="margin-bottom:16px;width:fit-content"><button data-v="offers" class="${v === "offers" ? "active" : ""}">Offers</button><button data-v="menu" class="${v === "menu" ? "active" : ""}">Menu</button></div>${v === "offers" ? `<button class="btn light" id="diningXlsx" style="float:right">Export Excel</button>` : ""}<div id="diningView"></div>`;
+  $("#diningXlsx")?.addEventListener("click", (e) => exportDining(e.currentTarget));
   page.querySelector(".recon-toggle").onclick = (e) => {
     const b = e.target.closest("[data-v]"); if (!b || b.dataset.v === v) return;
     state.diningTab = b.dataset.v; renderDiningPage(page);
@@ -799,6 +800,22 @@ async function renderDiningPage(page) {
   if (v === "menu") { renderDiningMenu($("#diningView"), await api(`/brands/${state.brandId}/dining/menu`, { outlet_id: state.locationId })); return; }
   const d = await api(`/brands/${state.brandId}/dining`, { outlet_id: state.locationId, ...range() });
   renderDiningView($("#diningView"), d);
+}
+
+// Download the Slots & offers page (same outlet and dates) as an .xlsx
+async function exportDining(btn) {
+  btn.disabled = true; const label = btn.textContent; btn.textContent = "Preparing…";
+  try {
+    const url = new URL(`${API}/brands/${state.brandId}/dining/export`, location.origin);
+    Object.entries({ outlet_id: state.locationId, ...range() }).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
+    const res = await apiFetch(url);
+    if (!res.ok) throw userError("The file couldn't be made right now. Please try again in a moment.");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(await res.blob());
+    a.download = `slots-and-offers_${new Date().toISOString().slice(0, 10)}.xlsx`;
+    a.click(); URL.revokeObjectURL(a.href);
+  } catch (e) { toast(userMessage(e)); }
+  btn.disabled = false; btn.textContent = label;
 }
 
 // Dining menu prices next to delivery prices: a summary strip, then one collapsed row per outlet.

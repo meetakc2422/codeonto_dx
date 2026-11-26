@@ -112,6 +112,7 @@ api = [
     path("clients/<int:client_id>/billing/requests", billing.request_plan),
     path("brands/<int:brand_id>/ads/performance", payout_ads.ads_performance),
     path("brands/<int:brand_id>/dining", dining_api.brand_dining),
+    path("brands/<int:brand_id>/dining/export", dining_api.brand_dining_export),
     path("brands/<int:brand_id>/dining/menu", dining_api.brand_dining_menu),
     path("brands/<int:brand_id>/report", report.brand_report),
     path("brands/<int:brand_id>/report/xlsx", report.brand_report_xlsx),

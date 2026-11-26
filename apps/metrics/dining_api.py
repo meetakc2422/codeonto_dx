@@ -52,9 +52,13 @@ def _past(rid, start, end):
 @api_view(["GET"])
 def brand_dining(request, brand_id):
     get_brand(request.user, brand_id)
-    outlets = list(_dining_outlets(request, brand_id))
     if request.query_params.get("summary"):  # the sidebar only needs to know whether to show the link
-        return Response({"has_dining": bool(outlets)})
+        return Response({"has_dining": _dining_outlets(request, brand_id).exists()})
+    return Response(_dining_data(request, brand_id))
+
+
+def _dining_data(request, brand_id) -> dict:
+    outlets = list(_dining_outlets(request, brand_id))
     out = []
     today = date.today().isoformat()
     try:
@@ -90,7 +94,51 @@ def brand_dining(request, brand_id):
                 row["days"].append({"date": d, **v})
         row["past"] = _past(rid, start, min(end, date.today() - timedelta(days=1)))
         out.append(row)
-    return Response({"has_dining": bool(outlets), "outlets": out})
+    return {"has_dining": bool(outlets), "outlets": out}
+
+
+@api_view(["GET"])
+def brand_dining_export(request, brand_id):
+    """The Slots & offers page as an Excel file: the upcoming offers and the past days of the chosen dates, every outlet in one sheet each."""
+    from io import BytesIO
+
+    from django.http import HttpResponse
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    get_brand(request.user, brand_id)
+    data = _dining_data(request, brand_id)
+    wb = Workbook()
+    past = wb.active
+    past.title = "Past days"
+    past.append(["Outlet", "Date", "Day", "Meal", "Offer", "Slots", "Booked", "Filled %"])
+    up = wb.create_sheet("Upcoming offers")
+    up.append(["Outlet", "Date", "Day", "Meal", "Offer", "Discount %", "Window", "Slots left", "Booked so far"])
+    for o in data["outlets"]:
+        for r in o.get("past", []):
+            d = date.fromisoformat(r["date"])
+            past.append([o["name"], d, d.strftime("%a"), r["meal"], r["offer"], r["capacity"], r["booked"], r["fill_pct"]])
+        for day in o["days"]:
+            d = date.fromisoformat(day["date"])
+            for f in day["offers"]:
+                up.append([o["name"], d, d.strftime("%a"), f["meal"], f["offer"], f["discount_pct"], f["window"], f["slots_left"], f["booked_since_first"]])
+    for sheet in (past, up):
+        for cell in sheet[1]:
+            cell.font = Font(bold=True, color="FFFFFF")
+            cell.fill = PatternFill("solid", fgColor="0B1229")
+            cell.alignment = Alignment(vertical="center")
+        for row in sheet.iter_rows(min_row=2, min_col=2, max_col=2):
+            row[0].number_format = "dd mmm yyyy"
+        sheet.freeze_panes = "A2"
+        for i, col in enumerate(sheet.columns, 1):
+            width = max((len(str(c.value)) for c in list(col)[:300] if c.value is not None), default=8)
+            sheet.column_dimensions[get_column_letter(i)].width = min(max(width + 2, 10), 48)
+    buf = BytesIO()
+    wb.save(buf)
+    resp = HttpResponse(buf.getvalue(), content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    resp["Content-Disposition"] = f'attachment; filename="slots-and-offers_{date.today().isoformat()}.xlsx"'
+    return resp
 
 
 def _norm(x: str) -> str:
