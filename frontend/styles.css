@@ -1746,3 +1746,41 @@ tr.an-sec:has(.an-chev.open) td.an-label { box-shadow: inset 5px 0 0 var(--blue)
 tr.an-item td { background: #f4f8fe; }
 tr.an-item td.an-label { box-shadow: inset 5px 0 0 #b9cdf2; }
 tr.an-item:has(+ tr:not(.an-item)) td { border-bottom: 2px solid #b9cdf2; }
+
+/* Reconciliation: the summary band and the three cards */
+.rc-hero { position: relative; overflow: hidden; border-left: 6px solid #f0a53a; }
+.rc-hero.ok { border-left-color: #2fbf71; }
+.rc-hero.bad { border-left-color: #ef5d5d; }
+.rc-main { flex: 1; min-width: 260px; }
+.rc-hero .so-big { display: flex; align-items: baseline; gap: 0; }
+.rc-dot { display: inline-block; width: 12px; height: 12px; border-radius: 50%; margin-right: 12px; align-self: center; background: #2fbf71; box-shadow: 0 0 0 5px rgba(47, 191, 113, .22); }
+.rc-hero.bad .rc-dot { background: #ef5d5d; box-shadow: 0 0 0 5px rgba(239, 93, 93, .24); }
+.rc-progress { height: 7px; border-radius: 4px; background: rgba(255, 255, 255, .16); margin: 12px 0 8px; max-width: 520px; overflow: hidden; }
+.rc-progress u { display: block; height: 100%; border-radius: 4px; background: linear-gradient(90deg, #5fd39a, #2fbf71); transition: width .6s cubic-bezier(.2, .8, .2, 1); }
+.rc-diff { min-width: 190px; text-align: left; padding: 12px 18px; border: 1px solid rgba(255, 255, 255, .14); }
+.rc-diff b { font-size: 24px; letter-spacing: -.02em; }
+.rc-diff span { display: block; margin-top: 3px; font-size: 12px; font-weight: 600; }
+.rc-diff.ok span { color: #7be0ad; } .rc-diff.bad { background: rgba(239, 93, 93, .2); } .rc-diff.bad span { color: #ffb3b3; }
+.rc-kpi { display: flex; gap: 14px; align-items: flex-start; border-top: 0; position: relative; overflow: hidden; }
+.rc-kpi::before { content: ""; position: absolute; inset: 0 0 auto 0; height: 4px; background: var(--ac); }
+.rc-kpi.paid { --ac: #2fbf71; --acs: #e5f7ed; } .rc-kpi.due { --ac: #f0a53a; --acs: #fdf0dc; } .rc-kpi.rate { --ac: #7a55c7; --acs: #eee8fa; }
+.rc-ico { flex: none; width: 42px; height: 42px; border-radius: 12px; display: grid; place-items: center; background: var(--acs); color: var(--ac); }
+.rc-ico svg { width: 22px; height: 22px; }
+.rc-kpi .kpi-value { font-size: 26px; font-weight: 800; letter-spacing: -.02em; margin: 2px 0 3px; }
+
+/* Reconciliation: the payout list */
+.payout-table table { border-collapse: separate; border-spacing: 0; }
+.payout-table thead th { background: #f4f6fb; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #64748b; font-weight: 700; padding-top: 11px; padding-bottom: 11px; }
+.payout-table th.num, .payout-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+.payout-table tbody td { padding-top: 13px; padding-bottom: 13px; vertical-align: middle; }
+.payout-table tbody tr:not(.payout-detail) { transition: background .12s; } .payout-table tbody tr:not(.payout-detail):hover > td { background: #f6f9ff; }
+.payout-table tr.rc-bad > td:first-child { box-shadow: inset 4px 0 0 #ef5d5d; }
+.payout-table tr.rc-late > td:first-child { box-shadow: inset 4px 0 0 #f0a53a; }
+.payout-table tr.rc-bad:not(.open) > td { background: #fff8f8; }
+.rc-plat { display: inline-block; font-size: 10.5px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 1px 7px; border-radius: 5px; margin: 3px 7px 0 0; }
+.rc-plat.zomato { background: #fdecef; color: #cb202d; } .rc-plat.swiggy { background: #fff1e6; color: #e8710a; }
+.payout-table .status { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; }
+.payout-table .status::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.payout-table .payout-ok, .payout-table .payout-bad { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; }
+.payout-table .payout-ok { background: var(--green-soft); } .payout-table .payout-bad { background: var(--red-soft); }
+.payout-table .payout-ok::before { content: "✓ "; }

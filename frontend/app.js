@@ -2439,15 +2439,16 @@ async function renderReconciliation(page) {
   const combinedXlsx = new URL(`${API}/brands/${state.brandId}/payouts/combined/xlsx`, location.origin);
   Object.entries(listParams).forEach(([k, v]) => { if (v !== "" && v != null) combinedXlsx.searchParams.set(k, v); });
   page.innerHTML = `
-    <div class="so-hero">
-      <div><div class="so-big">${inr.format(summary.with_issues)}<small> payout${summary.with_issues === 1 ? "" : "s"} to check</small></div>
+    <div class="so-hero rc-hero ${summary.with_issues ? "bad" : "ok"}">
+      <div class="rc-main"><div class="so-big"><i class="rc-dot"></i>${inr.format(summary.with_issues)}<small> payout${summary.with_issues === 1 ? "" : "s"} to check</small></div>
+        <div class="rc-progress" title="${inr.format(summary.reconciled)} of ${inr.format(summary.cycles)} checked"><u style="width:${summary.cycles ? Math.max(2, Math.round((summary.reconciled / summary.cycles) * 100)) : 0}%"></u></div>
         <p>${inr.format(summary.reconciled)} of ${inr.format(summary.cycles)} payouts checked against their orders · Zomato and Swiggy</p></div>
-      <div class="so-now">Unexplained difference<b>${rupees(summary.discrepancy_total)}</b></div>
+      <div class="so-now rc-diff ${Math.abs(summary.discrepancy_total || 0) >= 1 ? "bad" : "ok"}">Unexplained difference<b>${rupees(summary.discrepancy_total)}</b><span>${Math.abs(summary.discrepancy_total || 0) >= 1 ? "needs a look" : "everything adds up"}</span></div>
     </div>
-    <div class="grid cols-3" style="margin-bottom:20px">
-      <div class="card kpi"><span class="kpi-label">Paid</span><div class="kpi-value">${rupees(summary.paid_total)}</div>${summary.zero_payouts ? `<span class="muted">${inr.format(summary.zero_payouts)} payouts were ₹0 after ads and Hyperpure</span>` : ""}</div>
-      <div class="card kpi"><span class="kpi-label">To be paid</span><div class="kpi-value">${rupees(summary.to_be_paid_total)}</div><span class="muted">${inr.format(summary.to_be_paid_cycles)} payouts${summary.carried_forward_cycles ? ` · ${inr.format(summary.carried_forward_cycles)} carried forward (${rupees(summary.carried_forward_total)})` : ""}</span></div>
-      <div class="card kpi"><span class="kpi-label">Commission take rate</span><div class="kpi-value">${summary.take_rate == null ? "—" : `${summary.take_rate.toFixed(2)}%`}</div><span class="muted">service fee on checked orders</span></div>
+    <div class="grid cols-3 rc-kpis" style="margin-bottom:20px">
+      <div class="card kpi rc-kpi paid"><i class="rc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></svg></i><div><span class="kpi-label">Paid</span><div class="kpi-value">${rupees(summary.paid_total)}</div>${summary.zero_payouts ? `<span class="muted">${inr.format(summary.zero_payouts)} payouts were ₹0 after ads and Hyperpure</span>` : ""}</div></div>
+      <div class="card kpi rc-kpi due"><i class="rc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></i><div><span class="kpi-label">To be paid</span><div class="kpi-value">${rupees(summary.to_be_paid_total)}</div><span class="muted">${inr.format(summary.to_be_paid_cycles)} payouts${summary.carried_forward_cycles ? ` · ${inr.format(summary.carried_forward_cycles)} carried forward (${rupees(summary.carried_forward_total)})` : ""}</span></div></div>
+      <div class="card kpi rc-kpi rate"><i class="rc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 5L5 19"/><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg></i><div><span class="kpi-label">Commission take rate</span><div class="kpi-value">${summary.take_rate == null ? "—" : `${summary.take_rate.toFixed(2)}%`}</div><span class="muted">service fee on checked orders</span></div></div>
     </div>
     ${summary.new_lines?.length && state.me.is_staff ? `<details class="card new-lines" style="margin-bottom:12px"><summary><b>${plural(summary.new_lines.length, "new statement line")}</b> to review <span class="muted">· lines we haven't seen on a Zomato or Swiggy statement before, click to open</span></summary>
       <p class="muted" style="margin-top:10px">These appeared on Zomato or Swiggy payout statements for the first time. Until reviewed they count as deductions not tied to orders, and aren't counted as ad spend.</p>
@@ -2482,15 +2483,15 @@ async function renderReconciliation(page) {
           .map(([v, l]) => `<button data-v="${v}" class="${payoutFilters.status === v ? "active" : ""}">${l}</button>`).join("")}</div>
       </div>
       ${analytics ? renderAnalytics(analytics) : statements ? renderStatementBlocks(statements.groups) : cycles.results.length ? `<div class="table-wrap payout-table"><table>
-        <thead><tr><th>Outlet</th><th>Cycle</th><th>Payout date</th><th>Status</th><th>UTR</th><th>Orders</th><th>Net payout</th><th>Check</th></tr></thead>
-        <tbody>${cycles.results.map((c) => `<tr data-cycle="${c.id}" class="${String(payoutFilters.open) === String(c.id) ? "open" : ""}">
-          <td><b>${esc(c.outlet)}</b><br><span class="muted">${esc([c.city, c.platform === "swiggy" ? "Swiggy" : "Zomato", c.res_id].filter(Boolean).join(" · "))}</span></td>
+        <thead><tr><th>Outlet</th><th>Cycle</th><th>Payout date</th><th>Status</th><th>UTR</th><th class="num">Orders</th><th class="num">Net payout</th><th>Check</th></tr></thead>
+        <tbody>${cycles.results.map((c) => `<tr data-cycle="${c.id}" class="${String(payoutFilters.open) === String(c.id) ? "open" : ""} ${c.issues.some((i) => i !== "overdue") ? "rc-bad" : c.issues.includes("overdue") ? "rc-late" : ""}">
+          <td><b>${esc(c.outlet)}</b><br><span class="rc-plat ${c.platform === "swiggy" ? "swiggy" : "zomato"}">${c.platform === "swiggy" ? "Swiggy" : "Zomato"}</span><span class="muted">${esc([c.city, c.res_id].filter(Boolean).join(" · "))}</span></td>
           <td>${cycleDates(c)}</td>
           <td class="muted">${c.payout_date ? dayLabel(c.payout_date) : "—"}</td>
           <td>${payoutStatusPill(c)}</td>
           <td><button class="payout-utr" data-open="${c.id}">${esc(c.utr || "View")}</button></td>
-          <td>${inr.format(c.order_count)}</td>
-          <td>${rupees(c.net_payout)}</td>
+          <td class="num">${inr.format(c.order_count)}</td>
+          <td class="num"><b>${rupees(c.net_payout)}</b></td>
           <td>${payoutCheckCell(c)}</td></tr>`).join("")}</tbody></table></div>
         ${cycles.total > cycles.results.length ? `<p class="muted" style="margin:10px 0 0">Showing ${inr.format(cycles.results.length)} of ${inr.format(cycles.total)}. Narrow the dates or search to see the rest.</p>` : ""}`
         : `<div class="empty-state"><h3>No payouts for these dates</h3><p>Pick other dates above. Payouts are collected once a day, for the recent dates the job covers.</p></div>`}
