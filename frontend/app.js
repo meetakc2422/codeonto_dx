@@ -1000,7 +1000,7 @@ function snapSlides(d) {
   const chip = (c) => (c == null ? "" : `<span class="snap-chip ${c >= 0 ? "up" : "down"}">${c >= 0 ? "▲" : "▼"} ${Math.abs(c)}% vs last week</span>`);
   const s = d.sales, slides = [];
   slides.push(`<div class="snap-hero"><svg viewBox="0 0 400 150" preserveAspectRatio="none" aria-hidden="true"><path class="a1" d="M0 150 L0 105 C60 100 90 40 150 28 C210 18 260 70 330 55 C360 48 380 60 400 62 L400 150Z"/><path class="a2" d="M0 150 L0 122 C70 118 110 96 170 98 C230 100 270 62 330 58 C365 56 385 64 400 66 L400 150Z"/></svg></div>
-    <div class="snap-body"><small class="snap-date">${nice(d.date, { day: "numeric", month: "long", year: "numeric" })}</small><h2>Your daily snapshot is ready</h2>
+    <div class="snap-body"><small class="snap-date">${nice(d.date, { day: "numeric", month: "long", year: "numeric" })}${d.date < new Date(Date.now() - 864e5).toISOString().slice(0, 10) ? " · latest day with sales data" : ""}</small><h2>Your daily snapshot is ready</h2>
     <p>See yesterday's performance across sales, platforms, customers and money lost.</p><button type="button" class="snap-cta" data-snap="next">Let's get started</button></div>`);
   const ratio = s.usual ? (s.value - s.usual) / s.usual : null;
   const verdict = ratio == null ? "" : ratio > 0.1 ? "above usual" : ratio < -0.1 ? "below usual" : "in line with usual";
@@ -1071,6 +1071,12 @@ function openSnapshot(d) {
     if (a === "next") go(i + 1, 1); else if (a === "prev") go(i - 1, -1); else if (a === "pause") setPause(!paused); else if (a === "close") close();
   });
   go(0, 1);
+}
+
+function autoSnapshot() {
+  const today = new Date().toISOString().slice(0, 10);
+  if (snapSeen(state.brandId, today) || document.getElementById("snapBg")) return;
+  setTimeout(() => showSnapshot(true), 900);
 }
 
 async function showSnapshot(auto) {
@@ -1188,7 +1194,6 @@ async function renderOverview(page) {
   const healthRing = healthyPct == null ? "" : `<span class="ov-ring" title="${inr.format(summary.replied)} of ${inr.format(summary.total)} reviews in this period have a reply"><svg viewBox="0 0 36 36" width="30" height="30"><circle cx="18" cy="18" r="15" class="ov-ring-bg"/><circle cx="18" cy="18" r="15" class="ov-ring-fg ${healthyPct < 40 ? "low" : healthyPct < 75 ? "mid" : ""}" pathLength="100" stroke-dasharray="${healthyPct} 100"/></svg><b>${healthyPct}%</b><small class="muted">reviews replied</small></span>`;
   const ALERTS_SHOWN = 6, ROWS_SHOWN = 10;
   page.innerHTML = `
-    <div class="snap-open"><button type="button" class="btn light" id="snapBtn">▶ Yesterday's snapshot</button></div>
     <div class="ov-tgrid">${tiles.join("")}</div>
     <div class="card ov-alerts">
       <div class="card-head"><h3>${alerts.length ? "Needs attention" : "All clear"}</h3>${healthRing}${critical ? `<span class="ov-crit">${critical} critical</span>` : '<span class="muted">nothing needs fixing right now</span>'}</div>
@@ -1224,8 +1229,6 @@ async function renderOverview(page) {
   };
   drawAlerts();
   drawRows();
-  $("#snapBtn")?.addEventListener("click", () => showSnapshot(false));
-  if (!snapSeen(state.brandId, new Date().toISOString().slice(0, 10)) && !document.getElementById("snapBg")) setTimeout(() => { if (document.querySelector("#snapBtn")) showSnapshot(true); }, 700);  // the first Overview of the day opens it by itself
   $("#ovAlertList").addEventListener("click", (e) => {
     const a = e.target.closest("[data-ai]");
     if (a && alerts[Number(a.dataset.ai)].set) Object.assign(reviewFilters, alerts[Number(a.dataset.ai)].set);
@@ -5504,6 +5507,7 @@ async function boot() {
   const initial = state.brands.find((b) => String(b.id) === saved)?.id || state.brands[0].id;
   $("#brandSelect").value = initial;
   await loadBrand(initial);
+  autoSnapshot();  // once a day, as soon as the dashboard is up
 }
 
 // back from Google's consent screen: tell the user how it went, then tidy the address bar

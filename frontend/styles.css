@@ -1640,7 +1640,6 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .ov-glass { margin-top: 0; padding-top: 0; }
 
 /* the daily snapshot: yesterday as a short run of slides */
-.snap-open { display: flex; justify-content: flex-end; margin: -4px 0 8px; } .snap-open .btn { font-size: 12.5px; padding: 5px 12px; }
 .snap-bg { position: fixed; inset: 0; z-index: 3000; display: grid; place-items: center; background: rgba(11, 18, 41, .72); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); animation: snapfade .25s ease both; }
 .snap-bg.out { animation: snapfade .2s ease reverse both; }
 .snap-stage { position: relative; width: min(440px, 94vw); height: min(640px, 92vh); display: flex; flex-direction: column; }

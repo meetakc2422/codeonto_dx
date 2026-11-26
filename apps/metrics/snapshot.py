@@ -54,7 +54,7 @@ def brand_snapshot(request, brand_id):
 
     # the day: yesterday, or the latest earlier day that has any sales
     day = date.today() - timedelta(days=1)
-    for _ in range(14):
+    for _ in range(45):
         if day_sales(day) > 0:
             break
         day -= timedelta(days=1)
