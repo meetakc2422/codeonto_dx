@@ -1395,7 +1395,7 @@ async function renderReviews(page) {
   $("#rStatus")?.addEventListener("change", (e) => { reviewFilters.status = e.target.value; loadReviews(true); });
   $("#rContact")?.addEventListener("change", (e) => { reviewFilters.contact = e.target.checked ? "shared" : ""; loadReviews(true); });
   page.querySelectorAll("[data-more]").forEach((b) => b.addEventListener("click", () => { reviewUi[b.dataset.more] = !reviewUi[b.dataset.more]; render(); }));
-  const cfg = { sel: reviewSel, types: ["band", "topic", "outlet", "platform"], noun: "review", noRead: ["platform"],
+  const cfg = { sel: reviewSel, types: ["band", "topic", "outlet", "platform"], noun: "review", noRead: ["platform"], noLines: true,
     labelOf: (t, k) => (t === "outlet" ? names.get(Number(k)) || `Outlet ${k}` : t === "band" ? { neg: "1–2★ reviews", mid: "3★ reviews", pos: "4–5★ reviews" }[k] : t === "platform" ? (k === "zomato" ? "Zomato" : k === "swiggy" ? "Swiggy" : k) : (allTopics.find((x) => x.slug === k)?.label || k)) };
   bindLinks(page, s, cfg, (type, key) => {  // "Read them": open the real reviews behind the highlight
     if (type === "band") reviewFilters.rating = key; else if (type === "topic") reviewFilters.topic = key; else if (type === "outlet") { state.locationId = key; showSelectedOutlet(); }
@@ -1638,7 +1638,7 @@ function applySelection(page, s, cfg) {
   }));
   page.insertAdjacentHTML("afterbegin", `<div id="lkBar" class="lk-bar"><span><b>${esc(cfg.labelOf(type, key))}</b> · ${inr.format(total)} ${cfg.noun || "item"}${total === 1 ? "" : "s"} linked</span>
     ${(cfg.noRead || []).includes(type) ? "" : '<button type="button" class="btn blue" id="lkRead">Read them</button>'}<button type="button" class="btn light" id="lkClear">Clear</button></div>`);
-  if (!selEl || !targets.length) return;
+  if (!selEl || !targets.length || cfg.noLines) return;  // the reviews page lights up what is linked without lines between the items
   requestAnimationFrame(() => drawLinks(page, selEl, targets));
 }
 // one click handler per page render: selects/clears the highlight, and "Read them" hands the selection to the page
