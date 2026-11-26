@@ -38,8 +38,17 @@ class Zomato:
         """kind: None works out what was typed; "restaurant", "dish" or "cuisine" asks for only that. Zomato's own suggestions tell them
         apart: a restaurant has a res_id, a dish is marked "Dish", and a cuisine or category is marked "See all restaurants"."""
         hints = zomato.suggest(spot, q)
-        named = [{"res_id": h["res_id"], "name": h["name"].strip(), "rating": None, "offers": [], "is_ad": False,
-                  "distance_km": None, "delivery_time": "", "area": ""} for h in hints if h["res_id"]]
+        # a restaurant in the typing dropdown is only a name match: it can be a listing that doesn't deliver here at all. Keep it only when
+        # Zomato's own search for it, from this spot, finds it, and then show it with its real rating, distance and offer.
+        named = []
+        for h in [h for h in hints if h["res_id"]][:3]:
+            try:
+                found = zomato.search_restaurants(spot, h["name"].strip(), search=h["search"]) if h.get("search") else {"restaurants": []}
+            except zomato.ZomatoAppError:
+                continue
+            real = next((r for r in found["restaurants"] if r["res_id"] == str(h["res_id"])), None)
+            if real:
+                named.append(real)
         if kind == "restaurant":
             return q, None, named
         if kind in ("dish", "cuisine"):
@@ -50,7 +59,15 @@ class Zomato:
             return hit["name"], None, zomato.search_restaurants(spot, q, search=hit["search"])["restaurants"]
         dish = next((h for h in hints if h["search"] and not h["res_id"]), None)
         listed = zomato.search_restaurants(spot, q, search=dish["search"]) if dish or not named else {"total": None, "restaurants": []}
-        return (dish["name"] if dish else q), listed.get("total"), named + listed["restaurants"]
+        label = dish["name"] if dish else q
+        if "|{" in label or label.startswith("<"):  # Zomato's own styling markup, not text to show
+            label = q
+        seen, rows = set(), []
+        for r in named + listed["restaurants"]:  # a verified name also appears in the list: show it once
+            if r["res_id"] not in seen:
+                seen.add(r["res_id"])
+                rows.append(r)
+        return label, listed.get("total"), rows
 
     @staticmethod
     def ranked(spot, q, pages=5):
