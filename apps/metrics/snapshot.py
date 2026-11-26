@@ -71,7 +71,9 @@ def brand_snapshot(request, brand_id):
     # the whole client: every active outlet of every active brand mapped to it (limited to what this login may see)
     # a client login: its own client. A SocialSpork admin login has no single client, so it is every client's outlets together
     scope = BrandOutlet.objects.filter(brand__is_active=True, brand__client__is_active=True, is_active=True).select_related("brand")
-    if not is_staff(request.user):
+    if is_staff(request.user):
+        scope = scope.filter(brand__client__is_demo=False)  # the sample client's made-up numbers do not belong in a total of real clients
+    else:
         scope = scope.filter(brand__client_id=brand.client_id)
     scope_rows = list(in_scope(scope, request.user, "id"))
     outlets = {o.id for o in scope_rows}
