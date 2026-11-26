@@ -1584,6 +1584,6 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .lk-bar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .lk-path, .lk-dot, .lk-n { animation: none; stroke-dashoffset: 0 !important; } }
 
-.ex-z { border: 1px solid var(--border); background: #fff; border-radius: 8px; height: 26px; padding: 0 10px; font-size: 12px; cursor: pointer; color: inherit; margin: 0 auto 0 12px; } .ex-z:hover { background: #eef1f6; }
+.ex-z { display: inline-flex; align-items: center; border: 1px solid var(--border); background: #fff; border-radius: 8px; height: 26px; padding: 0 10px; font-size: 12px; cursor: pointer; color: inherit; margin: 0 auto 0 12px; } .ex-z:hover { background: #eef1f6; }
 .ex-prev.ex-max { position: fixed; inset: 12px; z-index: 1000; display: flex; flex-direction: column; box-shadow: 0 0 0 100vmax rgba(15, 23, 42, .55); }
 .ex-prev.ex-max .ex-frame-wrap { flex: 1; aspect-ratio: auto; min-height: 0; } .ex-prev.ex-max .ex-send { display: none; } body.ex-noscroll { overflow: hidden; }
