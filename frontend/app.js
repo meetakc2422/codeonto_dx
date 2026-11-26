@@ -2427,7 +2427,6 @@ function stmtBase(sections) {
   const s = sections.find((x) => /^net order value/i.test(x.label || "")) || sections.find((x) => /^(total_order_value|total_customer_paid|gross_order_value)$/.test(x.id || ""));
   return s ? Math.abs(Number(s.value)) || null : null;
 }
-const pctOf = (v, base) => (base && v != null ? ` <span class="pct">${(100 * Math.abs(Number(v)) / base).toFixed(2)}%</span>` : "");
 
 // ---------- alert settings: who gets WhatsApp / email alerts, for which outlets and alert types ----------
 async function renderAlertSettings(page, clientId) {
@@ -2794,10 +2793,6 @@ async function togglePayoutDetail(tr, id) {
   const bigLines = d.breakdown.filter((sec) => !ORDER_SECTIONS.includes(sec.id)).flatMap((sec) => sec.items.filter((i) => i.value < 0).map((i) => ({ ...i, section: sec.label })))
     .sort((a, b) => a.value - b.value).slice(0, 3);
   const nGap = d.orders.filter((o) => reasons(o).some((x) => x.gap)).length;
-  // each order as a share of the payout's gross and net sales (Zomato's own statement totals; the orders' sum when the statement has none)
-  const secBase = (re) => { const s = d.breakdown.find((x) => re.test(x.label || "") || re.test(x.id || "")); return s ? Math.abs(Number(s.value)) || null : null; };
-  const grossBase = secBase(/^(gross order value|gross_order_value|total_order_value|total_customer_paid)/i) || d.orders.reduce((t, o) => t + Math.abs(Number(o.gross_value) || 0), 0) || null;
-  const netBase = secBase(/^net order value/i) || d.orders.reduce((t, o) => t + Math.abs(Number(o.net_order_value) || 0), 0) || null;
   const nFlag = d.orders.filter(flagged).length;
   const explain = carried ? `The orders match the statement. ${d.platform === "swiggy" ? "Swiggy" : "Zomato"} paid ₹0 because deductions not tied to orders (${bigLines.map((l) => `${l.label} ${rupees(l.value)}`).join(", ") || "see the statement"}) were bigger than what the orders earned; ${rupees(-(d.expected_payout || 0))} carries into the next payout`
     : gap && !nGap && bigLines.length ? `No single order explains it. Biggest deductions not tied to orders: ${bigLines.map((l) => `${l.label} ${rupees(l.value)}`).join(", ")}`
@@ -2851,7 +2846,7 @@ async function togglePayoutDetail(tr, id) {
       <tbody>${orders.map((o) => `<tr class="${flagged(o) ? (reasons(o).some((x) => x.gap) ? "flagged gap" : "flagged") : ""}">
         <td>${esc(o.order_id)}</td>
         <td class="muted">${o.order_date ? new Date(o.order_date).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "—"}</td>
-        <td>${esc(o.status)}</td><td>${rupees(o.gross_value)}${pctOf(o.gross_value, grossBase)}</td><td>${rupees(o.net_order_value)}${pctOf(o.net_order_value, netBase)}</td><td>${o.base_fee_pct}%${o.service_fee_pct !== o.base_fee_pct ? ` <span class="muted">+${(o.service_fee_pct - o.base_fee_pct).toFixed(1)}% distance</span>` : ""}</td><td>${rupees(o.fees_total)}</td>
+        <td>${esc(o.status)}</td><td>${rupees(o.gross_value)}</td><td>${rupees(o.net_order_value)}</td><td>${o.base_fee_pct}%${o.service_fee_pct !== o.base_fee_pct ? ` <span class="muted">+${(o.service_fee_pct - o.base_fee_pct).toFixed(1)}% distance</span>` : ""}</td><td>${rupees(o.fees_total)}</td>
         <td>${rupees(o.government_charges)}</td><td>${rupees(o.other_deductions)}</td><td><b>${rupees(o.payout)}</b></td>
         <td>${esc(o.settlement_status || "—")}${o.unsettled_amount ? ` <span class="muted">${rupees(o.unsettled_amount)} left</span>` : ""}</td>
         <td>${reasons(o).map((x) => `<span class="ov-issue ${x.money ? "money" : ""}">${esc(x.text)}</span>`).join(" ")}</td></tr>`).join("")}</tbody></table></div>` : ""}
