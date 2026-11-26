@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 from unittest import mock
 
-from django.test import SimpleTestCase
+from django.test import SimpleTestCase, TestCase
 
 from . import markets, swiggy, zomato
 
@@ -303,16 +303,17 @@ class SwiggyRestaurantInsideAnotherWidget(SimpleTestCase):
     @staticmethod
     def pb(*fields):
         """Protobuf bytes from (field number, str | bytes), the way the app packs them."""
+        def varint(n):
+            out = b""
+            while True:
+                out += bytes([n & 0x7F | (0x80 if n > 0x7F else 0)])
+                n >>= 7
+                if not n:
+                    return out
         out = b""
         for f, v in fields:
             v = v.encode() if isinstance(v, str) else v
-            n, size = len(v), b""
-            while True:  # the length is a varint
-                size += bytes([n & 0x7F | (0x80 if n > 0x7F else 0)])
-                n >>= 7
-                if not n:
-                    break
-            out += bytes([f << 3 | 2]) + size + v
+            out += varint(f << 3 | 2) + varint(len(v)) + v
         return out
 
     def test_the_nearest_branch_inside_a_dish_group_is_read(self):
@@ -331,3 +332,31 @@ class SwiggyRestaurantInsideAnotherWidget(SimpleTestCase):
         card = self.pb((1, self.pb((2, dish), (3, banner))))
         value = "".join(chr(0xFF00 + b) if b >= 0x80 else chr(b) for b in card)
         self.assertEqual(swiggy.find_restaurants(value), [])
+
+
+class ZomatoSearchAreas(TestCase):
+    def test_short_address(self):
+        from .market_api import _short_address
+        self.assertEqual(_short_address("Shop 4, Road No 36, Jubilee Hills, Hyderabad"), "Jubilee Hills, Hyderabad")
+        self.assertEqual(_short_address("Okhla, Delhi"), "Okhla, Delhi")
+        self.assertEqual(_short_address(""), "")
+
+    def test_a_read_address_is_kept_and_not_read_twice(self):
+        from .market_api import _add_areas
+        from .models import MarketRestaurant
+
+        class M:
+            code, Error = "zomato", RuntimeError
+            calls = 0
+
+            @classmethod
+            def profile(cls, place, res_id):
+                cls.calls += 1
+                return {"cuisines": [], "cost_text": "", "address": "Shop 1, Road 2, Indiranagar, Bengaluru", "open_text": "", "timings": []}
+        rows = [{"res_id": "7", "name": "Milano", "area": ""}]
+        _add_areas(M, {}, rows)
+        self.assertEqual(rows[0]["area"], "Indiranagar, Bengaluru")
+        again = [{"res_id": "7", "name": "Milano", "area": ""}]
+        _add_areas(M, {}, again)
+        self.assertEqual((again[0]["area"], M.calls), ("Indiranagar, Bengaluru", 1))
+        self.assertIn("Indiranagar", MarketRestaurant.objects.get(platform="zomato", res_id="7").info["address"])

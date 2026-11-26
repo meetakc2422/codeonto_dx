@@ -222,6 +222,42 @@ def cuisines(request, brand_id, outlet_id, platform):
     return Response({**_profile_json(r), "from_outlet": borrowed, "source": src.name})
 
 
+def _short_address(address: str) -> str:
+    """'Shop 4, Road 36, Jubilee Hills, Hyderabad' -> 'Jubilee Hills, Hyderabad': the last two parts say where it is."""
+    parts = [p.strip() for p in (address or "").split(",") if p.strip()]
+    return ", ".join(parts[-2:]) if len(parts) >= 3 else ", ".join(parts)
+
+
+def _add_areas(m, place, rows) -> None:
+    """Zomato's search cards carry no area. A restaurant's address comes from its info page (one call each), so what was read before is reused, and
+    the rest are read now, side by side, and kept for next time. A restaurant whose page doesn't answer is simply shown without an area."""
+    from concurrent.futures import ThreadPoolExecutor
+    saved = {r.res_id: r for r in MarketRestaurant.objects.filter(platform=m.code, res_id__in=[x["res_id"] for x in rows])}
+    for row in rows:
+        kept = saved.get(row["res_id"])
+        if not row.get("area") and kept and (kept.info or {}).get("address"):
+            row["area"] = _short_address(kept.info["address"])
+    todo = [row for row in rows if not row.get("area")]
+    if not todo:
+        return
+
+    def read(row):
+        try:
+            return row, m.profile(place, row["res_id"])
+        except m.Error:
+            return row, None
+    with ThreadPoolExecutor(max_workers=5) as pool:
+        got = list(pool.map(read, todo))
+    for row, p in got:
+        if not p or not p.get("address"):
+            continue
+        r = saved.get(row["res_id"]) or MarketRestaurant.objects.get_or_create(platform=m.code, res_id=row["res_id"], defaults={"name": row["name"]})[0]
+        r.info = {**(r.info or {}), "cuisines": p["cuisines"], "cost_text": p["cost_text"], "address": p["address"],
+                  "open_text": p["open_text"], "timings": p["timings"], "profile_at": timezone.now().isoformat()}
+        r.save(update_fields=["info"])
+        row["area"] = _short_address(p["address"])
+
+
 SEARCH_SHOWN = 10  # restaurants a search shows, on either app
 NEARBY_KM = 5  # a competitor farther than this is only suggested when too few are closer
 RANK_FRESH = 30 * 60  # seconds a cuisine's ranking is kept (half an hour: ad slots move through the day), so reopening the page does not search again
@@ -390,7 +426,10 @@ def search(request, brand_id, outlet_id, platform):
                      "area": r.get("area") or info.get("area") or info.get("address", ""),
                      "cuisines": r.get("cuisines") or info.get("cuisines") or [], "cost_for_two": r.get("cost_for_two") or info.get("cost_for_two", "")}
             rows.append({**r, "tracked": r["res_id"] in tracked, "is_us": r["res_id"] == ours})
-    return Response({"query": query, "total": total, "results": rows[:SEARCH_SHOWN]})
+    shown = rows[:SEARCH_SHOWN]
+    if hasattr(m, "profile"):
+        _add_areas(m, place, shown)
+    return Response({"query": query, "total": total, "results": shown})
 
 
 @api_view(["GET"])
