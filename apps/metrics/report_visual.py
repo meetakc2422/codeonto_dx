@@ -227,6 +227,32 @@ def _payouts(d, r, x, y, w, h):
             _text(d, x + w - 8, by, f'{P.fmt(q["net_order_value"], "currency", short=True)} / {P.fmt(q["payout"], "currency", short=True)}' if got else "no payout statements", 7.5, anchor="end", color=INK if got else MUTE)
 
 
+def _outlet_payouts(d, r, x, y, w, h):
+    """Payout outlet by outlet, from the same order statements as the payouts card (the full width of a row, in two columns when there are many outlets)."""
+    rows = sorted([q for q in ((_section(r, "payouts") or {}).get("rows") or []) if q.get("payout")], key=lambda q: -q["payout"])
+    _card(d, x, y, w, h, f"Payout by outlet ({len(rows)})")
+    if not rows:
+        _text(d, x + 10, y + h / 2 - 6, "No payout statements in this period", 8, color=MUTE)
+        return
+    shown = rows[:10]
+    areas = [q["name"].split(" · ")[-1] for q in shown]
+    labels = [a if areas.count(a) == 1 else f'{q["name"].split(" · ")[0][:11].rstrip()} · {a}' for a, q in zip(areas, shown)]
+    cols = 2 if len(shown) > 4 else 1
+    per = -(-len(shown) // cols)
+    cw = (w - 20 - 16 * (cols - 1)) / cols
+    row = min(22, (h - 34) / per)
+    top = max(q["payout"] for q in shown)
+    for k, (label, q) in enumerate(zip(labels, shown)):
+        cx, by = x + 10 + (k // per) * (cw + 16), y + h - 36 - (k % per) * row
+        _text(d, cx, by, label if len(label) <= 22 else label[:21] + "…", 7.5)
+        bw = cw - 100 - 92
+        d.add(Rect(cx + 100, by - 2, bw, 9, rx=2, ry=2, fillColor=colors.white, strokeColor=None))
+        d.add(Rect(cx + 100, by - 2, max(2, bw * q["payout"] / top), 9, rx=2, ry=2, fillColor=P.GREEN, strokeColor=None))
+        _text(d, cx + cw, by, P.fmt(q["payout"], "currency", short=True) + (f'  of {P.fmt(q["net_order_value"], "currency", short=True)}' if q.get("net_order_value") else ""), 7.5, True, anchor="end")
+    if len(rows) > len(shown):
+        _text(d, x + w - 10, y + 8, f"+ {len(rows) - len(shown)} more outlets", 6.5, color=MUTE, anchor="end")
+
+
 # which module draws which panel(s), and how many of the three columns each needs
 PANELS = {"overall": [(_platforms, 1), (_outlets, 1)], "growth": [(_funnel, 1)], "ads": [(_losses, 1)], "reputation": [(_ratings, 1)],
           "complaints": [(_complaints, 1)], "payouts": [(_payouts, 1)], "months": [(_trend, 2)]}
@@ -248,6 +274,8 @@ def build_drawings(r: dict, with_tiles: bool = True) -> list[Drawing]:
     in the order asked, three to a row and two rows to a page (more panels carry on to a second page)."""
     order = r.get("module_order") or list(PANELS)
     cells = [(fn, wt) for m in order for fn, wt in PANELS.get(m, [])]
+    if "payouts" in order and (_section(r, "payouts") or {}).get("rows"):
+        cells.append((_outlet_payouts, 3))  # last, so it takes the space a half-empty final page leaves
     gap = 8
     if not cells:
         if not with_tiles:
