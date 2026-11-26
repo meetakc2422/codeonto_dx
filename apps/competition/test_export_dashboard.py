@@ -53,12 +53,9 @@ def chart_spans(data):
 
 
 class DashboardChartsTests(SimpleTestCase):
-    def test_the_three_charts_never_overlap(self):
-        for names in (["PVR Café – Popcorn, Pizza, Hot Dogs & Snacks", "KFC"], ["A", "B", "C"], ["One", "Two", "Three", "Four", "Five", "Six"]):
-            spans = chart_spans(build(names))
-            self.assertEqual(len(spans), 3, names)
-            for (_, right), (left, _) in zip(spans, spans[1:]):
-                self.assertGreater(left, right, f"charts overlap for {len(names)} restaurants: {spans}")
+    def test_the_dashboard_has_no_rating_price_or_menu_size_charts(self):
+        z = zipfile.ZipFile(io.BytesIO(build(["A", "B", "C"])))
+        self.assertFalse([n for n in z.namelist() if n.startswith("xl/charts/")])  # no shared dish types in the sample, so no chart at all
 
     def test_long_restaurant_names_are_shortened_under_the_bars(self):
         self.assertEqual(_short("KFC"), "KFC")

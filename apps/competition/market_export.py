@@ -79,7 +79,9 @@ def _restaurants(mk, outlet, res_ids, with_us=True):
         if (not r or not r.items) and place:
             r = load_menu(mk, rid, place)
         if r:
-            out.append(("You · " + r.name if is_us else r.name, r, is_us))
+            where = ", ".join(x for x in ((outlet.area, outlet.city) if is_us else ((r.info or {}).get("area"), None)) if x)
+            name = f"{r.name} ({where})" if where and where.lower() not in r.name.lower() else r.name
+            out.append(("You · " + name if is_us else name, r, is_us))
     return out
 
 

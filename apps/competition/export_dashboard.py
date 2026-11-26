@@ -407,38 +407,7 @@ def add_dashboard(wb, platform_name, outlet_name, spot, read_at, rows, ins, kind
         ws.row_dimensions[row].height = 30 if len(text) < 110 else 45
         row += 1
 
-    # charts: drawn from a plain column-wise block (one restaurant per row), the layout every spreadsheet app reads
     row += 1
-    ws.cell(row, 1, "Chart data").font = Font(bold=True, color="64748B")
-    data_head = row + 1
-    for j, h in enumerate(["Restaurant", "Rating", "Average item price (₹)", "Menu items"], 1):
-        ws.cell(data_head, j, h).font = Font(bold=True)
-    for k, (label, r, _) in enumerate(rows, 1):
-        i = ins[r.res_id]
-        for j, v in enumerate([_short(label), r.rating, i.get("avg_price"), i.get("items")], 1):  # short names: long ones are cut off under the bars
-            ws.cell(data_head + k, j, v)
-    data_end = data_head + n
-    chart_row = data_end + 2
-    # side by side without overlapping: each chart starts at the first column that is clear of the one before it, from the columns' real widths
-    # (only the first columns are given a width, so the rest are narrow, and fixed columns put a chart on top of its neighbour)
-    cm_px, gap = 37.8, 24
-    chart_w = min(max(11, 2.2 * n + 6), 20)  # cm: wider with more restaurants, so every bar keeps its label
-    col_px = lambda c: (ws.column_dimensions[get_column_letter(c)].width or 8.43) * 7 + 5
-    edges = [0.0]  # edges[c - 1] = where column c starts, in pixels
-    for c in range(1, 80):
-        edges.append(edges[-1] + col_px(c))
-    prev_end = None
-    for col, title in ((2, "Rating"), (3, "Average item price (₹)"), (4, "Menu items")):
-        anchor_col = 1 if prev_end is None else next(c for c in range(1, 80) if edges[c - 1] >= prev_end + gap)
-        prev_end = edges[anchor_col - 1] + chart_w * cm_px
-        ch = BarChart()
-        ch.type, ch.title = "col", title
-        ch.legend = None
-        ch.height, ch.width = 7.5, chart_w
-        ch.add_data(Reference(ws, min_col=col, min_row=data_head, max_row=data_end), titles_from_data=True)
-        ch.set_categories(Reference(ws, min_col=1, min_row=data_head + 1, max_row=data_end))
-        ws.add_chart(ch, f"{get_column_letter(anchor_col)}{chart_row}")
-    row = chart_row + 17
 
     # dish types both sides sell, average price per restaurant
     us_id = next((r.res_id for _, r, is_us in rows if is_us), None)
