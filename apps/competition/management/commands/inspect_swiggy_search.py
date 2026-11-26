@@ -42,6 +42,14 @@ class Command(BaseCommand):
                     self.stdout.write(f"  id={r['res_id']} {r['name']!r} area={r['area']!r} {r['distance_km']} km rating={r['rating']} ratings={r['ratings']!r} {r['delivery_time']}")
             except swiggy.SwiggyAppError as e:
                 self.stdout.write(f"  (failed: {e})")
+        if first:
+            self.stdout.write(f"\n== the restaurant page of {first['name']!r}: as we read it now, and as the app asks for it after tapping it in the dropdown")
+            for how, opened in (("now ", None), ("app ", {"query": query, "metadata": first["metadata"]})):
+                try:
+                    m = swiggy.menu_once(spot, first["res_id"], opened)
+                    self.stdout.write(f"  {how} id={m['res_id']} area={m['area']!r} address={m['address']!r} {m['distance_km']} km {m['delivery_time']} rating={m['rating']} votes={m['votes']!r} {len(m['items'])} items")
+                except swiggy.SwiggyAppError as e:
+                    self.stdout.write(f"  {how} (failed: {e})")
         self.stdout.write(f"\n== search page for {query!r}")
         rows = swiggy.search_restaurants(spot, query)
         for r in rows:

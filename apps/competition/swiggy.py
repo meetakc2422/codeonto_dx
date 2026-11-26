@@ -325,15 +325,19 @@ def _menu_items(cards):
                 yield section, sub.get("title") or section, (ic.get("card") or {}).get("info") or {}
 
 
-def menu_raw(place: dict, res_id: str) -> dict:
-    """The restaurant page as the app loads it, untouched."""
+def menu_raw(place: dict, res_id: str, opened_from: dict | None = None) -> dict:
+    """The restaurant page as the app loads it, untouched. opened_from = {"query": typed text, "metadata": the dropdown suggestion's data} sends
+    what the app sends when a restaurant is tapped in the dropdown (it is how a chain's nearest branch is told apart from its default one)."""
+    body = {"source": "SEARCH", "submitAction": "DEEPLINK", "takeaway": 0, "isSld": 0, "qrEnabled": "false", "request_contexts": []}
+    if opened_from:
+        body.update({"query": opened_from["query"], "metaData": json.dumps(opened_from["metadata"], separators=(",", ":")),
+                     "searchMetaMap": {"correctedQuery": "", "suggestionType": "", "queryIntent": "RESTAURANT", "orderable": "true"}})
     return call("POST", f"https://disc.swiggy.com/api/v2/menu/{res_id}", place["lat"], place["lng"], place.get("city_id", ""), place.get("city", ""),
-                params={"complete-menu": "true", "lat": place["lat"], "lng": place["lng"]},
-                body={"source": "SEARCH", "submitAction": "DEEPLINK", "takeaway": 0, "isSld": 0, "qrEnabled": "false", "request_contexts": []})
+                params={"complete-menu": "true", "lat": place["lat"], "lng": place["lng"]}, body=body)
 
 
-def menu_once(place: dict, res_id: str) -> dict:
-    r = menu_raw(place, res_id)
+def menu_once(place: dict, res_id: str, opened_from: dict | None = None) -> dict:
+    r = menu_raw(place, res_id, opened_from)
     cards = (r.get("success") or {}).get("cards") or []
     header = next(((c.get("card") or {}).get("card") or {} for c in cards
                    if ((c.get("card") or {}).get("card") or {}).get("@type", "").endswith("CompactMenuHeader")), {})
