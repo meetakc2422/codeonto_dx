@@ -162,9 +162,10 @@ def _backfill_ids(brand_id: int) -> dict[str, list[str]]:
 
 
 def _backfill_update(request_id: int, **fields) -> None:
-    sets = ", ".join(f"{k} = %s" for k in fields)
+    """Write progress / status; with no fields it only says 'still alive' (updated_at)."""
+    sets = "".join(f"{k} = %s, " for k in fields)
     with db.transaction() as cur:
-        cur.execute(f"UPDATE backfill_requests SET {sets}, updated_at = now() WHERE id = %s", (*fields.values(), request_id))
+        cur.execute(f"UPDATE backfill_requests SET {sets}updated_at = now() WHERE id = %s", (*fields.values(), request_id))
 
 
 _STAMP = re.compile(r"^\[[^\]]*\]\s*")
@@ -189,8 +190,17 @@ def run_backfill(req: dict) -> None:
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
     total = done = 0
     problems: list[str] = []
-    last_touch = 0.0
     finished = None
+    stop_beat = threading.Event()
+
+    def beat():  # the site fails a backfill whose worker goes quiet; a long step prints nothing, so a timer says "still alive", not the output
+        while not stop_beat.wait(60):
+            try:
+                _backfill_update(req["id"])
+            except Exception as e:  # noqa: BLE001  a database blip must not stop the sync
+                log.warning("Backfill heartbeat failed: %s", e)
+
+    threading.Thread(target=beat, name="backfill-heartbeat", daemon=True).start()
     try:
         proc = subprocess.Popen(cmd, cwd=HERE, env=env, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8", errors="replace")
         for raw in proc.stdout:
@@ -201,19 +211,19 @@ def run_backfill(req: dict) -> None:
                 what = line[1:].strip().split(" (try")[0]  # e.g. "zomato payouts 50 outlets 2026-10-27..2026-11-25"
                 parts = what.split()
                 label = f"{parts[0].capitalize()} · {parts[1].replace('_', ' ')}" if len(parts) > 1 else what
-                _backfill_update(req["id"], progress=f"{label} ({done} of {total} runs done)"[:300]); last_touch = time.time()
+                _backfill_update(req["id"], progress=f"{label} ({done} of {total} runs done)"[:300])
             elif line.startswith("✅"):
                 done += 1
             elif line.startswith(("❌", "✋")):
                 problems.append(line[1:].strip()[:300])
             elif m := _RANS.search(line):
                 finished = tuple(int(x) for x in m.groups())
-            if time.time() - last_touch > 60:  # tell the site we are still alive
-                _backfill_update(req["id"], progress=f"{done} of {total} runs done"); last_touch = time.time()
         code = proc.wait()
     except Exception as e:  # noqa: BLE001
         log.exception("Backfill %s crashed: %s", name, e)
         code, problems = 1, [str(e) or e.__class__.__name__]
+    finally:
+        stop_beat.set()
     now = datetime.now(timezone.utc)
     if code == 0:
         result = f"{finished[0]} of {finished[1]} runs done" if finished else ("Nothing left to load: already synced" if not total else f"{done} of {total} runs done")
