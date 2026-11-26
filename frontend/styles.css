@@ -1634,3 +1634,7 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .calm .dn-item.on, .calm .dn-dish.on { background: #eef2fb; }
 .calm .lk-sel { box-shadow: 0 0 0 2px #4f74d6 !important; } .calm .lk-n { background: #4f74d6; }
 .calm .cp-bad { color: #b84343; } .calm .cp-warn { color: #9a741f; }
+
+/* a clear line and some air between the page header (title, filters) and the content under it */
+.page-head { padding-bottom: 12px; margin-bottom: 16px; border-bottom: 1px solid #e3e7ee; }
+.ov-glass { margin-top: 0; padding-top: 0; }
