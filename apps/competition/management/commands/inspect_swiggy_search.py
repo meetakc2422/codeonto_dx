@@ -1,10 +1,12 @@
 """Show what Swiggy answers for a typed name from an outlet's delivery spot: the dropdown and the search page, to see where a nearer branch is.
 
-    python manage.py inspect_swiggy_search <outlet_id> "milano ice cream"
+    python manage.py inspect_swiggy_search "frozen" "milano ice cream"
 
 Prints the dropdown's restaurants (id, name, area, rating), every kind of card the search page holds, and for each restaurant card its id, name,
 area, distance and rating. Read-only: nothing is saved, and no session or token is printed."""
 import collections
+
+from django.db.models import Q
 
 from django.core.management.base import BaseCommand, CommandError
 
@@ -16,13 +18,18 @@ class Command(BaseCommand):
     help = "Print what Swiggy's dropdown and search return for a name at an outlet's spot (read-only)."
 
     def add_arguments(self, parser):
-        parser.add_argument("outlet_id", type=int)
+        parser.add_argument("outlet", help="the outlet's number, or part of its name (for example: frozen)")
         parser.add_argument("query")
 
-    def handle(self, *args, outlet_id, query, **opts):
-        a = MarketSpot.objects.filter(outlet_id=outlet_id, platform="swiggy").first()
-        if not a:
-            raise CommandError("That outlet has no Swiggy location yet.")
+    def handle(self, *args, outlet, query, **opts):
+        spots = MarketSpot.objects.filter(platform="swiggy").select_related("outlet__brand")
+        spots = spots.filter(outlet_id=int(outlet)) if outlet.isdigit() else spots.filter(
+            Q(outlet__outlet_name__icontains=outlet) | Q(outlet__brand__name__icontains=outlet) | Q(outlet__area__icontains=outlet))
+        found = list(spots[:10])
+        if len(found) != 1:
+            names = "\n".join(f"  {x.outlet_id}: {x.outlet.brand.name} - {x.outlet.outlet_name}" for x in found)
+            raise CommandError(("No outlet with a Swiggy location matches that." if not found else "More than one matches, pass its number:\n" + names))
+        a = found[0]
         spot = {**a.details, "lat": a.lat, "lng": a.lng, "city_id": a.city_id}
         self.stdout.write(f"spot: {a.title} ({a.lat:.4f}, {a.lng:.4f})\n\n== dropdown for {query!r}")
         for h in swiggy.suggest(spot, query):
