@@ -4370,7 +4370,7 @@ async function renderMarketComp(page, outletId) {
     <div class="card">
       <form id="zSearch" class="comp-search comp-search-lg">${state.compTab === "zomato" ? `<select name="kind" id="zKind" aria-label="Search type" title="What to search for">${SEARCH_KINDS.map(([v, t]) => `<option value="${v}" ${(state.searchKind || "") === v ? "selected" : ""}>${t}</option>`).join("")}</select>` : ""}<input name="q" placeholder="Search a restaurant, dish or cuisine on ${zName()}, e.g. Meghana, biryani, chinese" autofocus>
         <button class="btn blue">Search</button></form>
-      <p class="login-error" id="zError"></p><div id="zResults" class="comp-results"></div>
+      <p class="login-error" id="zError"></p>
       <div id="zCuisines" class="comp-cuisines"></div>
       ${zPeek(outletId) ? `<p class="comp-peek">Viewing from <strong>${esc(zPeek(outletId).title)}</strong>${zPeek(outletId).address ? `, ${esc(zPeek(outletId).address)}` : ""}
           <small>just for now, not saved</small> · <button class="login-link" id="zPeekOff">Back to the outlet's location</button></p>`
@@ -4466,32 +4466,49 @@ async function renderMarketComp(page, outletId) {
     e.preventDefault(); $("#zError").textContent = "";
     const btn = e.target.querySelector("button"); btn.disabled = true;
     const asked = (e.target.q.value || "").trim();
-    $("#zResults").innerHTML = `<div class="comp-results-head"><b>Results for "${esc(asked)}"</b> <small class="muted">searching ${zName()}…</small></div>`;
-    $("#zResults").scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const dlg = searchModal(`Results for "${asked}"`, `searching ${zName()}…`, '<p class="muted cs-note">One moment…</p>');
     try {
       const r = await apiJSON(`${zBase(outletId)}/search`, "POST", { q: e.target.q.value, kind: e.target.kind?.value || "", spot: zPeek(outletId)?.spot });
       results = r.results;
-      $("#zResults").innerHTML = `<div class="comp-results-head"><b>Results for "${esc(r.query || asked)}"</b> <small class="muted">${r.total ? `${inr.format(r.total)} restaurants on ${zName()} · showing the first ${results.length}` : ""}</small> <button type="button" class="login-link" data-zclear>Clear results ✕</button></div>` +
-        (results.length ? results.map((x, i) => `<div class="comp-result">
-          <span><strong>${esc(x.name)}${x.is_ad ? ' <em class="comp-ad">Ad</em>' : ""}${x.is_us ? ' <em class="comp-you">You</em>' : ""}</strong>
+      dlg.set(`Results for "${r.query || asked}"`, r.total ? `${inr.format(r.total)} restaurants on ${zName()} · showing the first ${results.length}` : "",
+        results.length ? results.map((x, i) => `<div class="cs-row">
+          <span class="cs-main"><strong>${esc(x.name)}${x.is_ad ? ' <em class="comp-ad">Ad</em>' : ""}${x.is_us ? ' <em class="comp-you">You</em>' : ""}</strong>
             <small class="muted">${[x.area, x.distance_km != null ? `${x.distance_km} km` : "", x.delivery_time, x.offers?.[0]?.text].filter(Boolean).map(esc).join(" · ")}</small></span>
-          <span class="num">${x.rating != null ? `${x.rating.toFixed(1)} ★` : ""}</span>
-          <span class="btn-row"><button class="btn light" data-zres="${i}" data-act="view">View</button>
+          <span class="cs-rate">${x.rating ? `${x.rating.toFixed(1)} ★` : ""}</span>
+          <span class="cs-act"><button class="btn light" data-zres="${i}" data-act="view">View</button>
             ${x.is_us ? "" : `${d.our_how === "linked" ? "" : `<button class="btn light" data-zres="${i}" data-act="us">This is us</button>`}
               <button class="btn ${x.tracked ? "light" : "blue"}" data-zres="${i}" data-act="track" ${x.tracked ? "disabled" : ""}>${x.tracked ? "Comparing" : "Compare"}</button>`}</span></div>`).join("")
-          : '<p class="muted">Nothing found.</p>');
-    } catch (x) { err(x); $("#zResults").innerHTML = ""; }
+          : '<p class="muted cs-note">Nothing found.</p>');
+      dlg.body.onclick = (ev) => {
+        const b = ev.target.closest("[data-zres]");
+        if (!b) return;
+        const x = results[Number(b.dataset.zres)];
+        if (b.dataset.act === "view") { dlg.close(); showMarketRestaurant(outletId, x.res_id, track); }
+        else if (b.dataset.act === "us") { dlg.close(); setUs(x.res_id); }
+        else { b.disabled = true; b.textContent = "Adding…"; track(x, true).then((ok) => { if (ok) dlg.close(); else { b.disabled = false; b.textContent = "Compare"; } }); }
+      };
+    } catch (x) { dlg.close(); err(x); }
     btn.disabled = false;
   });
-  $("#zResults").addEventListener("click", (e) => {
-    if (e.target.closest("[data-zclear]")) { $("#zResults").innerHTML = ""; results = []; return; }
-    const b = e.target.closest("[data-zres]");
-    if (!b) return;
-    const x = results[Number(b.dataset.zres)];
-    if (b.dataset.act === "view") showMarketRestaurant(outletId, x.res_id, track);
-    else if (b.dataset.act === "us") setUs(x.res_id);
-    else { b.disabled = true; b.textContent = "Adding…"; track(x, true).then((ok) => { if (!ok) { b.disabled = false; b.textContent = "Compare"; } }); }
-  });
+}
+
+// a compact pop-up for search results: opens at once with a waiting line, then set() fills it; closes on Esc, a click outside or the cross
+function searchModal(title, sub, bodyHtml) {
+  document.getElementById("csBg")?.remove();
+  const bg = document.createElement("div");
+  bg.id = "csBg"; bg.className = "cs-bg";
+  bg.innerHTML = `<div class="cs-modal" role="dialog" aria-modal="true" aria-label="Search results">
+    <div class="cs-head"><div><b class="cs-title"></b><small class="muted cs-sub"></small></div><button type="button" class="cs-x" aria-label="Close">✕</button></div>
+    <div class="cs-body"></div></div>`;
+  document.body.appendChild(bg);
+  const body = bg.querySelector(".cs-body"), t = bg.querySelector(".cs-title"), u = bg.querySelector(".cs-sub");
+  const close = () => { document.removeEventListener("keydown", onKey); bg.remove(); };
+  const onKey = (e) => { if (e.key === "Escape") close(); };
+  document.addEventListener("keydown", onKey);
+  bg.addEventListener("click", (e) => { if (e.target === bg || e.target.closest(".cs-x")) close(); });
+  const set = (title2, sub2, html) => { t.textContent = title2; u.textContent = sub2 || ""; body.innerHTML = html; };
+  set(title, sub, bodyHtml);
+  return { body, set, close };
 }
 
 // step one on a delivery app: where the outlet stands in the app, so searches and menus match what customers there see
