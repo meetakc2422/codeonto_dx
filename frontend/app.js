@@ -1215,7 +1215,7 @@ async function renderModule(page, module) {
   if (!single) lineChart($("#cTrend"), labels, datasets, meta.unit);
   else if (donut) chart($("#cSplit"), { type: "doughnut",
     data: { labels: split.map((x) => x.name), datasets: [{ data: split.map((x) => x.v), backgroundColor: split.map((x) => PLATFORM_COLORS[x.code] || "#94a3b8"), borderWidth: 2 }] },
-    options: { maintainAspectRatio: false, cutout: "68%", plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.label}: ${fmt(c.parsed, meta.unit, false)}` } } } } });
+    options: { maintainAspectRatio: false, cutout: "76%", plugins: { legend: { display: false }, tooltip: { callbacks: { label: (c) => ` ${c.label}: ${fmt(c.parsed, meta.unit, false)}` } } } } });
 
   page.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => {
     location.hash = `#/${module}?kpi=${b.dataset.kpi}`;
@@ -1282,13 +1282,10 @@ function donutCard(id, title, hint, slices, centerLabel, cls = "", foot = "") {
     const el = document.getElementById(`dn_${id}`);
     if (!el) return;
     const ring = chart(el, { type: "doughnut",
-      data: { labels: slices.map((x) => x.label), datasets: [{ data: slices.map((x) => x.count), borderWidth: 2, borderColor: "#fff", hoverOffset: 12,
-        backgroundColor: (c) => {  // light on top, darker below: the ring looks like it has volume
-          const x = slices[c.dataIndex], a = c.chart.chartArea;
-          if (!x || !a) return x ? x.color : "#ccc";
-          const g = c.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
-          g.addColorStop(0, shade(x.color, 0.32)); g.addColorStop(0.55, x.color); g.addColorStop(1, shade(x.color, -0.28));
-          return anyOn && !x.on ? shade(x.color, 0.6) : g;
+      data: { labels: slices.map((x) => x.label), datasets: [{ data: slices.map((x) => x.count), borderWidth: 3, borderColor: "#fff", hoverOffset: 4,
+        backgroundColor: (c) => {  // flat colours; the slices not picked fade out
+          const x = slices[c.dataIndex];
+          return !x ? "#ccc" : anyOn && !x.on ? shade(x.color, 0.6) : shade(x.color, 0.06);
         } }] },
       options: { maintainAspectRatio: false, devicePixelRatio: Math.max(2, window.devicePixelRatio || 1), cutout: "68%", layout: { padding: 8 }, animation: { animateRotate: true, animateScale: true, duration: 900, easing: "easeOutQuart" }, plugins: { legend: { display: false }, tooltip: { displayColors: false, padding: 6, bodyFont: { size: 12 }, callbacks: { title: () => "", label: (c) => `${c.label}: ${inr.format(c.parsed)}` } } },
         onClick: (e, els) => { if (els.length) document.querySelector(`[data-dn="${id}:${slices[els[0].index].key}"]`)?.click(); } } });
