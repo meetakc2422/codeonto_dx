@@ -27,6 +27,8 @@ class SwiggySearchCard(SimpleTestCase):
         self.assertIn("North Indian", r["cuisines"])
         self.assertTrue(r["serviceable"])
         self.assertTrue(r["distance_km"])
+        self.assertIn("RX_THUMBNAIL/IMAGES/VENDOR/2026/2/7/ce422778-4ed6-4729-a3e3-e7925d94feb9_574401.JPG", r["image"])
+        self.assertTrue(r["image"].startswith("https://media-assets.swiggy.com/"))
 
     def test_garbage_is_skipped_not_raised(self):
         for bad in ("", "abc", "ﾋ\x06\x05", CARD[:40]):

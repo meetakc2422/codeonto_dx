@@ -4476,7 +4476,8 @@ async function renderMarketComp(page, outletId) {
           <span class="cs-main"><strong>${esc(x.name)}${x.is_ad ? ' <em class="comp-ad">Ad</em>' : ""}${x.is_us ? ' <em class="comp-you">You</em>' : ""}</strong>
             <span class="cs-meta">${x.rating ? `<span class="cs-rate">${x.rating.toFixed(1)} ★</span>` : ""}${[x.distance_km != null ? `${x.distance_km} km` : "", x.delivery_time, x.area].filter(Boolean).map((t) => `<span>${esc(t)}</span>`).join("")}</span>
             ${x.offers?.[0]?.text ? `<span class="cs-offer">${esc(x.offers[0].text)}</span>` : ""}
-            ${x.dishes?.length ? `<small class="cs-dishes">${x.dishes.slice(0, 3).map((dd) => `${esc(dd.name)}${dd.price ? ` ${esc(dd.price)}` : ""}`).join(" · ")}</small>` : ""}</span>
+            ${x.dishes?.length ? `<small class="cs-dishes">${x.dishes.slice(0, 3).map((dd) => `${esc(dd.name)}${dd.price ? ` ${esc(dd.price)}` : ""}`).join(" · ")}</small>`
+              : x.cuisines?.length ? `<small class="cs-dishes">${[x.cuisines.slice(0, 4).join(", "), x.cost_for_two].filter(Boolean).map(esc).join(" · ")}</small>` : ""}</span>
           <span class="cs-act"><button class="btn light" data-zres="${i}" data-act="view">View</button>
             ${x.is_us ? "" : `${d.our_how === "linked" ? "" : `<button class="btn light" data-zres="${i}" data-act="us">This is us</button>`}
               <button class="btn ${x.tracked ? "light" : "blue"}" data-zres="${i}" data-act="track" ${x.tracked ? "disabled" : ""}>${x.tracked ? "Comparing" : "Compare"}</button>`}</span></div>`).join("")

@@ -158,7 +158,8 @@ class Swiggy:
         listed = Swiggy._nearby(spot, q)
         if listed:
             rows = [{"res_id": r["res_id"], "name": r["name"], "rating": r["rating"], "offers": [], "is_ad": False,
-                     "distance_km": r["distance_km"], "delivery_time": r["delivery_time"], "area": r["area"]} for r in listed]
+                     "distance_km": r["distance_km"], "delivery_time": r["delivery_time"], "area": r["area"],
+                     "image": r.get("image", ""), "cuisines": r.get("cuisines") or [], "cost_for_two": r.get("cost_for_two", "")} for r in listed]
             return q, None, rows[:40]
         rows = [{"res_id": h["res_id"], "name": h["name"], "rating": h["rating"], "offers": [], "is_ad": False, "distance_km": None,
                  "delivery_time": h["delivery_time"], "area": h["area"]} for h in swiggy.suggest(spot, q) if h["res_id"]]

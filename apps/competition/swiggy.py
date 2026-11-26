@@ -23,6 +23,7 @@ log = logging.getLogger(__name__)
 
 # Swiggy serves menu photos from its CDN by imageId
 IMAGE_CDN = "https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_300/"
+THUMB_CDN = "https://media-assets.swiggy.com/swiggy/image/upload/fl_lossy,f_auto,q_auto,w_160,h_160,c_fill/"  # a restaurant's search thumbnail
 
 TIMEOUT = 30
 BAD_ESCAPE = re.compile(r'\\(?!["\\/bfnrtu])')
@@ -253,6 +254,7 @@ def parse_restaurant_card(value: str) -> dict | None:
         km = re.search(r"[\d.]+", st(17))
         rating = re.search(r"\d\.\d", txt(18))
         return {"res_id": res_id, "name": txt(2), "city_id": txt(3), "address": txt(7), "locality": txt(8), "area": txt(9) or txt(8),
+                "image": f"{THUMB_CDN}{txt(6)}" if "/" in txt(6) else "",
                 "rating": float(rating.group(0)) if rating else None, "ratings": txt(19),
                 "cost_for_two": txt(11).replace(" FOR TWO", " for two"), "cuisines": cuisines,
                 "delivery_time": st(16).lower(), "distance_km": float(km.group(0)) if km else None,
