@@ -1592,3 +1592,11 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .cp-stat { display: flex; flex-direction: column; justify-content: flex-start; }
 .cp-stat .cs-bar { margin-top: auto; }
 .cp-stat b { min-height: 28px; margin-bottom: 6px; }
+
+/* denser: more on screen, less empty space */
+.dn-rings { gap: 8px; margin-bottom: 8px; } .dn-ring { padding: 10px 12px; gap: 2px; }
+.dn-chart { width: 140px; height: 140px; } .dn-center b { font-size: 24px; } .dn-body { gap: 8px 16px; }
+.dn-item { padding: 4px 8px; font-size: 12.5px; } .dn-item .dn-name { display: flex; align-items: baseline; gap: 6px; } .dn-sub { font-style: normal; font-size: 11px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card.cp-stats { gap: 8px; margin-bottom: 8px; } .cp-stat { padding: 8px 12px 9px; } .cp-stat b { font-size: 22px; margin-bottom: 4px; min-height: 0; }
+.dn-glance { margin-bottom: 8px; padding: 10px 14px; } .dn-gline { font-size: 14px; line-height: 1.4; } .dn-gfacts { margin-top: 6px; }
+.dn-dishes, .dn-attn { margin-bottom: 8px; } .dn-dish { padding: 4px 8px; }

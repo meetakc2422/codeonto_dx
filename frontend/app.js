@@ -1277,7 +1277,7 @@ function donutCard(id, title, hint, slices, centerLabel, cls = "", foot = "") {
   const html = `<div class="dn-ring ${cls}"><div class="dn-rh"><b>${title}</b>${hint ? `<small>${hint}</small>` : ""}</div>
     <div class="dn-body"><div class="dn-chart"><canvas id="dn_${id}"></canvas><div class="dn-center"><b data-count="${total}">${inr.format(total)}</b><span>${centerLabel}</span></div></div>
     <div class="dn-legend">${slices.map((x) => `<button type="button" class="dn-item ${x.on ? "on" : ""}" data-dn="${id}:${x.key}" ${x.attr || ""} title="${esc([x.tip, x.sub].filter(Boolean).join(" · "))}">
-      <i style="background:${x.color}"></i><span class="dn-name">${esc(x.label)}</span><b>${inr.format(x.count)}</b><span class="muted">${Math.round((x.count / total) * 100)}%</span></button>`).join("")}${foot}</div></div></div>`;
+      <i style="background:${x.color}"></i><span class="dn-name">${esc(x.label)}${x.sub ? `<em class="dn-sub">${esc(x.sub)}</em>` : ""}</span><b>${inr.format(x.count)}</b><span class="muted">${Math.round((x.count / total) * 100)}%</span></button>`).join("")}${foot}</div></div></div>`;
   const mount = () => {
     const el = document.getElementById(`dn_${id}`);
     if (!el) return;
