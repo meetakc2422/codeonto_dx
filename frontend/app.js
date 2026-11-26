@@ -1033,7 +1033,14 @@ async function renderOverview(page) {
       shownRating ? changeChip(shownRating) : ""));
   }
   const revK = kpi("gross_revenue"), ordK = kpi("delivered_orders");
-  if (revK) tiles.push(T((revK.change_pct ?? 0) <= -10 ? "amber" : "ok", "#/marketplace_sales", "Revenue", fmt(revK.value, revK.unit), vs, changeChip(revK), sparkOf("gross_revenue")));
+  // Sales from the platforms' business reports, before fees: Zomato's own "Sales" (gross_revenue) plus Swiggy's "Net Sales" (net_revenue), as the Export report adds them
+  const salesParts = ["gross_revenue", "net_revenue"].map(kpi).filter(Boolean);
+  if (salesParts.length) {
+    const total = salesParts.reduce((t, k) => t + Number(k.value), 0);
+    const before = salesParts.every((k) => k.previous_value != null) ? salesParts.reduce((t, k) => t + Number(k.previous_value), 0) : null;
+    const change = before ? ((total - before) / before) * 100 : null;
+    tiles.push(T((change ?? 0) <= -10 ? "amber" : "ok", "#/marketplace_sales", "Sales", fmt(total, "currency"), `${vs} · before fees`, changeChip({ change_pct: change, higher_is_better: true })));
+  }
   if (ordK) tiles.push(T((ordK.change_pct ?? 0) <= -10 ? "amber" : "ok", "#/marketplace_sales", "Orders", fmt(ordK.value, ordK.unit), vs, changeChip(ordK), sparkOf("delivered_orders")));
   if (stock) {
     const loss = stock.period_loss;
