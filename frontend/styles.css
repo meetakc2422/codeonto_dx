@@ -1714,3 +1714,35 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .dn-past .dn-dayband span { margin-left: 8px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #2f4a9a; background: #fff; border: 1px solid #c9d2e8; border-radius: 999px; padding: 2px 8px; }
 .dn-past tbody tr:not(.dn-dayband) td:first-child { padding-left: 22px; }
 .snap-note { margin: 0; font-size: 12px !important; line-height: 1.45 !important; color: #8a6d1f !important; background: #fdf6e3; border-radius: 8px; padding: 8px 10px; }
+
+/* Reconciliation: an opened payout reads as its own panel, clearly apart from the rows around it */
+.payout-table tr.open > td { background: #e6eefc; border-top: 2px solid var(--blue); font-weight: 600; }
+.payout-table tr.open > td:first-child { box-shadow: inset 5px 0 0 var(--blue); }
+.payout-detail > td { padding: 0 !important; background: #f2f6fd; border-bottom: 3px solid var(--blue); box-shadow: inset 5px 0 0 var(--blue), inset 0 12px 14px -12px rgba(11, 18, 41, .28); }
+.pd-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 20px 12px 26px; border-bottom: 1px solid #d5e0f5; font-size: 13.5px; }
+.pd-close { border: 1px solid #c3d2f0; border-radius: 8px; background: #fff; color: var(--blue); font: inherit; font-size: 12.5px; font-weight: 600; padding: 5px 12px; cursor: pointer; } .pd-close:hover { background: #eaf1fd; }
+.pd-inner { padding: 16px 20px 22px 26px; display: grid; gap: 16px; }
+.pd-inner .payout-issues.warn { margin: 0; }
+.pd-inner .payout-columns { margin: 0; gap: 16px; }
+.pd-inner .payout-columns > div { background: #fff; border: 1px solid #d9e2f3; border-radius: 12px; padding: 14px 16px 16px; }
+.pd-inner .payout-columns .payout-statement { border: 0; }
+.pd-inner .payout-columns h4 { font-size: 11.5px; letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.pd-inner .payout-orders-head { margin: 0; }
+.pd-inner .payout-orders { border: 1px solid #d9e2f3; border-radius: 12px; }
+.pd-inner .payout-flow { margin: 0; }
+.payout-table:has(.payout-detail) { max-height: none; overflow: visible; }
+
+/* Statement view: an opened section and its lines read as one tinted group */
+tr.stmt-sec.open td { background: #e6eefc; border-top: 2px solid #b9cdf2; }
+tr.stmt-sec.open td.stmt-first { background: #e6eefc; box-shadow: inset 5px 0 0 var(--blue); color: var(--blue); }
+tr.stmt-sec.open .stmt-caret { color: var(--blue); }
+tr.stmt-item td { background: #f4f8fe; }
+tr.stmt-item td.stmt-first { background: #f4f8fe; box-shadow: inset 5px 0 0 #b9cdf2; }
+tr.stmt-item:has(+ tr:not(.stmt-item)) td { border-bottom: 2px solid #b9cdf2; }
+
+/* Analytics: same grouping for an opened section */
+tr.an-sec:has(.an-chev.open) td { background: #e6eefc; border-top: 2px solid #b9cdf2; }
+tr.an-sec:has(.an-chev.open) td.an-label { box-shadow: inset 5px 0 0 var(--blue); color: var(--blue); }
+tr.an-item td { background: #f4f8fe; }
+tr.an-item td.an-label { box-shadow: inset 5px 0 0 #b9cdf2; }
+tr.an-item:has(+ tr:not(.an-item)) td { border-bottom: 2px solid #b9cdf2; }

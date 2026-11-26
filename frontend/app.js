@@ -2937,7 +2937,8 @@ async function togglePayoutDetail(tr, id) {
       <span class="pf-step pf-paid"><small>${d.status === "PAID" ? "Paid" : "Payout"}</small><b>${rupees(paid)}</b></span>
       ${note ? `<span class="pf-note">${esc(note)}</span>` : ""}</div>`;
   })();
-  row.innerHTML = `<td colspan="8">
+  row.innerHTML = `<td colspan="8"><div class="pd-head"><div><b>${esc(tr.querySelector("td b")?.textContent || "Payout")}</b> <span class="muted">· ${d.platform === "swiggy" ? "Swiggy" : "Zomato"} payout for ${esc(tr.children[1]?.textContent || "")}</span></div><button type="button" class="pd-close">Close ✕</button></div>
+    <div class="pd-inner">
     ${d.issues.length ? `<ul class="payout-issues warn">${d.issues.map((i) => `<li>${esc(label(i))}</li>`).join("")}</ul>` : ""}
     ${flow}
     <div class="payout-columns">
@@ -2969,7 +2970,9 @@ async function togglePayoutDetail(tr, id) {
         <td>${rupees(o.government_charges)}</td><td>${rupees(o.other_deductions)}</td><td><b>${rupees(o.payout)}</b></td>
         <td>${esc(o.settlement_status || "—")}${o.unsettled_amount ? ` <span class="muted">${rupees(o.unsettled_amount)} left</span>` : ""}</td>
         <td>${reasons(o).map((x) => `<span class="ov-issue ${x.money ? "money" : ""}">${esc(x.text)}</span>`).join(" ")}</td></tr>`).join("")}</tbody></table></div>` : ""}
-  </td>`;
+  </div></td>`;
+  row.querySelector(".pd-close")?.addEventListener("click", () => togglePayoutDetail(tr, id));
+  tr.scrollIntoView({ behavior: "smooth", block: "nearest" });
   row.querySelector(".payout-only-flagged")?.addEventListener("change", (e) => {
     row.querySelectorAll(".payout-orders tbody tr").forEach((r) => { r.hidden = e.target.checked && !r.classList.contains("flagged"); });
   });
