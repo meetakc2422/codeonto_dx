@@ -4402,9 +4402,9 @@ async function renderMarketComp(page, outletId) {
 
   const err = (e) => { $("#zError").textContent = userMessage(e); };
   loadMarketCuisines(outletId);
-  const track = async (r, on) => {
-    try { await apiJSON(`${zBase(outletId)}/track`, "POST", { res_id: r.res_id, tracked: on, name: r.name, distance_km: r.distance_km, delivery_time: r.delivery_time, spot: zPeek(outletId)?.spot }); render(); return true; }
-    catch (e) { err(e); return false; }
+  const track = async (r, on, quiet = false) => {
+    try { await apiJSON(`${zBase(outletId)}/track`, "POST", { res_id: r.res_id, tracked: on, name: r.name, distance_km: r.distance_km, delivery_time: r.delivery_time, spot: zPeek(outletId)?.spot }); if (!quiet) render(); return true; }
+    catch (e) { if (quiet) toast(userMessage(e)); else err(e); return false; }
   };
   const setUs = async (resId) => {
     try { await apiJSON(`${zBase(outletId)}/us`, "POST", { res_id: resId }); render(); } catch (e) { err(e); }
@@ -4497,8 +4497,15 @@ async function renderMarketComp(page, outletId) {
       const x = results[Number(b.dataset.zres)];
       if (b.dataset.act === "view") showDetail(entry, x, dlg);
       else if (b.dataset.act === "us") { dlg.close(); setUs(x.res_id); }
-      else { b.disabled = true; b.textContent = "Adding…"; track(x, true).then((ok) => { if (ok) { x.tracked = true; dlg.close(); } else { b.disabled = false; b.textContent = "Compare"; } }); }
+      else {
+        b.disabled = true; b.textContent = "Adding…";
+        track(x, true, true).then((ok) => {
+          if (ok) { x.tracked = true; trackedIds.add(String(x.res_id)); dlg.changed = true; b.className = "btn light"; b.textContent = "Comparing ✓"; }
+          else { b.disabled = false; b.textContent = "Compare"; }
+        });
+      }
     };
+    dlg.onClose = () => { if (dlg.changed) render(); };  // what was added shows in the table behind once, when the pop-up is closed
     return dlg;
   };
   // a restaurant opens inside the same pop-up, with a way back to the results (which are still there)
@@ -4506,7 +4513,7 @@ async function renderMarketComp(page, outletId) {
     dlg.wide(true);
     dlg.set(x.name, "", '<div class="cs-back"><button type="button" class="login-link" data-csback>← Back to results</button></div><div class="cs-detail"></div>');
     dlg.body.onclick = (ev) => { if (ev.target.closest("[data-csback]")) showResults(entry, dlg); };
-    showMarketRestaurant(outletId, x.res_id, async (r, on) => { const ok = await track(r, on); if (ok) dlg.close(); return ok; }, false, dlg.body.querySelector(".cs-detail"));
+    showMarketRestaurant(outletId, x.res_id, async (r, on) => { const ok = await track(r, on, true); if (ok) { dlg.changed = true; trackedIds.add(String(r.res_id)); } return ok; }, false, dlg.body.querySelector(".cs-detail"));
   };
 
   $("#zSearch").addEventListener("submit", async (e) => {
@@ -4515,7 +4522,8 @@ async function renderMarketComp(page, outletId) {
     const hit = state.zSearchCache[ck];
     if (hit && Date.now() - hit.at < FRESH_MS) { state.zLastSearch[lastKey] = hit; showLast(); showResults(hit); return; }  // the same search a moment ago: no new call
     const btn = e.target.querySelector("button"); btn.disabled = true;
-    const dlg = searchModal(`Results for "${asked}"`, `searching ${zName()}…`, '<p class="muted cs-note">One moment…</p>');
+    const dlg = searchModal(`Results for "${asked}"`, "", loaderHtml("rows", [`Searching ${zName()} for "${asked}"…`, "Reading what customers see here…", "Collecting ratings, offers and photos…", "Nearly there…"]));
+    runLoader(dlg.body);
     try {
       const r = await apiJSON(`${zBase(outletId)}/search`, "POST", { q: e.target.q.value, kind, spot: zPeek(outletId)?.spot });
       const entry = { asked, query: r.query, total: r.total, results: r.results, at: Date.now() };
@@ -4528,6 +4536,20 @@ async function renderMarketComp(page, outletId) {
   showLast();
 }
 
+// a loader that says what is going on: a ring, a line of text that changes, and grey placeholders that shimmer where the content will be
+function loaderHtml(kind, msgs) {
+  const sk = kind === "rows"
+    ? `<div class="ld-rows">${"<div class=\"ld-row\"><i class=\"ld-thumb\"></i><span><i></i><i></i><i></i></span><i class=\"ld-btn\"></i></div>".repeat(5)}</div>`
+    : `<div class="ld-tiles"><i></i><i></i><i></i><i></i></div><div class="ld-cols"><span><i></i><i></i><i></i><i></i></span><span><i></i><i></i><i></i><i></i><i></i></span></div>`;
+  return `<div class="ld" data-msgs="${esc(msgs.join("|"))}"><div class="ld-top"><span class="ld-ring"></span><b class="ld-msg">${esc(msgs[0])}</b></div>${sk}</div>`;
+}
+// changes the line of text while it waits, and stops by itself when the loader is gone
+function runLoader(root) {
+  const el = root.querySelector(".ld"); if (!el) return;
+  const msgs = (el.dataset.msgs || "").split("|"), out = el.querySelector(".ld-msg"); let i = 0;
+  const t = setInterval(() => { if (!el.isConnected) return clearInterval(t); i = (i + 1) % msgs.length; out.classList.remove("in"); void out.offsetWidth; out.textContent = msgs[i]; out.classList.add("in"); }, 2200);
+}
+
 // a compact pop-up for search results: opens at once with a waiting line, then set() fills it; closes on Esc, a click outside or the cross
 function searchModal(title, sub, bodyHtml) {
   document.getElementById("csBg")?.remove();
@@ -4538,14 +4560,15 @@ function searchModal(title, sub, bodyHtml) {
     <div class="cs-body"></div></div>`;
   document.body.appendChild(bg);
   const body = bg.querySelector(".cs-body"), t = bg.querySelector(".cs-title"), u = bg.querySelector(".cs-sub");
-  const close = () => { document.removeEventListener("keydown", onKey); bg.remove(); };
+  const close = () => { document.removeEventListener("keydown", onKey); bg.remove(); api.onClose?.(); };
   const onKey = (e) => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", onKey);
   bg.addEventListener("click", (e) => { if (e.target === bg || e.target.closest(".cs-x")) close(); });
   const set = (title2, sub2, html) => { t.textContent = title2; u.textContent = sub2 || ""; body.innerHTML = html; body.scrollTop = 0; };
   const wide = (on) => bg.querySelector(".cs-modal").classList.toggle("cs-wide", !!on);
+  const api = { body, set, close, wide, onClose: null, changed: false };
   set(title, sub, bodyHtml);
-  return { body, set, close, wide };
+  return api;
 }
 
 // step one on a delivery app: where the outlet stands in the app, so searches and menus match what customers there see
@@ -4637,7 +4660,8 @@ function photoEditor(outletId, r) {
 // one restaurant's page on a delivery app: offers, combos, best sellers, categories and what is out of stock
 async function showMarketRestaurant(outletId, resId, track, refresh = false, target = null) {
   const box = target || $("#zDetail");
-  box.innerHTML = `<div class="card" style="margin-top:16px"><p class="muted">Loading the menu from ${zName()}… this can take a few seconds.</p></div>`;
+  box.innerHTML = `<div class="card" style="margin-top:16px">${loaderHtml("detail", [`Opening the menu on ${zName()}…`, "Reading prices and offers…", "Counting dishes and photos…", "Checking what is out of stock…", "Nearly there…"])}</div>`;
+  runLoader(box);
   if (!target) box.scrollIntoView({ behavior: "smooth", block: "start" });
   let r;
   const spot = zPeek(outletId)?.spot;
@@ -4703,7 +4727,10 @@ async function showMarketRestaurant(outletId, resId, track, refresh = false, tar
   </div>`;
   $("#zRefresh").addEventListener("click", () => showMarketRestaurant(outletId, resId, track, true, target));
   photoEditor(outletId, r);
-  $("#zTrackThis")?.addEventListener("click", (e) => { e.target.disabled = true; track(r, true); });
+  $("#zTrackThis")?.addEventListener("click", (e) => {
+    const b = e.currentTarget; b.disabled = true; b.textContent = "Adding…";
+    Promise.resolve(track(r, true)).then((ok) => { if (ok) b.textContent = "Comparing ✓"; else { b.disabled = false; b.textContent = "Compare"; } });
+  });
 }
 
 async function renderGoogleComp(page) {

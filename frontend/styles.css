@@ -1820,3 +1820,21 @@ tr.an-item:has(+ tr:not(.an-item)) td { border-bottom: 2px solid #b9cdf2; }
 .cs-back { padding: 8px 0 4px; } .cs-back .login-link { font-size: 13px; }
 .cs-detail > .card { margin-top: 0 !important; border: 0; box-shadow: none; padding: 0; background: transparent; }
 .comp-last { margin: 8px 2px 0; min-height: 0; } .comp-last:empty { display: none; }
+
+/* a loader that tells you what it is doing */
+.ld { padding: 6px 2px 4px; }
+.ld-top { display: flex; align-items: center; gap: 12px; margin: 8px 0 16px; }
+.ld-ring { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 3px solid #dbe5f6; border-top-color: var(--blue); animation: ldspin .8s linear infinite; }
+@keyframes ldspin { to { transform: rotate(360deg); } }
+.ld-msg { font-size: 14px; font-weight: 600; color: #334155; } .ld-msg.in { animation: ldmsg .35s ease both; }
+@keyframes ldmsg { from { opacity: 0; transform: translateY(4px); } }
+.ld i { display: block; border-radius: 8px; background: linear-gradient(100deg, #eef1f7 30%, #f8fafd 50%, #eef1f7 70%); background-size: 220% 100%; animation: ldshim 1.3s ease-in-out infinite; }
+@keyframes ldshim { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+.ld-rows { display: grid; gap: 14px; }
+.ld-row { display: grid; grid-template-columns: 56px minmax(0, 1fr) 150px; gap: 14px; align-items: center; }
+.ld-row .ld-thumb { width: 56px; height: 56px; border-radius: 12px; } .ld-row span { display: grid; gap: 7px; } .ld-row span i { height: 11px; } .ld-row span i:nth-child(1) { width: 52%; height: 13px; } .ld-row span i:nth-child(2) { width: 36%; } .ld-row span i:nth-child(3) { width: 70%; }
+.ld-row .ld-btn { height: 32px; border-radius: 8px; }
+.ld-tiles { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; } .ld-tiles i { height: 74px; border-radius: 12px; }
+.ld-cols { display: grid; grid-template-columns: 1fr 1.4fr; gap: 24px; } .ld-cols span { display: grid; gap: 10px; align-content: start; } .ld-cols span i { height: 14px; } .ld-cols span i:nth-child(odd) { width: 86%; }
+@media (max-width: 640px) { .ld-tiles { grid-template-columns: 1fr 1fr; } .ld-cols { grid-template-columns: 1fr; } .ld-row { grid-template-columns: 48px minmax(0, 1fr); } .ld-row .ld-btn { display: none; } }
+@media (prefers-reduced-motion: reduce) { .ld-ring, .ld i, .ld-msg.in { animation: none !important; } .ld-ring { border-top-color: var(--blue); } }
