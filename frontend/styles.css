@@ -1706,3 +1706,4 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .snap-olist { display: grid; gap: 8px; } .snap-olist h4 { margin: 6px 0 0; font-size: 11px; letter-spacing: .12em; text-transform: uppercase; color: #8a94ab; font-weight: 700; }
 .snap-oline { display: grid; grid-template-columns: 1fr auto; gap: 1px 12px; padding: 10px 12px; border-radius: 10px; background: #f6f7fb; } .snap-oline span { font-weight: 600; font-size: 14.5px; color: #0b1229; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .snap-oline b { font-weight: 800; letter-spacing: -.02em; } .snap-oline b.up { color: #25724a; } .snap-oline b.down { color: #a63a3a; } .snap-oline small { grid-column: 1 / -1; font-size: 12px; color: #64748b; }
+.snap-head .snap-scope { margin-top: 4px; color: #e3e8f5; font-weight: 600; font-size: 12.5px; }

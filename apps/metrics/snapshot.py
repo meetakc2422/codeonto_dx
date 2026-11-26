@@ -12,6 +12,7 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from apps.outlets.access import get_brand, in_scope, outlet_ids
+from apps.outlets.models import BrandOutlet
 from apps.reviews.models import Review
 
 from .models import MetricDaily
@@ -55,7 +56,11 @@ def _pct(cur, prev):
 def brand_snapshot(request, brand_id):
     brand = get_brand(request.user, brand_id)
     qp = request.query_params
-    outlets = {o.id for o in in_scope(brand.outlets.filter(is_active=True), request.user, "id")}
+    # the whole client: every active outlet of every active brand mapped to it (limited to what this login may see)
+    scope = BrandOutlet.objects.filter(brand__client_id=brand.client_id, brand__is_active=True, is_active=True).select_related("brand")
+    scope_rows = list(in_scope(scope, request.user, "id"))
+    outlets = {o.id for o in scope_rows}
+    brand_names = sorted({o.brand.name for o in scope_rows})
     if outlet_ids(qp.get("outlet_id")):
         outlets &= set(outlet_ids(qp.get("outlet_id")))
     platform = qp.get("platform") or None
@@ -86,7 +91,8 @@ def brand_snapshot(request, brand_id):
     # outlets: who gained and who dropped against the same weekday last week (in rupees, so a tiny outlet's big percentage doesn't crowd out the real movers)
     now_o, was_o = _by_outlet(outlets, plats, day), _by_outlet(outlets, plats, day - timedelta(days=7))
     moves = [(oid, now_o.get(oid, 0.0), was_o.get(oid, 0.0)) for oid in set(now_o) | set(was_o)]
-    names = {o.id: " · ".join(x for x in (o.outlet_name, o.area) if x) for o in brand.outlets.filter(id__in=[m[0] for m in moves])}
+    many = len(brand_names) > 1
+    names = {o.id: " · ".join(x for x in ((o.brand.name if many else ""), o.outlet_name, o.area) if x) for o in scope_rows}
     row = lambda m: {"name": names.get(m[0], f"Outlet {m[0]}"), "sales": round(m[1], 2), "last_week": round(m[2], 2), "diff": round(m[1] - m[2], 2), "change": _pct(m[1], m[2])}
     ups = sorted((m for m in moves if m[1] - m[2] > 0), key=lambda m: m[2] - m[1])[:3]
     downs = sorted((m for m in moves if m[1] - m[2] < 0), key=lambda m: m[1] - m[2])[:3]
@@ -103,7 +109,7 @@ def brand_snapshot(request, brand_id):
     leak = {"discounts": _kpi_sum(outlets, ["discount_given"], day, platform), "cancelled": _kpi_sum(outlets, ["cancellation_loss"], day, platform),
             "ads": _kpi_sum(outlets, ["ad_spend"], day, platform)}
     return Response({
-        "empty": False, "date": day.isoformat(), "weekday": day.strftime("%A"),
+        "empty": False, "client": brand.client.name, "brands": brand_names, "outlet_count": len(outlets), "date": day.isoformat(), "weekday": day.strftime("%A"),
         "sales": {"value": round(cur, 2), "last_week": round(prev, 2), "change": _pct(cur, prev), "usual": round(sum(usual) / len(usual), 2) if usual else None, "bars": bars},
         "orders": {"value": int(_kpi_sum(outlets, ["delivered_orders"], day, platform))},
         "platforms": by_platform, "outlets": outlet_card,

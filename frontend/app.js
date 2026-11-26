@@ -1047,7 +1047,7 @@ function openSnapshot(d) {
   const bg = document.createElement("div");
   bg.id = "snapBg"; bg.className = "snap-bg";
   bg.innerHTML = `<div class="snap-panel" role="dialog" aria-modal="true" aria-label="Yesterday at a glance">
-    <header class="snap-head"><div><small>${dateTxt}</small><h2>Yesterday at a glance</h2></div><button type="button" class="snap-x" data-snap="close" aria-label="Close">✕</button></header>
+    <header class="snap-head"><div><small>${dateTxt}</small><h2>Yesterday at a glance</h2><small class="snap-scope">${esc(d.client)} · ${d.brands.length === 1 ? esc(d.brands[0]) : `${d.brands.length} brands`} · ${inr.format(d.outlet_count)} outlet${d.outlet_count === 1 ? "" : "s"}</small></div><button type="button" class="snap-x" data-snap="close" aria-label="Close">✕</button></header>
     <div class="snap-deck">${secs.map(([n, h]) => `<article class="snap-card" style="--ac:${AC[n] || "#2f4a9a"}"><section class="snap-sec">${h}</section></article>`).join("")}</div>
     <footer class="snap-foot"><div class="snap-dots">${secs.map(() => "<i></i>").join("")}</div><div class="snap-btns"><button type="button" class="snap-back" data-snap="prev">Back</button><button type="button" class="snap-next" data-snap="next">Next</button></div></footer></div>`;
   document.body.appendChild(bg);
