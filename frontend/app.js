@@ -2976,8 +2976,12 @@ async function checkSessionAlerts() {
   try { d = await api("/staff/sessions/alerts"); } catch { return; }
   if (!d.expired.length) { bar.hidden = true; return; }
   const names = d.expired.map((a) => `${a.platform === "swiggy" ? "Swiggy" : "Zomato"} · ${esc(a.label)}${a.refreshing ? " (logging in…)" : ""}`).join(", ");
+  const key = d.expired.map((a) => `${a.platform}:${a.label}`).sort().join("|");  // closing the banner hides this set of expired logins until the set changes (or the tab is closed)
+  let closed = ""; try { closed = sessionStorage.getItem("sessionBannerClosed") || ""; } catch { /* no storage: it just shows again */ }
+  if (closed === key) { bar.hidden = true; return; }
   bar.innerHTML = `<span>⚠ ${d.expired.length === 1 ? "A platform login has" : `${d.expired.length} platform logins have`} expired: <b>${names}</b>. Data from ${d.expired.length === 1 ? "it" : "them"} stops updating until it's logged in again.</span>
-    <a class="btn light" href="#/sessions">Open Sessions</a>`;
+    <span class="sb-act"><a class="btn light" href="#/sessions">Open Sessions</a><button type="button" class="sb-x" aria-label="Close" title="Close">✕</button></span>`;
+  bar.querySelector(".sb-x").onclick = () => { bar.hidden = true; try { sessionStorage.setItem("sessionBannerClosed", key); } catch { /* ignore */ } };
   bar.hidden = false;
 }
 

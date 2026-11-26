@@ -1616,3 +1616,6 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .calm .lk-n { border-radius: 6px; min-width: 18px; height: 18px; font-size: 10.5px; background: #2563eb; }
 .calm .lk-bar { padding: 8px 12px; } .calm .btn { border-radius: 8px; }
 .calm .dn-ring, .calm .dn-ocard, .calm .dn-glance { transition: border-color .15s; }
+
+.sb-act { display: inline-flex; align-items: center; gap: 8px; flex: none; }
+.sb-x { width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: inherit; opacity: .6; cursor: pointer; font-size: 13px; } .sb-x:hover { opacity: 1; background: rgba(0, 0, 0, .06); }
