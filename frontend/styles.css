@@ -1784,3 +1784,9 @@ tr.an-item:has(+ tr:not(.an-item)) td { border-bottom: 2px solid #b9cdf2; }
 @keyframes rcopen { from { opacity: 0; transform: translateY(-6px); } }
 .pd-inner, .payout-combined[open] > :not(summary) { animation: rcopen .3s ease both; }
 @media (prefers-reduced-motion: reduce) { .pd-inner, .payout-combined[open] > :not(summary) { animation: none !important; } }
+
+/* Competitors: search results sit right under the search box, with their own heading */
+.comp-results { margin: 4px 0 14px; }
+.comp-results:empty { margin: 0; }
+.comp-results-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; padding: 10px 0 8px; border-top: 1px solid var(--border); }
+.comp-results-head b { font-size: 14px; } .comp-results-head [data-zclear] { margin-left: auto; font-size: 12.5px; }

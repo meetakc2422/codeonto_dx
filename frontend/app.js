@@ -4369,12 +4369,12 @@ async function renderMarketComp(page, outletId) {
     <div class="card">
       <form id="zSearch" class="comp-search comp-search-lg">${state.compTab === "zomato" ? `<select name="kind" id="zKind" aria-label="Search type" title="What to search for">${SEARCH_KINDS.map(([v, t]) => `<option value="${v}" ${(state.searchKind || "") === v ? "selected" : ""}>${t}</option>`).join("")}</select>` : ""}<input name="q" placeholder="Search a restaurant, dish or cuisine on ${zName()}, e.g. Meghana, biryani, chinese" autofocus>
         <button class="btn blue">Search</button></form>
+      <p class="login-error" id="zError"></p><div id="zResults" class="comp-results"></div>
       <div id="zCuisines" class="comp-cuisines"></div>
       ${zPeek(outletId) ? `<p class="comp-peek">Viewing from <strong>${esc(zPeek(outletId).title)}</strong>${zPeek(outletId).address ? `, ${esc(zPeek(outletId).address)}` : ""}
           <small>just for now, not saved</small> · <button class="login-link" id="zPeekOff">Back to the outlet's location</button></p>`
         : `<p class="comp-near">Showing what customers see around <strong>${esc(d.area.title)}</strong>${d.area.address ? `, ${esc(d.area.address)}` : ""}
           · <button class="login-link" id="zPeekOn">Look from another area</button> · <button class="login-link" id="zChangeArea">Change outlet's location</button></p>`}
-      <p class="login-error" id="zError"></p><div id="zResults"></div>
     </div>
     <div class="card" style="margin-top:16px">
       <div class="card-head"><h3>${d.competitors.length ? `You vs ${plural(d.competitors.length, "competitor")}` : `Your ${zName()} competitors`}</h3>
@@ -4464,11 +4464,13 @@ async function renderMarketComp(page, outletId) {
   $("#zSearch").addEventListener("submit", async (e) => {
     e.preventDefault(); $("#zError").textContent = "";
     const btn = e.target.querySelector("button"); btn.disabled = true;
-    $("#zResults").innerHTML = `<p class="muted">Searching ${zName()}…</p>`;
+    const asked = (e.target.q.value || "").trim();
+    $("#zResults").innerHTML = `<div class="comp-results-head"><b>Results for "${esc(asked)}"</b> <small class="muted">searching ${zName()}…</small></div>`;
+    $("#zResults").scrollIntoView({ behavior: "smooth", block: "nearest" });
     try {
       const r = await apiJSON(`${zBase(outletId)}/search`, "POST", { q: e.target.q.value, kind: e.target.kind?.value || "", spot: zPeek(outletId)?.spot });
       results = r.results;
-      $("#zResults").innerHTML = (r.total ? `<p class="muted" style="margin:0 0 4px">${inr.format(r.total)} restaurants for ${esc(r.query)} · showing the first ${results.length}</p>` : "") +
+      $("#zResults").innerHTML = `<div class="comp-results-head"><b>Results for "${esc(r.query || asked)}"</b> <small class="muted">${r.total ? `${inr.format(r.total)} restaurants on ${zName()} · showing the first ${results.length}` : ""}</small> <button type="button" class="login-link" data-zclear>Clear results ✕</button></div>` +
         (results.length ? results.map((x, i) => `<div class="comp-result">
           <span><strong>${esc(x.name)}${x.is_ad ? ' <em class="comp-ad">Ad</em>' : ""}${x.is_us ? ' <em class="comp-you">You</em>' : ""}</strong>
             <small class="muted">${[x.area, x.distance_km != null ? `${x.distance_km} km` : "", x.delivery_time, x.offers?.[0]?.text].filter(Boolean).map(esc).join(" · ")}</small></span>
@@ -4481,6 +4483,7 @@ async function renderMarketComp(page, outletId) {
     btn.disabled = false;
   });
   $("#zResults").addEventListener("click", (e) => {
+    if (e.target.closest("[data-zclear]")) { $("#zResults").innerHTML = ""; results = []; return; }
     const b = e.target.closest("[data-zres]");
     if (!b) return;
     const x = results[Number(b.dataset.zres)];
