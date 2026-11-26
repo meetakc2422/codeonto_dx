@@ -4472,9 +4472,11 @@ async function renderMarketComp(page, outletId) {
       results = r.results;
       dlg.set(`Results for "${r.query || asked}"`, r.total ? `${inr.format(r.total)} restaurants on ${zName()} · showing the first ${results.length}` : "",
         results.length ? results.map((x, i) => `<div class="cs-row">
+          <span class="cs-thumb">${x.image ? `<img src="${esc(x.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}<b>${esc((x.name || "?").trim().charAt(0).toUpperCase())}</b></span>
           <span class="cs-main"><strong>${esc(x.name)}${x.is_ad ? ' <em class="comp-ad">Ad</em>' : ""}${x.is_us ? ' <em class="comp-you">You</em>' : ""}</strong>
-            <small class="muted">${[x.area, x.distance_km != null ? `${x.distance_km} km` : "", x.delivery_time, x.offers?.[0]?.text].filter(Boolean).map(esc).join(" · ")}</small></span>
-          <span class="cs-rate">${x.rating ? `${x.rating.toFixed(1)} ★` : ""}</span>
+            <span class="cs-meta">${x.rating ? `<span class="cs-rate">${x.rating.toFixed(1)} ★</span>` : ""}${[x.distance_km != null ? `${x.distance_km} km` : "", x.delivery_time, x.area].filter(Boolean).map((t) => `<span>${esc(t)}</span>`).join("")}</span>
+            ${x.offers?.[0]?.text ? `<span class="cs-offer">${esc(x.offers[0].text)}</span>` : ""}
+            ${x.dishes?.length ? `<small class="cs-dishes">${x.dishes.slice(0, 3).map((dd) => `${esc(dd.name)}${dd.price ? ` ${esc(dd.price)}` : ""}`).join(" · ")}</small>` : ""}</span>
           <span class="cs-act"><button class="btn light" data-zres="${i}" data-act="view">View</button>
             ${x.is_us ? "" : `${d.our_how === "linked" ? "" : `<button class="btn light" data-zres="${i}" data-act="us">This is us</button>`}
               <button class="btn ${x.tracked ? "light" : "blue"}" data-zres="${i}" data-act="track" ${x.tracked ? "disabled" : ""}>${x.tracked ? "Comparing" : "Compare"}</button>`}</span></div>`).join("")
