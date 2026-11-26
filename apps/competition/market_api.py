@@ -54,6 +54,12 @@ def _insights(r: MarketRestaurant) -> dict:
     return zomato.menu_insights({"items": r.items}) if r.items else (r.insights or {})
 
 
+def _linked_elsewhere(outlet, m) -> set[str]:
+    """Listing ids on this app that are already set up for another outlet of the brand: they are that outlet's listing, never this one's."""
+    from apps.outlets.models import BrandOutlet
+    return {str(m.linked_id(o)) for o in BrandOutlet.objects.filter(brand_id=outlet.brand_id).exclude(pk=outlet.pk) if m.linked_id(o)}
+
+
 def our_res_id(outlet, m, find: bool = False) -> tuple[str | None, str]:
     """(res_id, how): the outlet's own listing on this app. 'linked' when set up under Brands & Outlets; otherwise 'found'
     by searching the brand's name from the outlet's spot (find=True looks it up once and keeps it), or 'picked' when
@@ -64,7 +70,10 @@ def our_res_id(outlet, m, find: bool = False) -> tuple[str | None, str]:
     if not a:
         return None, ""
     d = a.details or {}
+    taken = _linked_elsewhere(outlet, m)
     if "our_res_id" in d:
+        if d["our_res_id"] in taken and d.get("our_how", "found") == "found":  # a guess made from the brand name that turned out to be another outlet's listing
+            return None, ""
         return d["our_res_id"] or None, d.get("our_how", "found") if d["our_res_id"] else ""
     if not find:
         return None, ""
@@ -73,7 +82,7 @@ def our_res_id(outlet, m, find: bool = False) -> tuple[str | None, str]:
         names = m.names(_area(outlet, m), outlet.brand.name)
     except m.Error:
         return None, ""
-    hit = next(((rid, n) for rid, n in names if brand <= set(n.lower().split()) and rid not in d.get("not_us", [])), None)
+    hit = next(((rid, n) for rid, n in names if brand <= set(n.lower().split()) and rid not in d.get("not_us", []) and rid not in taken), None)
     a.details = {**d, "our_res_id": hit[0] if hit else "", "our_name": hit[1] if hit else "", "our_how": "found"}
     a.save(update_fields=["details", "updated_at"])
     return (hit[0], "found") if hit else (None, "")
@@ -262,7 +271,7 @@ def suggested(request, brand_id, outlet_id, platform):
     tags = ((r.info or {}).get("cuisines") if r else None) or []
     if not tags:
         return Response({"detail": "Open the cuisine tags first so we know them.", "suggestions": []})
-    tracked = set(MarketCompetitor.objects.filter(outlet=outlet, restaurant__platform=m.code).values_list("restaurant__res_id", flat=True))
+    tracked = set(MarketCompetitor.objects.filter(outlet=outlet, restaurant__platform=m.code).values_list("restaurant__res_id", flat=True)) | _linked_elsewhere(outlet, m)
     found_by_tag = {}
     for tag in tags:
         try:
@@ -285,6 +294,8 @@ def ranking(request, brand_id, outlet_id, platform):
     if not place:
         return Response({"detail": f"Set the outlet's {m.name} location first."}, status=400)
     ours = our_res_id(outlet, m, find=True)[0]
+    if not ours:
+        return Response({"detail": f"This outlet has no {m.name} listing linked, so there is no rank to show. Link it under Brands & Outlets (a listing already linked to another outlet of the brand isn't used).", "rows": []})
     r = MarketRestaurant.objects.filter(platform=m.code, res_id=ours).first() if ours else None
     tags = ((r.info or {}).get("cuisines") if r else None) or []
     if not tags:
