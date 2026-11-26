@@ -291,7 +291,7 @@ class SwiggySearchLikeTheCustomerApp(SimpleTestCase):
         hint = {"res_id": "5", "name": "Milano Ice Cream", "type": "RESTAURANT", "rating": 4.5, "delivery_time": "", "area": ""}
         dish = {"res_id": "9", "name": "Ice cream", "type": "DISH", "rating": None, "delivery_time": "", "area": ""}
 
-        def nearby(spot, text):
+        def nearby(spot, text, suggestion=None):
             return [card("1", "Cream Stone")] if text == "milano ice cream" else [card("5", "Milano Ice Cream")]
         with mock.patch.object(markets.Swiggy, "_nearby", side_effect=nearby), mock.patch.object(swiggy, "suggest", return_value=[hint, dish]):
             _, _, rows = markets.Swiggy.search({"lat": 1, "lng": 2}, "milano ice cream")

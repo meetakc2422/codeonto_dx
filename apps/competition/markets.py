@@ -138,10 +138,11 @@ class Swiggy:
         return {**s, "title": d["title"], "address": d["address"], "serviceable": bool(s["city_id"])}
 
     @staticmethod
-    def _nearby(spot, q):
-        """What the app lists after pressing search (the branches that deliver to this spot); [] when that isn't readable."""
+    def _nearby(spot, q, suggestion=None):
+        """What the app lists after pressing search (the branches that deliver to this spot), or after tapping a dropdown restaurant (suggestion =
+        its data); [] when that isn't readable."""
         try:
-            return swiggy.search_restaurants(spot, q)
+            return swiggy.search_restaurants(spot, q, suggestion=suggestion)
         except swiggy.SwiggyAppError:
             return []
 
@@ -165,10 +166,16 @@ class Swiggy:
         cards = {r["res_id"]: r for r in listed}
         looked_up, named = set(), []
         for h in hints[:5]:
-            if h["res_id"] not in cards and h["name"] not in looked_up and len(looked_up) < 3:
-                looked_up.add(h["name"])
-                cards.update({r["res_id"]: r for r in Swiggy._nearby(spot, h["name"])})
             card = cards.get(h["res_id"])
+            if not card and h["name"] not in looked_up and len(looked_up) < 3:
+                looked_up.add(h["name"])
+                # tapping it, as the app does: Swiggy answers with the branch near the spot, which can be a different id than the dropdown's
+                tapped = Swiggy._nearby(spot, h["name"], h.get("metadata") or None)
+                card = next((r for r in tapped if r["name"].strip().lower() == h["name"].strip().lower()), None)
+                cards.update({r["res_id"]: r for r in tapped})
+                if card:
+                    cards[h["res_id"]] = card
+            card = card or cards.get(h["res_id"])
             named.append(Swiggy._row(card) if card else {"res_id": h["res_id"], "name": h["name"], "rating": h["rating"], "offers": [], "is_ad": False,
                                                           "distance_km": None, "delivery_time": h["delivery_time"], "area": h["area"], "votes": h.get("votes", "")})
         if listed or named:

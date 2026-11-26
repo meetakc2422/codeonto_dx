@@ -274,8 +274,10 @@ def search_restaurants(place: dict, text: str, tries: int = 3, suggestion: dict 
             "redirection": 1, "secondaryFacets": {}, "showIntentLocation": False, "sldEnabled": 0, "submitAction": "ENTER",
             "supportedMarketplaces": [{"businessLineId": "FOOD", "marketplaceId": "SWIGGY"}], "supportedTabs": ["RESTAURANT", "DISH"],
             "trackingId": str(uuid.uuid4())}
-    if suggestion:  # tapping a restaurant in the dropdown: the app sends that suggestion's own data, and Swiggy answers with the branch near the spot
-        body.update({"submitAction": "SUGGESTION", "selectedPLTab": "RESTAURANT", "metaData": json.dumps(suggestion, separators=(",", ":"))})
+    if suggestion:  # tapping a restaurant in the dropdown: the app sends that suggestion's own data back as a deep link, and Swiggy answers with the branch near the spot
+        body.update({"submitAction": "DEEPLINK", "metaData": json.dumps(suggestion, separators=(",", ":")), "metaMap": {}, "facets": {},
+                     "supportedMarketplaces": [{"businessLineId": b, "marketplaceId": "SWIGGY"} for b in ("FOOD", "INSTAMART", "DINEOUT")],
+                     "supportedTabs": ["RESTAURANT", "DISH", "INSTAMART"]})
     last = None
     for attempt in range(tries):
         try:
