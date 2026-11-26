@@ -4314,7 +4314,8 @@ async function loadMarketCuisines(outletId) {
     if (!p.cuisines?.length) { box.innerHTML = p.detail ? `<small class="muted">${esc(p.detail)}</small>` : ""; return; }
     box.innerHTML = `<div class="comp-cuisine-head"><b>${esc(p.name || "This outlet")}</b> serves <small class="muted">click a cuisine to see who else serves it nearby</small></div>
       <div class="comp-cuisine-row">${p.cuisines.map((c) => `<button type="button" class="comp-cuisine" data-cuisine="${esc(c)}">${esc(c)}</button>`).join("")}</div>
-      ${p.open_text || p.cost_text ? `<small class="muted">${[p.open_text, p.cost_text].filter(Boolean).map(esc).join(" · ")}</small>` : ""}`;
+      ${p.open_text || p.cost_text ? `<small class="muted">${[p.open_text, p.cost_text].filter(Boolean).map(esc).join(" · ")}</small>` : ""}
+      ${p.from_outlet ? `<small class="muted" style="display:block">Cuisines are the brand's, read from the ${esc(p.from_outlet)} listing: this outlet has no ${esc(p.source || zName())} listing linked.</small>` : ""}`;
     loadSuggestedCompetitors(outletId, box, spot);
     box.onclick = (e) => {
       const b = e.target.closest("[data-cuisine]");

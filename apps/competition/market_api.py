@@ -191,13 +191,19 @@ def cuisines(request, brand_id, outlet_id, platform):
     place = _spot(request, outlet, m) if src is m else (_area(outlet, src) or (_auto_area(outlet, src) and _area(outlet, src)))
     if not place:
         return Response({"detail": f"Set the outlet's {src.name} location first."}, status=400)
-    ours = our_res_id(outlet, src, find=True)[0]
+    ours, borrowed = our_res_id(outlet, src, find=True)[0], ""
     if not ours:
-        return Response({"res_id": None, "cuisines": [], "detail": f"We couldn't find this outlet's own {src.name} listing."})
+        # the cuisines belong to the brand, not to one outlet: read them from another outlet of the brand that has this listing
+        from apps.outlets.models import BrandOutlet
+        sib = next((o for o in BrandOutlet.objects.filter(brand_id=outlet.brand_id, is_active=True).exclude(pk=outlet.pk) if src.linked_id(o)), None)
+        if sib:
+            ours, borrowed = str(src.linked_id(sib)), sib.outlet_name
+    if not ours:
+        return Response({"res_id": None, "cuisines": [], "detail": f"We couldn't read this brand's cuisines: none of its outlets has a {src.name} listing linked."})
     r = MarketRestaurant.objects.filter(platform=src.code, res_id=ours).first()
     info = (r.info or {}) if r else {}
     if info.get("cuisines") and (not hasattr(src, "profile") or _fresh(info.get("profile_at"))):
-        return Response(_profile_json(r))
+        return Response({**_profile_json(r), "from_outlet": borrowed, "source": src.name})
     try:
         if hasattr(src, "profile"):
             p = src.profile(place, ours)
@@ -209,9 +215,9 @@ def cuisines(request, brand_id, outlet_id, platform):
             r = load_menu(src, ours, place)
     except src.Error as e:
         if r and (r.info or {}).get("cuisines"):  # the app is unreachable: what we kept is better than nothing
-            return Response(_profile_json(r))
+            return Response({**_profile_json(r), "from_outlet": borrowed, "source": src.name})
         return _error(e)
-    return Response(_profile_json(r))
+    return Response({**_profile_json(r), "from_outlet": borrowed, "source": src.name})
 
 
 NEARBY_KM = 5  # a competitor farther than this is only suggested when too few are closer
