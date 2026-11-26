@@ -1793,3 +1793,10 @@ tr.an-item:has(+ tr:not(.an-item)) td { border-bottom: 2px solid #b9cdf2; }
 .payout-combined[open] > .rc-comb-sum { border-bottom: 1px solid var(--border); }
 .payout-combined-grid > div { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px 14px; }
 .payout-combined-grid h4 { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* Reconciliation: a lighter summary band */
+.rc-hero { background: linear-gradient(135deg, #e8eff9, #dfe9f6); color: #0b1229; border: 1px solid #cfdcee; }
+.rc-hero p { color: #51617d; }
+.rc-hero .so-big small { color: #51617d; }
+.rc-hero .so-now { background: rgba(255, 255, 255, .6); color: #51617d; border: 1px solid #d3deef; }
+.rc-hero .so-now b { color: #0b1229; }

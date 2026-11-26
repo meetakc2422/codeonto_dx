@@ -2439,7 +2439,7 @@ async function renderReconciliation(page) {
   const combinedXlsx = new URL(`${API}/brands/${state.brandId}/payouts/combined/xlsx`, location.origin);
   Object.entries(listParams).forEach(([k, v]) => { if (v !== "" && v != null) combinedXlsx.searchParams.set(k, v); });
   page.innerHTML = `
-    <div class="so-hero">
+    <div class="so-hero rc-hero">
       <div><div class="so-big">${inr.format(summary.with_issues)}<small> payout${summary.with_issues === 1 ? "" : "s"} to check</small></div>
         <p>${inr.format(summary.reconciled)} of ${inr.format(summary.cycles)} payouts checked against their orders · Zomato and Swiggy</p></div>
       <div class="so-now">Unexplained difference<b>${rupees(summary.discrepancy_total)}</b></div>
