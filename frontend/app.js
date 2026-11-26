@@ -4366,9 +4366,25 @@ async function loadCuisineRanking(outletId, box, spot) {
     const p = await api(`${zBase(outletId)}/ranking`, spot ? { spot: JSON.stringify(spot) } : {});
     if (!slot.isConnected) return;
     if (!p.rows?.length) { slot.innerHTML = p.detail ? `<small class="muted">${esc(p.detail)}</small>` : ""; return; }
-    slot.innerHTML = `<div class="comp-cuisine-head"><b>Your rank by cuisine</b> <small class="muted">in ${zName()}'s own list at this spot, first ~30 checked</small></div>
-      <table class="tbl"><thead><tr><th>Cuisine</th><th>Your rank</th><th>Ahead of you</th></tr></thead><tbody>${p.rows.map((r) =>
-        `<tr><td>${esc(r.cuisine)}</td><td>${r.rank ? `<b>#${r.rank}</b> <small class="muted">of ${esc(r.of)}</small>` : `<span class="muted">not in top ${esc(r.checked)}</span>`}</td><td><small>${r.top.map(esc).join(", ")}</small></td></tr>`).join("")}</tbody></table>`;
+    const when = p.checked_at ? new Date(p.checked_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "";
+    const adCounts = p.rows.map((r) => r.ads_in_list || 0), adLo = Math.min(...adCounts), adHi = Math.max(...adCounts), ads = adLo === adHi ? adHi : `${adLo}–${adHi}`, checked = Math.max(...p.rows.map((r) => r.checked || 0));
+    const where = (r) => {
+      if (!r.rank) return `<span class="muted">not in the first ${esc(r.checked)}</span>`;
+      const lo = Math.max(1, r.rank - 1), hi = r.rank + 1;
+      return r.ours_is_ad
+        ? `<b>about #${lo}–${hi}</b> <span class="comp-ad">Ad slot</span><br><small class="muted">your ad is showing; the unpaid position isn't visible</small>`
+        : `<b>about #${lo}–${hi}</b> <small class="muted">of ${esc(r.of)}</small>${r.organic_rank ? `<br><small class="muted">#${r.organic_rank} among unpaid results</small>` : ""}`;
+    };
+    const ahead = (r) => {
+      const list = r.ahead || [];
+      if (!list.length) return r.rank ? `<small class="muted">nobody is ahead of you</small>` : "";
+      const name = (x) => `${esc(x.name)}${x.is_ad ? ' <span class="comp-ad">Ad</span>' : ""}`;
+      return list.length <= 3 ? `<small>${list.map(name).join(", ")}</small>`
+        : `<details class="comp-ahead"><summary><small>${list.length} ahead · ${list.slice(0, 3).map((x) => esc(x.name)).join(", ")}…</small></summary><small>${list.map(name).join(" · ")}</small></details>`;
+    };
+    slot.innerHTML = `<div class="comp-cuisine-head"><b>Where you show by cuisine</b> <small class="muted">${zName()}'s own search at this spot${when ? `, checked at ${when}` : ""}. First ${checked} results read: ${ads} of them are paid ads. Positions move by 1 or 2 between customers.</small></div>
+      <table class="tbl"><thead><tr><th>Cuisine</th><th>Where you show</th><th>Ahead of you</th></tr></thead><tbody>${p.rows.map((r) =>
+        `<tr><td>${esc(r.cuisine)}</td><td>${where(r)}</td><td>${ahead(r)}</td></tr>`).join("")}</tbody></table>`;
   } catch (x) { if (slot.isConnected) slot.innerHTML = `<small class="muted">The ranking couldn't be loaded right now.</small>`; }
 }
 

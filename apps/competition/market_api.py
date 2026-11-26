@@ -209,16 +209,23 @@ NEARBY_KM = 5  # a competitor farther than this is only suggested when too few a
 RANK_FRESH = 30 * 60  # seconds a cuisine's ranking is kept (half an hour: ad slots move through the day), so reopening the page does not search again
 
 
-def _ranked_cached(m, outlet, place, tag):
-    """(total, [restaurants in the app's order]) for one cuisine at the outlet's spot, kept for half an hour so reopening the page
-    doesn't search again. Shared by the rank table and the suggested competitors."""
+def _ranked_checked(m, outlet, place, tag):
+    """(total, [restaurants in the app's order], checked_at): one cuisine at the outlet's spot, kept for RANK_FRESH seconds so reopening
+    the page doesn't search again. checked_at is when the app was actually asked."""
     from django.core.cache import cache
+    from django.utils import timezone
     key = f"ranked:{m.code}:{outlet.id}:{place.get('lat')}:{place.get('lng')}:{tag}"
     hit = cache.get(key)
-    if hit is None:
-        hit = m.ranked(place, tag)
+    if hit is None or len(hit) < 3:
+        total, found = m.ranked(place, tag)
+        hit = (total, found, timezone.now())
         cache.set(key, hit, RANK_FRESH)
     return hit
+
+
+def _ranked_cached(m, outlet, place, tag):
+    """(total, [restaurants in the app's order]). Shared by the rank table and the suggested competitors."""
+    return _ranked_checked(m, outlet, place, tag)[:2]
 
 
 def pick_suggestions(found_by_tag: dict, ours: str | None, tracked: set, limit: int = 4) -> list[dict]:
@@ -267,7 +274,7 @@ def suggested(request, brand_id, outlet_id, platform):
 
 @api_view(["GET"])
 def ranking(request, brand_id, outlet_id, platform):
-    """Where the outlet sits in the app's own list for each of its cuisine tags: [{cuisine, rank, of, top}]. rank is None
+    """Where the outlet sits in the app's own list for each of its cuisine tags: [{cuisine, rank, of, ours_is_ad, organic_rank, ahead}]. rank is None
     when the outlet isn't in the first pages. Zomato only; kept for half an hour."""
     from django.core.cache import cache
     m = _market(platform)
@@ -282,16 +289,24 @@ def ranking(request, brand_id, outlet_id, platform):
     tags = ((r.info or {}).get("cuisines") if r else None) or []
     if not tags:
         return Response({"detail": "Open the cuisine tags first so we know them.", "rows": []})
-    rows = []
+    rows, stamps = [], []
     for tag in tags:
         try:
-            total, found = _ranked_cached(m, outlet, place, tag)
+            total, found, at = _ranked_checked(m, outlet, place, tag)
         except m.Error as e:
             return _error(e)
+        stamps.append(at)
         ids = [x["res_id"] for x in found]
-        rows.append({"cuisine": tag, "rank": ids.index(ours) + 1 if ours in ids else None, "of": total or len(ids),
-                     "checked": len(ids), "top": [x["name"] for x in (found[:ids.index(ours)] if ours in ids else found)[:3]]})
-    return Response({"rows": rows})
+        i = ids.index(ours) if ours in ids else None
+        ahead = found[:i] if i is not None else found
+        rows.append({"cuisine": tag, "rank": i + 1 if i is not None else None, "of": total or len(ids), "checked": len(ids),
+                     # most of the first results are paid placements: say whether ours is one, and where it stands among the unpaid ones
+                     "ours_is_ad": bool(found[i].get("is_ad")) if i is not None else None,
+                     "organic_rank": (sum(1 for x in ahead if not x.get("is_ad")) + 1) if i is not None and not found[i].get("is_ad") else None,
+                     "ads_in_list": sum(1 for x in found if x.get("is_ad")),
+                     "ahead": [{"name": x["name"], "is_ad": bool(x.get("is_ad"))} for x in ahead],
+                     "top": [x["name"] for x in ahead[:3]]})
+    return Response({"rows": rows, "checked_at": min(stamps).isoformat() if stamps else None})
 
 
 @api_view(["POST"])

@@ -1784,3 +1784,9 @@ tr.an-item:has(+ tr:not(.an-item)) td { border-bottom: 2px solid #b9cdf2; }
 @keyframes rcopen { from { opacity: 0; transform: translateY(-6px); } }
 .pd-inner, .payout-combined[open] > :not(summary) { animation: rcopen .3s ease both; }
 @media (prefers-reduced-motion: reduce) { .pd-inner, .payout-combined[open] > :not(summary) { animation: none !important; } }
+
+/* Competitors: ad marks and the full "ahead of you" list in the cuisine table */
+.comp-ad { display: inline-block; font-size: 10.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 1px 6px; border-radius: 5px; background: #fdf0dc; color: #a8670f; }
+.comp-ahead summary { cursor: pointer; list-style: none; } .comp-ahead summary::-webkit-details-marker { display: none; } .comp-ahead summary::after { content: " ▾"; color: var(--muted); } .comp-ahead[open] summary::after { content: " ▴"; }
+.comp-ahead[open] > small { display: block; margin-top: 6px; line-height: 1.7; }
+.comp-rank .tbl th:nth-child(1) { width: 110px; } .comp-rank .tbl th:nth-child(2) { width: 260px; } .comp-rank .tbl td:nth-child(2) { white-space: normal; }
