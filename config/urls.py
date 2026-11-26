@@ -17,7 +17,7 @@ from apps.metrics import api as metrics
 from apps.metrics import dining_api, freshness, report, snapshot
 from apps.outlets import api as outlets
 from apps.alerts import recipients_api
-from apps.integrations import sessions_api
+from apps.integrations import backfill_api, sessions_api
 from apps.outlets import auth_api, mobile_api, staff_api, team_api
 from apps.reviews import api as reviews
 from apps.reviews import service_api as reply_service
@@ -56,6 +56,7 @@ admin.site.index_title = "Clients, brands & outlet mapping"
 
 api = [
     path("auth/me", auth_api.me),
+    path("brands/<int:brand_id>/backfill", backfill_api.brand_backfill),
     path("staff/sessions", sessions_api.platform_sessions),
     path("staff/sessions/alerts", sessions_api.session_alerts),
     path("staff/reply-service", reply_service.reply_service),

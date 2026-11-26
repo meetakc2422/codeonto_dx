@@ -147,3 +147,51 @@ class InstagramPost(models.Model):
         db_table = "instagram_posts"
         constraints = [models.UniqueConstraint(fields=["connection", "kind", "ext_id"], name="uniq_instagram_post")]
         ordering = ["-posted_at"]
+
+
+class BackfillRequest(models.Model):
+    """A staff request to load a brand's past reviews, business reports and payouts (for example right after a new client's outlets are mapped).
+    The site only queues it; a collector worker claims it and runs run_backfill.py for the brand's outlets, one backfill at a time across all
+    workers, and writes its progress back here. Re-running is safe: every figure is saved per outlet and day."""
+
+    QUEUED, RUNNING, DONE, FAILED = "queued", "running", "done", "failed"
+    STATUSES = [(QUEUED, "Queued"), (RUNNING, "Running"), (DONE, "Done"), (FAILED, "Failed")]
+    ACTIVE = (QUEUED, RUNNING)
+    DAYS = (30, 90, 180)
+    JOBS = "business,payouts,reviews"
+    STALE_RUNNING_MINUTES = 45  # the worker reports in about every minute while it runs
+    STALE_QUEUED_HOURS = 6
+
+    brand = models.ForeignKey("outlets.Brand", on_delete=models.CASCADE, related_name="backfills")
+    days = models.PositiveSmallIntegerField(default=90)
+    status = models.CharField(max_length=10, choices=STATUSES, default=QUEUED)
+    progress = models.CharField(max_length=300, blank=True, help_text="what the worker is doing now, e.g. 'Zomato · payouts (4 of 12 runs done)'")
+    result = models.CharField(max_length=300, blank=True)
+    error = models.TextField(blank=True)
+    requested_by = models.CharField(max_length=150)
+    requested_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    worker = models.CharField(max_length=150, blank=True)
+
+    class Meta:
+        db_table = "backfill_requests"
+        ordering = ["-requested_at"]
+        constraints = [models.UniqueConstraint(fields=["brand"], condition=models.Q(status__in=["queued", "running"]), name="one_active_backfill_per_brand")]
+
+    def __str__(self):
+        return f"{self.brand} · {self.days} days · {self.status}"
+
+    @classmethod
+    def fail_stale(cls) -> int:
+        """Fail a running request whose worker stopped reporting, and a queued one nobody picked up for hours, so the button unlocks."""
+        from datetime import timedelta
+        from django.utils import timezone
+
+        now = timezone.now()
+        n = cls.objects.filter(status=cls.RUNNING, updated_at__lt=now - timedelta(minutes=cls.STALE_RUNNING_MINUTES)).update(
+            status=cls.FAILED, finished_at=now, error="The collector stopped reporting. Sync again: what was already loaded is kept.")
+        n += cls.objects.filter(status=cls.QUEUED, requested_at__lt=now - timedelta(hours=cls.STALE_QUEUED_HOURS)).update(
+            status=cls.FAILED, finished_at=now, error=f"No collector picked this up in {cls.STALE_QUEUED_HOURS} hours. Is the Windows worker running?")
+        return n

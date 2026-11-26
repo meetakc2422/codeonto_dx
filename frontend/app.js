@@ -3610,6 +3610,50 @@ const PICK_PLATFORMS = [
 ];
 const setup = { rows: [], deleted: [], filter: "", dirty: false, bulkPlatform: "zomato", bulkSelected: new Map(), pairs: [] };
 
+// Staff: load a brand's past reviews, business reports and payouts. The site queues it; the Windows collector runs it in the background.
+function setupBackfill(brandId, brandName) {
+  const box = $("#bfStatus"), btn = $("#bfRun"), pick = $("#bfDays");
+  if (!box || !btn) return;
+  let timer;
+  const period = (d) => (d === 30 ? "30 days" : d === 180 ? "6 months" : "3 months");
+  const when = (t) => (t ? new Date(t).toLocaleString("en-IN", { day: "numeric", month: "short", hour: "numeric", minute: "2-digit" }) : "");
+  const paint = (r) => {
+    if (!r) { box.hidden = true; btn.disabled = false; return; }
+    const active = r.status === "queued" || r.status === "running";
+    box.hidden = false; box.className = `bf-status ${r.status}`;
+    box.innerHTML = r.status === "queued"
+      ? `<span class="ld-ring bf-ring"></span><span><b>Waiting to start</b> · last ${period(r.days)}${r.ahead ? ` · ${r.ahead} sync${r.ahead === 1 ? "" : "s"} ahead of it` : ""}<small>Asked by ${esc(r.requested_by)} at ${when(r.requested_at)}. The collector picks it up within a minute when it's free.</small></span>`
+      : r.status === "running"
+      ? `<span class="ld-ring bf-ring"></span><span><b>Syncing the last ${period(r.days)}…</b><small>${esc(r.progress || "Starting…")} · started ${when(r.started_at)}. You can leave this page; it carries on.</small></span>`
+      : r.status === "done"
+      ? `<span class="bf-mark">✓</span><span><b>Past data synced</b> · last ${period(r.days)} · ${esc(r.result || "")}<small>Finished ${when(r.finished_at)}, asked by ${esc(r.requested_by)}.</small></span>`
+      : `<span class="bf-mark">!</span><span><b>The last sync didn't finish</b> · ${esc(r.result || "")}<small>${esc((r.error || "").split("\n")[0])} · ${when(r.finished_at)}. What was loaded is kept; sync again to load the rest.</small></span>`;
+    btn.disabled = active; pick.disabled = active;
+  };
+  const poll = async () => {
+    clearTimeout(timer);
+    if (!$("#bfStatus")?.isConnected) return;  // the page changed
+    try {
+      const d = await api(`/brands/${brandId}/backfill`);
+      paint(d.backfill);
+      if (d.backfill && (d.backfill.status === "queued" || d.backfill.status === "running")) timer = setTimeout(poll, 15000);
+    } catch { /* it tries again next time the page opens */ }
+  };
+  btn.addEventListener("click", async () => {
+    const days = Number(pick.value), n = setup.rows.filter((r) => r.zomato_res_id || r.swiggy_id || r.zomato || r.swiggy).length || setup.rows.length;
+    if (!confirm(`Load the last ${period(days)} of reviews, business reports and payouts for ${brandName} (${n} outlet${n === 1 ? "" : "s"})?\n\nIt runs in the background on the collector and can take a while for a big brand. Anything already loaded is kept.`)) return;
+    btn.disabled = true;
+    try {
+      paint((await apiJSON(`/brands/${brandId}/backfill`, "POST", { days })).backfill);
+      timer = setTimeout(poll, 15000);
+    } catch (e) {
+      toast(userMessage(e));
+      if (e.status === 409 && e.body?.backfill) { paint(e.body.backfill); timer = setTimeout(poll, 15000); } else btn.disabled = false;
+    }
+  });
+  poll();
+}
+
 async function renderSetup(page, { creating = false } = {}) {
   const [industries, clients, data] = await Promise.all([
     api("/industries"), api("/clients"), creating ? null : api(`/brands/${state.brandId}/outlets`),
@@ -3652,9 +3696,11 @@ async function renderSetup(page, { creating = false } = {}) {
           <button class="btn light" id="suggestLinks" title="Find Zomato-only and Swiggy-only rows that are probably the same kitchen">Suggested links</button>
           <button class="btn light" id="mergeRows" title="Combine Zomato-only and Swiggy-only rows that share an area">Merge same-area rows</button>
           <button class="btn light" id="addOutlet">${icon("plus")} Empty row</button>
+          ${staff ? `<span class="bf-box"><select id="bfDays" aria-label="How far back" title="How far back to load"><option value="30">Last 30 days</option><option value="90" selected>Last 3 months</option><option value="180">Last 6 months</option></select><button class="btn light" id="bfRun" title="Load this brand's past reviews, business reports and payouts from Zomato and Swiggy">Sync past data</button></span>` : ""}
           <button class="btn blue" id="saveOutlets">Save outlets</button>
         </div>
       </div>
+      ${staff ? '<p class="bf-status" id="bfStatus" hidden></p>' : ""}
       <div class="bulk-panel" id="bulkPanel" hidden>
         <div class="btn-row">
           <div class="segmented" id="bulkTabs">${PICK_PLATFORMS.map((p) => `<button data-p="${p.code}" class="${p.code === setup.bulkPlatform ? "active" : ""}">${p.label}</button>`).join("")}</div>
@@ -3698,6 +3744,7 @@ async function renderSetup(page, { creating = false } = {}) {
     $("#brandName").focus();
     return;
   }
+  if (staff) setupBackfill(state.brandId, brand?.name || "this brand");
   $("#toggleCsv").addEventListener("click", () => { $("#csvPanel").hidden = !$("#csvPanel").hidden; });
   $("#csvTemplate").addEventListener("click", downloadTemplate);
   $("#csvFile").addEventListener("change", (e) => e.target.files[0] && previewCsv(e.target.files[0]));

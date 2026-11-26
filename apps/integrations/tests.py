@@ -5,9 +5,10 @@ from django.test import TestCase
 from django.utils import timezone
 from rest_framework.test import APIClient
 
-from apps.outlets.models import PlatformAccount
+from apps.masters.models import Industry
+from apps.outlets.models import Brand, BrandOutlet, Client, PlatformAccount
 
-from .models import SessionRefresh
+from .models import BackfillRequest, SessionRefresh
 
 User = get_user_model()
 
@@ -74,3 +75,62 @@ class SessionRefreshTests(TestCase):
         self.assertEqual(resp.status_code, 200, resp.content)
         self.account.refresh_from_db()
         self.assertIsNone(self.account.session_expired_at)
+
+
+class BackfillRequestTests(TestCase):
+    def setUp(self):
+        client = Client.objects.create(name="Acme")
+        industry = Industry.objects.first() or Industry.objects.create(code="restaurant", name="Restaurants")
+        self.brand = Brand.objects.create(client=client, name="Acme Burgers", industry=industry)
+        self.other = Brand.objects.create(client=client, name="Acme Pizza", industry=industry)
+        self.staff = User.objects.create_user("staff", password="x", is_staff=True)
+        self.owner = User.objects.create_user("owner", password="x")
+
+    def api(self, user):
+        c = APIClient()
+        c.force_login(user)
+        return c
+
+    def post(self, user, brand=None, days=90):
+        return self.api(user).post(f"/api/brands/{(brand or self.brand).id}/backfill", {"days": days}, format="json")
+
+    def map_outlet(self, brand=None):
+        from apps.outlets.models import ZomatoOutlet
+        z = ZomatoOutlet.objects.create(res_id="111", name="Z")
+        return BrandOutlet.objects.create(brand=brand or self.brand, outlet_name="Main", zomato=z)
+
+    def test_only_staff_can_ask_or_look(self):
+        self.map_outlet()
+        self.assertEqual(self.post(self.owner).status_code, 403)
+        self.assertEqual(self.api(self.owner).get(f"/api/brands/{self.brand.id}/backfill").status_code, 403)
+
+    def test_needs_a_mapped_outlet_and_a_valid_period(self):
+        self.assertEqual(self.post(self.staff).status_code, 400)  # nothing mapped yet
+        self.map_outlet()
+        self.assertEqual(self.post(self.staff, days=7).status_code, 400)
+        self.assertEqual(self.post(self.staff, days=90).status_code, 201)
+
+    def test_one_at_a_time_per_brand_and_a_new_one_after_it_finishes(self):
+        self.map_outlet()
+        first = self.post(self.staff)
+        self.assertEqual(first.status_code, 201)
+        second = self.post(self.staff)
+        self.assertEqual(second.status_code, 409)
+        self.assertEqual(second.json()["backfill"]["id"], first.json()["backfill"]["id"])
+        BackfillRequest.objects.filter(pk=first.json()["backfill"]["id"]).update(status=BackfillRequest.DONE)
+        self.assertEqual(self.post(self.staff).status_code, 201)
+
+    def test_queue_position_counts_the_one_running_and_older_queued(self):
+        self.map_outlet()
+        BackfillRequest.objects.create(brand=self.other, requested_by="x", status=BackfillRequest.RUNNING)
+        r = self.post(self.staff)
+        self.assertEqual(r.json()["backfill"]["ahead"], 1)
+        self.assertEqual(self.api(self.staff).get(f"/api/brands/{self.brand.id}/backfill").json()["backfill"]["status"], "queued")
+
+    def test_a_silent_worker_does_not_lock_the_button_forever(self):
+        self.map_outlet()
+        r = BackfillRequest.objects.create(brand=self.brand, requested_by="staff", status=BackfillRequest.RUNNING)
+        BackfillRequest.objects.filter(pk=r.pk).update(updated_at=timezone.now() - timedelta(minutes=60))
+        got = self.api(self.staff).get(f"/api/brands/{self.brand.id}/backfill").json()["backfill"]
+        self.assertEqual(got["status"], "failed")
+        self.assertEqual(self.post(self.staff).status_code, 201)
