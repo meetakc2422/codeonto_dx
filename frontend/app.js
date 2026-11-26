@@ -1265,6 +1265,7 @@ function statTile(label, value, tone = "", sub = "") {
 }
 
 // ---------- donut cards: a share of the whole, each slice a click-to-filter button (the legend holds the exact numbers) ----------
+let dnQuiet = false;  // set while a pick re-draws the page, so the donuts do not replay their animation
 const shade = (hex, amt) => {  // mix a #rrggbb colour toward white (amt > 0) or black (amt < 0)
   const n = parseInt(hex.slice(1), 16), t = amt < 0 ? 0 : 255, k = Math.abs(amt);
   const mix = (c) => Math.round(c + (t - c) * k);
@@ -1288,14 +1289,14 @@ function donutCard(id, title, hint, slices, centerLabel, cls = "", foot = "") {
           const x = slices[c.dataIndex];
           return !x ? "#ccc" : anyOn && !x.on ? shade(x.color, 0.6) : shade(x.color, 0.06);
         } }] },
-      options: { maintainAspectRatio: false, devicePixelRatio: Math.max(2, window.devicePixelRatio || 1), cutout: "68%", layout: { padding: 8 }, animation: { animateRotate: true, animateScale: true, duration: 900, easing: "easeOutQuart" }, plugins: { legend: { display: false }, tooltip: { displayColors: false, padding: 6, bodyFont: { size: 12 }, callbacks: { title: () => "", label: (c) => `${c.label}: ${inr.format(c.parsed)}` } } },
+      options: { maintainAspectRatio: false, devicePixelRatio: Math.max(2, window.devicePixelRatio || 1), cutout: "68%", layout: { padding: 8 }, animation: dnQuiet ? false : { animateRotate: true, animateScale: true, duration: 900, easing: "easeOutQuart" }, plugins: { legend: { display: false }, tooltip: { displayColors: false, padding: 6, bodyFont: { size: 12 }, callbacks: { title: () => "", label: (c) => `${c.label}: ${inr.format(c.parsed)}` } } },
         onClick: (e, els) => { if (els.length) document.querySelector(`[data-dn="${id}:${slices[els[0].index].key}"]`)?.click(); } } });
     document.querySelectorAll(`[data-dn^="${id}:"]`).forEach((b, i) => {  // hovering a legend row pops its slice out
       b.addEventListener("mouseenter", () => { ring.setActiveElements([{ datasetIndex: 0, index: i }]); ring.update(); });
       b.addEventListener("mouseleave", () => { ring.setActiveElements([]); ring.update(); });
     });
     const num = el.parentElement.querySelector("[data-count]");  // the centre number counts up as the ring draws
-    if (num && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    if (num && !dnQuiet && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
       const end = Number(num.dataset.count), t0 = performance.now();
       const tick = (t) => { const k = Math.min(1, (t - t0) / 900); num.textContent = inr.format(Math.round(end * (1 - Math.pow(1 - k, 3)))); if (k < 1) requestAnimationFrame(tick); };
       requestAnimationFrame(tick);
@@ -1305,7 +1306,7 @@ function donutCard(id, title, hint, slices, centerLabel, cls = "", foot = "") {
 }
 
 // ---------- reviews inbox ----------
-const reviewFilters = { rating: "", status: "", q: "", contact: "", topic: "", offset: 0 };
+const reviewFilters = { rating: "", status: "", q: "", contact: "", topic: "", platform: "", outlet: "", offset: 0 };
 const reviewUi = { topicsAll: false, outletsAll: false, listOpen: false };  // the topic and outlet lists show the top few until asked for all
 const REVIEW_TOP_TOPICS = 5, REVIEW_TOP_OUTLETS = 5;
 
@@ -1354,7 +1355,7 @@ async function renderReviews(page) {
   const donuts = [ratingDonut, platformDonut, topicDonut];
   STAT_PCT = { "Platform rating": listing ? (Number(listing.value) / 5) * 100 : null, "Avg of reviews received": s.avg_rating != null ? (s.avg_rating / 5) * 100 : null,
     "Negative (1–2★)": s.total ? (s.negative / s.total) * 100 : null, "Pending reply": s.total ? (s.replied / s.total) * 100 : null };
-  const showList = reviewUi.listOpen || reviewFilters.rating || reviewFilters.topic || reviewFilters.status || reviewFilters.q || reviewFilters.contact;  // the list stays out of the way until a slice is clicked
+  const showList = reviewUi.listOpen || reviewFilters.rating || reviewFilters.topic || reviewFilters.platform || reviewFilters.outlet || reviewFilters.status || reviewFilters.q || reviewFilters.contact;  // the list stays out of the way until a slice is clicked
   page.innerHTML = `
     <i id="lkMarker" hidden></i>
     <div class="card cp-stats">
@@ -1377,7 +1378,7 @@ async function renderReviews(page) {
         <select id="rRating"><option value="">All ratings</option><option value="neg">1–2 ★</option><option value="mid">3 ★</option><option value="pos">4–5 ★</option></select>
         <select id="rStatus"><option value="">Any status</option>${Object.entries(REPLY_LABELS).map(([v, l]) => `<option value="${v}">${l}</option>`).join("")}</select>
         <label class="check nowrap" title="Customers who chose on Zomato to share their number with the restaurant"><input type="checkbox" id="rContact" ${reviewFilters.contact ? "checked" : ""}> Number shared</label>
-        <span class="muted">click a row to read it and reply</span>
+        <span class="muted">${[reviewFilters.platform && (reviewFilters.platform === "zomato" ? "Zomato" : reviewFilters.platform === "swiggy" ? "Swiggy" : reviewFilters.platform), reviewFilters.outlet && short(names.get(Number(reviewFilters.outlet)) || `Outlet ${reviewFilters.outlet}`), reviewFilters.topic && (allTopics.find((x) => x.slug === reviewFilters.topic)?.label || reviewFilters.topic)].filter(Boolean).map(esc).join(" · ") || "click a row to read it and reply"}</span>
         <button class="btn light" id="closeList" style="margin-left:auto">Hide list ✕</button>
       </div>
       <div class="table-wrap"><table class="cp-table cp-list"><thead><tr>
@@ -1390,17 +1391,19 @@ async function renderReviews(page) {
   donuts.forEach((d) => d.mount());
   let timer;
   $("#showAll")?.addEventListener("click", () => { reviewUi.listOpen = true; render(); });
-  $("#closeList")?.addEventListener("click", () => { Object.assign(reviewFilters, { rating: "", status: "", q: "", contact: "", topic: "" }); reviewUi.listOpen = false; render(); });
+  $("#closeList")?.addEventListener("click", () => { Object.assign(reviewFilters, { rating: "", status: "", q: "", contact: "", topic: "", platform: "", outlet: "" }); reviewSel.type = ""; reviewSel.key = ""; reviewUi.listOpen = false; render(); });
   $("#rq")?.addEventListener("input", (e) => { clearTimeout(timer); timer = setTimeout(() => { reviewFilters.q = e.target.value; loadReviews(true); }, 300); });
   $("#rRating")?.addEventListener("change", (e) => { reviewFilters.rating = e.target.value; render(); });
   $("#rStatus")?.addEventListener("change", (e) => { reviewFilters.status = e.target.value; loadReviews(true); });
   $("#rContact")?.addEventListener("change", (e) => { reviewFilters.contact = e.target.checked ? "shared" : ""; loadReviews(true); });
   page.querySelectorAll("[data-more]").forEach((b) => b.addEventListener("click", () => { reviewUi[b.dataset.more] = !reviewUi[b.dataset.more]; render(); }));
-  const cfg = { sel: reviewSel, types: ["band", "topic", "outlet", "platform"], noun: "review", noRead: ["platform"], noLines: true,
+  const cfg = { sel: reviewSel, types: ["band", "topic", "outlet", "platform"], noun: "review", noLines: true,
     labelOf: (t, k) => (t === "outlet" ? names.get(Number(k)) || `Outlet ${k}` : t === "band" ? { neg: "1–2★ reviews", mid: "3★ reviews", pos: "4–5★ reviews" }[k] : t === "platform" ? (k === "zomato" ? "Zomato" : k === "swiggy" ? "Swiggy" : k) : (allTopics.find((x) => x.slug === k)?.label || k)) };
-  bindLinks(page, s, cfg, (type, key) => {  // "Read them": open the real reviews behind the highlight
-    if (type === "band") reviewFilters.rating = key; else if (type === "topic") reviewFilters.topic = key; else if (type === "outlet") { state.locationId = key; showSelectedOutlet(); }
-    reviewUi.listOpen = true; render();
+  cfg.live = (type, key) => {  // a pick fills the list at the bottom of the page with exactly those reviews
+    Object.assign(reviewFilters, { rating: type === "band" ? key : "", topic: type === "topic" ? key : "", outlet: type === "outlet" ? key : "", platform: type === "platform" ? key : "" });
+    reviewUi.listOpen = Boolean(type); dnQuiet = true; render(); setTimeout(() => { dnQuiet = false; }, 1500);
+  };
+  bindLinks(page, s, cfg, () => {
   }, reviewLinks);
   if (!showList) return;
   $("#moreBtn").addEventListener("click", () => loadReviews(false));
@@ -1411,7 +1414,7 @@ async function renderReviews(page) {
 async function loadReviews(reset) {
   if (reset) { reviewFilters.offset = 0; reviewRows = new Map(); }
   const rows = await api(`/brands/${state.brandId}/reviews`, {
-    ...range(), outlet_id: state.locationId, platform: state.platform, reply_status: reviewFilters.status, q: reviewFilters.q,
+    ...range(), outlet_id: reviewFilters.outlet || state.locationId, platform: reviewFilters.platform || state.platform, reply_status: reviewFilters.status, q: reviewFilters.q,
     rating: reviewFilters.rating, contact: reviewFilters.contact, topic: reviewFilters.topic, limit: 50, offset: reviewFilters.offset,
   });
   reviewFilters.offset += rows.length;
@@ -1599,7 +1602,7 @@ function bindReplyBoxes(root) {
 }
 
 // ---------- complaints: order complaints from Zomato / Swiggy, tracked as tickets ----------
-const complaintFilters = { status: "", issue: "", q: "", offset: 0 };
+const complaintFilters = { status: "", issue: "", q: "", outlet: "", offset: 0 };
 const ISSUE_LABELS = { missing_items: "Missing items", wrong_items: "Wrong items", quality: "Quality", quantity: "Quantity",
   packaging: "Packaging / spillage", other: "Other" };
 const TICKET_STATUS = [["open", "Open"], ["in_progress", "In progress"], ["resolved", "Resolved"]];
@@ -1638,7 +1641,7 @@ function applySelection(page, s, cfg) {
     targets.push({ el, n });
   }));
   page.insertAdjacentHTML("afterbegin", `<div id="lkBar" class="lk-bar"><span><b>${esc(cfg.labelOf(type, key))}</b> · ${inr.format(total)} ${cfg.noun || "item"}${total === 1 ? "" : "s"} linked</span>
-    ${(cfg.noRead || []).includes(type) ? "" : '<button type="button" class="btn blue" id="lkRead">Read them</button>'}<button type="button" class="btn light" id="lkClear">Clear</button></div>`);
+    ${cfg.live ? '<button type="button" class="btn light" id="lkJump">Jump to the list ↓</button>' : (cfg.noRead || []).includes(type) ? "" : '<button type="button" class="btn blue" id="lkRead">Read them</button>'}<button type="button" class="btn light" id="lkClear">Clear</button></div>`);
   if (!selEl || !targets.length || cfg.noLines) return;  // the reviews page lights up what is linked without lines between the items
   requestAnimationFrame(() => drawLinks(page, selEl, targets));
 }
@@ -1648,7 +1651,8 @@ function bindLinks(page, s, cfg, readThem, holder) {
   const sel = cfg.sel;
   const onClick = (e) => {
     if (!marker || !marker.isConnected) return;
-    if (e.target.closest("#lkClear")) { sel.type = ""; sel.key = ""; applySelection(page, s, cfg); return; }
+    if (e.target.closest("#lkClear")) { sel.type = ""; sel.key = ""; applySelection(page, s, cfg); cfg.live?.("", ""); return; }
+    if (e.target.closest("#lkJump")) { page.querySelector("#reviewList, #complaintList")?.closest(".card")?.scrollIntoView({ behavior: "smooth", block: "start" }); return; }
     if (e.target.closest("#lkRead")) { const { type, key } = sel; sel.type = ""; sel.key = ""; readThem(type, key); return; }
     if (e.target.closest("#lkBar") || e.target.closest("#complaintList") || e.target.closest("#reviewList")) return;
     const el = e.target.closest(cfg.types.map((t) => `[data-${t}]`).join(", "));
@@ -1657,6 +1661,7 @@ function bindLinks(page, s, cfg, readThem, holder) {
     sel.type = sel.key === String(el.dataset[type]) && sel.type === type ? "" : type;
     sel.key = sel.type ? String(el.dataset[type]) : "";
     applySelection(page, s, cfg);
+    cfg.live?.(sel.type, sel.key);  // live pages fill the list below with the picked reviews straight away
   };
   if (holder.click) page.removeEventListener("click", holder.click);
   holder.click = onClick; page.addEventListener("click", onClick);
@@ -1722,7 +1727,7 @@ async function renderComplaints(page) {
   const statusDonut = donutCard("status", "By ticket status", "click a slice to filter", [["open", "Open", "#dc2626", s.open], ["in_progress", "In progress", "#f59e0b", s.in_progress], ["resolved", "Resolved", "#16a34a", s.resolved]]
     .map(([key, label, color, count]) => ({ key, label, color, count, on: complaintFilters.status === key, attr: `data-status="${key}"` })), "complaints");
   STAT_PCT = s.total ? { "Open": (s.open / s.total) * 100, "In progress": (s.in_progress / s.total) * 100, "Resolved": (s.resolved / s.total) * 100 } : {};
-  const showList = complaintUi.listOpen || complaintFilters.issue || complaintFilters.status || complaintFilters.q;  // the list stays out of the way until a slice is clicked
+  const showList = complaintUi.listOpen || complaintFilters.issue || complaintFilters.status || complaintFilters.q || complaintFilters.outlet;  // the list stays out of the way until a slice is clicked
   page.innerHTML = `
     <i id="lkMarker" hidden></i>
     ${glance}
@@ -1759,7 +1764,7 @@ async function renderComplaints(page) {
   issueDonut.mount(); statusDonut.mount(); whoDonut.mount();
   $("#showAll")?.addEventListener("click", () => { complaintUi.listOpen = true; render(); });
   page.querySelectorAll("[data-more]").forEach((b) => b.addEventListener("click", () => { complaintUi[b.dataset.more] = !complaintUi[b.dataset.more]; render(); }));
-  $("#closeList")?.addEventListener("click", () => { Object.assign(complaintFilters, { issue: "", status: "", q: "" }); complaintUi.listOpen = false; render(); });
+  $("#closeList")?.addEventListener("click", () => { Object.assign(complaintFilters, { issue: "", status: "", q: "", outlet: "" }); complaintSel.type = ""; complaintSel.key = ""; complaintUi.listOpen = false; render(); });
   page.querySelectorAll("[data-status]").forEach((b) => b.addEventListener("click", () => {
     complaintFilters.status = complaintFilters.status === b.dataset.status ? "" : b.dataset.status; render();
   }));
@@ -1769,9 +1774,11 @@ async function renderComplaints(page) {
   $("#cClear")?.addEventListener("click", () => { complaintFilters.issue = ""; render(); });
   const cfg = { sel: complaintSel, types: ["dish", "issue", "outlet", "reason"], noun: "complaint", noLines: true,
     labelOf: (t, k) => (t === "outlet" ? names.get(Number(k)) || `Outlet ${k}` : t === "issue" ? ISSUE_LABELS[k] || k : k) };
-  bindLinks(page, s, cfg, (type, key) => {  // "Read them": open the real complaints behind the highlight
-    if (type === "issue") complaintFilters.issue = key; else if (type === "outlet") { state.locationId = key; showSelectedOutlet(); } else complaintFilters.q = key;
-    complaintUi.listOpen = true; render();
+  cfg.live = (type, key) => {  // a pick fills the list below with exactly those complaints
+    Object.assign(complaintFilters, { issue: type === "issue" ? key : "", q: type === "dish" || type === "reason" ? key : "", outlet: type === "outlet" ? key : "" });
+    complaintUi.listOpen = Boolean(type); dnQuiet = true; render(); setTimeout(() => { dnQuiet = false; }, 1500);
+  };
+  bindLinks(page, s, cfg, () => {
   }, complaintLinks);
   if (!showList) return;
   $("#cMore").addEventListener("click", () => loadComplaints(false));
@@ -1782,7 +1789,7 @@ async function renderComplaints(page) {
 async function loadComplaints(reset) {
   if (reset) { complaintFilters.offset = 0; complaintRows = new Map(); }
   const rows = await api(`/brands/${state.brandId}/complaints`, filterParams({
-    status: complaintFilters.status, issue_type: complaintFilters.issue, q: complaintFilters.q, limit: 50, offset: complaintFilters.offset,
+    status: complaintFilters.status, issue_type: complaintFilters.issue, q: complaintFilters.q, outlet_id: complaintFilters.outlet || state.locationId, limit: 50, offset: complaintFilters.offset,
   }));
   complaintFilters.offset += rows.length;
   rows.forEach((c) => complaintRows.set(String(c.id), c));
