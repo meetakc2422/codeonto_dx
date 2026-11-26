@@ -29,6 +29,18 @@ def _sales(outlets, plat, s, e) -> float:
     return float(v or 0)
 
 
+def _pairs(outlets, plats, day) -> dict:
+    """Sales of one day per (outlet, platform): the unit the day-to-day comparison is made on."""
+    out: dict[tuple, float] = {}
+    for plat, code in SALES_SOURCES:
+        if plat not in plats:
+            continue
+        rows = MetricDaily.objects.filter(outlet_id__in=outlets, platform_id=plat, kpi__code=code, metric_date=day).values("outlet_id").annotate(v=Sum("value"))
+        for r in rows:
+            out[(r["outlet_id"], plat)] = float(r["v"] or 0)
+    return out
+
+
 def _by_outlet(outlets, plats, day) -> dict:
     """Each outlet's sales (the same line as the headline figure) for one day."""
     out: dict[int, float] = {}
@@ -69,31 +81,43 @@ def brand_snapshot(request, brand_id):
     platform = qp.get("platform") or None
     plats = [p for p, _ in SALES_SOURCES if not platform or platform == p]
 
-    def day_sales(d):
-        return sum(_sales(outlets, p, d, d) for p in plats)
+    cache: dict = {}
+
+    def pairs(d):
+        if d not in cache:
+            cache[d] = _pairs(outlets, plats, d)
+        return cache[d]
 
     # the day: yesterday, or the latest earlier day that has any sales
     day = date.today() - timedelta(days=1)
     for _ in range(45):
-        if day_sales(day) > 0:
+        if sum(pairs(day).values()) > 0:
             break
         day -= timedelta(days=1)
     else:
         return Response({"empty": True})
+
+    # like for like: every day is added up over the same outlet+platform pairs that reported on `day`, so a client whose data is
+    # missing or half loaded on one of the days does not make that day look like a crash or a spike
+    ref = set(pairs(day))
+
+    def day_sales(d, plat=None):
+        return sum(v for k, v in pairs(d).items() if k in ref and (plat is None or k[1] == plat))
 
     bars = [{"date": (day - timedelta(days=7 * i)).isoformat(), "sales": round(day_sales(day - timedelta(days=7 * i)), 2)} for i in reversed(range(WEEKS))]
     cur, prev = bars[-1]["sales"], bars[-2]["sales"]
     usual = [b["sales"] for b in bars[:-1] if b["sales"] > 0]
     by_platform = []
     for p in plats:
-        c, w = _sales(outlets, p, day, day), _sales(outlets, p, day - timedelta(days=7), day - timedelta(days=7))
+        c, w = day_sales(day, p), day_sales(day - timedelta(days=7), p)
         if c or w:
             by_platform.append({"platform": p, "sales": round(c, 2), "last_week": round(w, 2), "change": _pct(c, w)})
     by_platform.sort(key=lambda r: -r["sales"])
 
     # outlets: who gained and who dropped against the same weekday last week (in rupees, so a tiny outlet's big percentage doesn't crowd out the real movers)
     now_o, was_o = _by_outlet(outlets, plats, day), _by_outlet(outlets, plats, day - timedelta(days=7))
-    moves = [(oid, now_o.get(oid, 0.0), was_o.get(oid, 0.0)) for oid in set(now_o) | set(was_o)]
+    # only outlets that reported on the day: one with no reading at all is a data gap (reports arrive late), not a proven drop
+    moves = [(oid, now_o[oid], was_o.get(oid, 0.0)) for oid in now_o]
     many = len(brand_names) > 1
     names = {o.id: " · ".join(x for x in ((o.brand.name if many else ""), o.outlet_name, o.area) if x) for o in scope_rows}
     row = lambda m: {"name": names.get(m[0], f"Outlet {m[0]}"), "sales": round(m[1], 2), "last_week": round(m[2], 2), "diff": round(m[1] - m[2], 2), "change": _pct(m[1], m[2])}
