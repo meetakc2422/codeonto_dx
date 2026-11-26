@@ -4377,7 +4377,7 @@ async function loadCuisineRanking(outletId, box, spot) {
     };
     const ahead = (r) => {
       const list = r.ahead || [];
-      if (!list.length) return r.rank ? `<small class="muted">nobody is ahead of you</small>` : "";
+      if (!list.length) return r.rank ? `<small class="muted">nobody ahead in this check (a customer may see one or two ahead)</small>` : "";
       const name = (x) => `${esc(x.name)}${x.is_ad ? ' <span class="comp-ad">Ad</span>' : ""}`;
       return list.length <= 3 ? `<small>${list.map(name).join(", ")}</small>`
         : `<details class="comp-ahead"><summary><small>${list.length} ahead · ${list.slice(0, 3).map((x) => esc(x.name)).join(", ")}…</small></summary><small>${list.map(name).join(" · ")}</small></details>`;
