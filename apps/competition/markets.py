@@ -34,6 +34,21 @@ class Zomato:
         return zomato.location_details(pick)
 
     @staticmethod
+    def _listing(spot, q, search, want=10, max_pages=3):
+        """{total, restaurants}: up to `want` restaurants for a search. Zomato sends about 6 a page; the next page needs the previous page's token."""
+        out, seen, total, pb = [], set(), None, None
+        for page in range(1, max_pages + 1):
+            got = zomato.search_restaurants(spot, q, page=page, search=search, postback=pb)
+            total, pb = got.get("total") if total is None else total, got.get("postback")
+            for r in got["restaurants"]:
+                if r["res_id"] and r["res_id"] not in seen:
+                    seen.add(r["res_id"])
+                    out.append(r)
+            if len(out) >= want or not got.get("has_more") or not pb:
+                break
+        return {"total": total, "restaurants": out[:want]}
+
+    @staticmethod
     def search(spot, q, kind=None):
         """kind: None works out what was typed; "restaurant", "dish" or "cuisine" asks for only that. Zomato's own suggestions tell them
         apart: a restaurant has a res_id, a dish is marked "Dish", and a cuisine or category is marked "See all restaurants"."""
@@ -56,9 +71,9 @@ class Zomato:
             hit = next((h for h in hints if h["search"] and not h["res_id"] and (h.get("kind") or "").strip() == want), None)
             if not hit:
                 return q, 0, []
-            return hit["name"], None, zomato.search_restaurants(spot, q, search=hit["search"])["restaurants"]
+            return hit["name"], None, Zomato._listing(spot, q, hit["search"])["restaurants"]
         dish = next((h for h in hints if h["search"] and not h["res_id"]), None)
-        listed = zomato.search_restaurants(spot, q, search=dish["search"]) if dish or not named else {"total": None, "restaurants": []}
+        listed = Zomato._listing(spot, q, dish["search"]) if dish or not named else {"total": None, "restaurants": []}
         label = dish["name"] if dish else q
         if "|{" in label or label.startswith("<"):  # Zomato's own styling markup, not text to show
             label = q
@@ -67,7 +82,7 @@ class Zomato:
             if r["res_id"] not in seen:
                 seen.add(r["res_id"])
                 rows.append(r)
-        return label, listed.get("total"), rows
+        return label, listed.get("total"), rows[:10]
 
     @staticmethod
     def ranked(spot, q, pages=5):

@@ -220,6 +220,7 @@ def cuisines(request, brand_id, outlet_id, platform):
     return Response({**_profile_json(r), "from_outlet": borrowed, "source": src.name})
 
 
+SEARCH_SHOWN = 10  # restaurants a search shows, on either app
 NEARBY_KM = 5  # a competitor farther than this is only suggested when too few are closer
 RANK_FRESH = 30 * 60  # seconds a cuisine's ranking is kept (half an hour: ad slots move through the day), so reopening the page does not search again
 
@@ -362,7 +363,7 @@ def search(request, brand_id, outlet_id, platform):
     for r in found:
         if r["res_id"] and r["res_id"] not in {x["res_id"] for x in rows}:
             rows.append({**r, "tracked": r["res_id"] in tracked, "is_us": r["res_id"] == ours})
-    return Response({"query": query, "total": total, "results": rows})
+    return Response({"query": query, "total": total, "results": rows[:SEARCH_SHOWN]})
 
 
 @api_view(["GET"])
