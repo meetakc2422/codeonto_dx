@@ -258,7 +258,7 @@ def export(request, brand_id, outlet_id, platform):
     read_at = read.astimezone(IST).strftime("%d %b %Y %H:%M") if read else ""
     add_dashboard(wb, mk.name, outlet.display_name, spot, read_at, rows, ins, kinds)
     add_notes(wb, mk.name, outlet.display_name, spot, read_at, rows, ins)
-    wb.properties.title, wb.properties.creator = f"{mk.name} competition · {outlet.display_name}", "SocialSpork"
+    wb.properties.title, wb.properties.creator = f"{mk.name} competition · {outlet.display_name}", "Codeonto"
 
     buf = BytesIO()
     wb.save(buf)

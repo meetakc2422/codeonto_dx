@@ -14,7 +14,7 @@ from .models import BackfillRequest
 
 def _staff(request):
     if not is_staff(request.user):
-        raise PermissionDenied("Only SocialSpork staff can sync a brand's past data.")
+        raise PermissionDenied("Only Codeonto staff can sync a brand's past data.")
 
 
 def _row(r: BackfillRequest | None) -> dict | None:

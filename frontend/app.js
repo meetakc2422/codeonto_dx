@@ -599,7 +599,7 @@ async function renderReport(page) {
   let cov = null, timer = null, prevTimer = null, prevSeq = 0, prevUrl = null, prevBlob = null, prevSig = "";
   const nm = (g) => `${g.name} (${g.platform === "swiggy" ? "Swiggy" : "Zomato"})`;
   const dayLbl = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-  // a name a person would give it: "Lazeez Affaire - Golf Course - Zomato - Performance report - 20 Nov to 26 Nov 2026" (the outlet and the platform only when one is chosen)
+  // a name a person would give it: "Brand Name - Golf Course - Zomato - Performance report - 20 Nov to 26 Nov 2026" (the outlet and the platform only when one is chosen)
   const fileBase = () => {
     const d = (iso, year) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", ...(year ? { year: "numeric" } : {}) });
     const ids = String(state.locationId || "").split(",").filter(Boolean);
@@ -1061,7 +1061,7 @@ function snapSections(d) {
     <p class="snap-text">${r.pending ? `<b>${inr.format(r.pending)}</b> review${r.pending === 1 ? " is" : "s are"} still waiting for a reply.` : "Every review has been answered."}</p>`]);
   const L = d.leakage;
   if (L.total > 0) {
-    const R = 100, len = Math.PI * R, parts = [["Discounts", L.discounts, "#4f74d6"], ["Cancelled orders", L.cancelled, "#cf4f4f"], ["Ad spend", L.ads, "#8e98ab"]];
+    const R = 100, len = Math.PI * R, parts = [["Discounts", L.discounts, "#d9480f"], ["Cancelled orders", L.cancelled, "#cf4f4f"], ["Ad spend", L.ads, "#8e98ab"]];
     let off = 0;
     const arcs = parts.filter((p) => p[1] > 0).map(([, v, c]) => { const l = (v / L.total) * len; const el = `<path d="M20 120 A100 100 0 0 1 220 120" pathLength="${len}" stroke="${c}" stroke-dasharray="${l} ${len}" stroke-dashoffset="${-off}"/>`; off += l; return el; }).join("");
     out.push(["Leakage", `<small class="snap-kicker">REVENUE LEAKAGE</small><h3>Silent revenue killers</h3>
@@ -1076,12 +1076,12 @@ function openSnapshot(d) {
   const secs = snapSections(d);
   const stale = d.date < new Date(Date.now() - 864e5).toISOString().slice(0, 10);
   const dateTxt = new Date(`${d.date}T00:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) + (stale ? " · latest day with sales data" : "");
-  const AC = { Sales: "#2f4a9a", Platforms: "#2c8a6b", Reviews: "#d29a2a", Outlets: "#7a55c7", Leakage: "#cf4f4f" };
+  const AC = { Sales: "#9a3412", Platforms: "#2c8a6b", Reviews: "#d29a2a", Outlets: "#7a55c7", Leakage: "#cf4f4f" };
   const bg = document.createElement("div");
   bg.id = "snapBg"; bg.className = "snap-bg";
   bg.innerHTML = `<div class="snap-panel" role="dialog" aria-modal="true" aria-label="Yesterday at a glance">
     <header class="snap-head"><div><small>${dateTxt}</small><h2>Yesterday at a glance</h2><small class="snap-scope">${esc(d.client)} · ${d.brands.length === 1 ? esc(d.brands[0]) : `${d.brands.length} brands`} · ${inr.format(d.outlet_count)} outlet${d.outlet_count === 1 ? "" : "s"}</small></div><button type="button" class="snap-x" data-snap="close" aria-label="Close">✕</button></header>
-    <div class="snap-deck">${secs.map(([n, h]) => `<article class="snap-card" style="--ac:${AC[n] || "#2f4a9a"}"><section class="snap-sec">${h}</section></article>`).join("")}</div>
+    <div class="snap-deck">${secs.map(([n, h]) => `<article class="snap-card" style="--ac:${AC[n] || "#9a3412"}"><section class="snap-sec">${h}</section></article>`).join("")}</div>
     <footer class="snap-foot"><div class="snap-dots">${secs.map(() => "<i></i>").join("")}</div><div class="snap-btns"><button type="button" class="snap-back" data-snap="prev">Back</button><button type="button" class="snap-next" data-snap="next">Next</button></div></footer></div>`;
   document.body.appendChild(bg);
   const cards = [...bg.querySelectorAll(".snap-card")], dots = [...bg.querySelectorAll(".snap-dots i")], back = bg.querySelector(".snap-back"), next = bg.querySelector(".snap-next");
