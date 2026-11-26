@@ -2439,11 +2439,10 @@ async function renderReconciliation(page) {
   const combinedXlsx = new URL(`${API}/brands/${state.brandId}/payouts/combined/xlsx`, location.origin);
   Object.entries(listParams).forEach(([k, v]) => { if (v !== "" && v != null) combinedXlsx.searchParams.set(k, v); });
   page.innerHTML = `
-    <div class="so-hero rc-hero ${summary.with_issues ? "bad" : "ok"}">
-      <div class="rc-main"><div class="so-big"><i class="rc-dot"></i>${inr.format(summary.with_issues)}<small> payout${summary.with_issues === 1 ? "" : "s"} to check</small></div>
-        <div class="rc-progress" title="${inr.format(summary.reconciled)} of ${inr.format(summary.cycles)} checked"><u style="width:${summary.cycles ? Math.max(2, Math.round((summary.reconciled / summary.cycles) * 100)) : 0}%"></u></div>
+    <div class="so-hero">
+      <div><div class="so-big">${inr.format(summary.with_issues)}<small> payout${summary.with_issues === 1 ? "" : "s"} to check</small></div>
         <p>${inr.format(summary.reconciled)} of ${inr.format(summary.cycles)} payouts checked against their orders · Zomato and Swiggy</p></div>
-      <div class="so-now rc-diff ${Math.abs(summary.discrepancy_total || 0) >= 1 ? "bad" : "ok"}">Unexplained difference<b>${rupees(summary.discrepancy_total)}</b><span>${Math.abs(summary.discrepancy_total || 0) >= 1 ? "needs a look" : "everything adds up"}</span></div>
+      <div class="so-now">Unexplained difference<b>${rupees(summary.discrepancy_total)}</b></div>
     </div>
     <div class="grid cols-3 rc-kpis" style="margin-bottom:20px">
       <div class="card kpi rc-kpi paid"><i class="rc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></svg></i><div><span class="kpi-label">Paid</span><div class="kpi-value">${rupees(summary.paid_total)}</div>${summary.zero_payouts ? `<span class="muted">${inr.format(summary.zero_payouts)} payouts were ₹0 after ads and Hyperpure</span>` : ""}</div></div>
