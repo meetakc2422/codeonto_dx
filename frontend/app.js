@@ -4385,7 +4385,12 @@ async function loadCuisineRanking(outletId, box, spot) {
     slot.innerHTML = `<div class="comp-cuisine-head"><b>Where you show by cuisine</b> <small class="muted">${zName()}'s own search at this spot${when ? `, checked at ${when}` : ""}. First ${checked} results read: ${ads} of them are paid ads. Positions move by 1 or 2 between customers.</small></div>
       <table class="tbl"><thead><tr><th>Cuisine</th><th>Where you show</th><th>Ahead of you</th></tr></thead><tbody>${p.rows.map((r) =>
         `<tr><td>${esc(r.cuisine)}</td><td>${where(r)}</td><td>${ahead(r)}</td></tr>`).join("")}</tbody></table>`;
-  } catch (x) { if (slot.isConnected) slot.innerHTML = `<small class="muted">The ranking couldn't be loaded right now.</small>`; }
+  } catch (x) {
+    if (!slot.isConnected) return;
+    console.error("cuisine ranking failed", x);
+    slot.innerHTML = `<small class="muted">The ranking couldn't be loaded right now${x && x.status ? ` (${esc(String(x.status))})` : ""}. <button class="login-link" type="button" data-rank-retry>Try again</button></small>`;
+    slot.querySelector("[data-rank-retry]")?.addEventListener("click", () => { slot.remove(); loadCuisineRanking(outletId, box, spot); });
+  }
 }
 
 async function renderMarketComp(page, outletId) {
