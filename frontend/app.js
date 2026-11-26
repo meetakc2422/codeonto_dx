@@ -587,7 +587,7 @@ async function renderReport(page) {
     <aside class="ex-side"><div class="card ex-prev">
       <div class="ex-prev-head"><b>Preview</b><span class="ex-prev-r"><span class="muted" id="exPrevState"></span><button class="ex-z ex-max-btn" id="exMax" title="Maximize the preview (Esc to close)" aria-label="Maximize"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg></button></span></div>
       <div class="ex-frame-wrap"><iframe id="exFrame" title="Report preview"></iframe><div class="ex-busy" id="exBusy">Building the preview…</div></div>
-      <div class="ex-send"><div class="ex-chip" id="exChip" draggable="true" title="Drag me onto WhatsApp or Email">${EX_ICON.pdf}<span><b id="exChipName">report.pdf</b><small class="muted">drag me to send</small></span></div>
+      <div class="ex-send"><div class="ex-chip" id="exChip" draggable="true" title="Drag onto WhatsApp or Email">${EX_ICON.pdf}<span><b id="exChipName">report.pdf</b><small class="muted">drag me to send</small></span></div>
         <div class="ex-drop" data-via="wa">${EX_ICON.wa}<span>WhatsApp</span></div><div class="ex-drop" data-via="mail">${EX_ICON.mail}<span>Email</span></div><div class="ex-drop" data-via="system" title="AirDrop, Messages and other apps">${EX_ICON.more}<span>More apps</span></div></div>
     </div></aside></div>`;
   const setMax = (on) => { const p = page.querySelector(".ex-prev"); p.classList.toggle("ex-max", on); document.body.classList.toggle("ex-noscroll", on); $("#exMax").innerHTML = on ? `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 4v5H4M20 9h-5V4M15 20v-5h5M4 15h5v5"/></svg>` : `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>`; };
@@ -599,7 +599,17 @@ async function renderReport(page) {
   let cov = null, timer = null, prevTimer = null, prevSeq = 0, prevUrl = null, prevBlob = null, prevSig = "";
   const nm = (g) => `${g.name} (${g.platform === "swiggy" ? "Swiggy" : "Zomato"})`;
   const dayLbl = (iso) => new Date(iso + "T00:00:00").toLocaleDateString("en-IN", { day: "numeric", month: "short" });
-  const fileName = () => `report_${expState.start}_to_${expState.end}.pdf`;
+  // a name a person would give it: "Lazeez Affaire - Golf Course - Zomato - Performance report - 20 Nov to 26 Nov 2026" (the outlet and the platform only when one is chosen)
+  const fileBase = () => {
+    const d = (iso, year) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB", { day: "numeric", month: "short", ...(year ? { year: "numeric" } : {}) });
+    const ids = String(state.locationId || "").split(",").filter(Boolean);
+    const outlet = ids.length === 1 ? (state.locations.find((l) => String(l.id) === ids[0])?.name || "") : "";
+    const plat = { zomato: "Zomato", swiggy: "Swiggy" }[state.platform] || "";
+    const { start, end } = expState;
+    const period = start === end ? d(start, true) : `${d(start, start.slice(0, 4) !== end.slice(0, 4))} to ${d(end, true)}`;
+    return [state.config?.brand?.name, outlet, plat, "Performance report", period].filter(Boolean).join(" - ").replace(/[\\/:*?"<>|]/g, "");
+  };
+  const fileName = () => `${fileBase()}.pdf`;
   const sig = () => JSON.stringify([expState.start, expState.end, state.locationId, state.platform, expState.order, expState.tables, expState.compact]);
   const pdfUrl = () => {  // modules is always sent: an empty list means "none", not "all"
     const url = new URL(`${API}/brands/${state.brandId}/report/pdf`, location.origin);
@@ -616,6 +626,7 @@ async function renderReport(page) {
     $("#exPdf").disabled = $("#exXlsx").disabled = $("#exWa").disabled = $("#exMail").disabled = $("#exMore").disabled = !okToExport();
     $("#exChip").classList.toggle("off", !okToExport());
     $("#exChipName").textContent = fileName();
+    $("#exChip").title = `${fileName()}\nDrag onto WhatsApp or Email`;  // the full name on hover, not only the hint
   };
   // ---- the PDF, built once per set of choices and reused by the preview, Download and Share ----
   const getPdf = async () => {
@@ -721,7 +732,7 @@ async function renderReport(page) {
         Object.entries(exportFilters()).forEach(([k, v]) => { if (v !== "" && v != null) url.searchParams.set(k, v); });
         const res = await apiFetch(url);
         if (!res.ok) throw userError("The file couldn't be made right now. Please try again in a moment.");
-        saveBlob(await res.blob(), `report_${expState.start}_to_${expState.end}.xlsx`);
+        saveBlob(await res.blob(), `${fileBase()}.xlsx`);
       }
     } catch (err) { toast(userMessage(err)); }
     btn.disabled = false; btn.lastChild.textContent = label; paint();
@@ -747,7 +758,7 @@ async function renderReport(page) {
         try {
           const url = pdfUrl(); url.pathname = url.pathname.replace(/\/report\/pdf$/, "/report/share");
           const res = await apiFetch(url, { method: "POST" });
-          if (res.ok) link = location.origin + (await res.json()).path;
+          if (res.ok) link = location.origin + (await res.json()).path.replace(/[^/]+$/, encodeURIComponent(name));  // the last part of the address is only for how the link looks
         } catch (e) { /* falls back to downloading the file below */ }
         if (link) {
           const msg = `${title}\n${link}`;
