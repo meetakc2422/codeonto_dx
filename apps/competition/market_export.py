@@ -76,8 +76,8 @@ def _restaurants(mk, outlet, res_ids, with_us=True):
     out = []
     for rid, is_us in ([(ours, True)] if ours and with_us else []) + [(r, False) for r in wanted]:
         r = MarketRestaurant.objects.filter(platform=mk.code, res_id=rid).first()
-        if (not r or not r.items) and place:
-            r = load_menu(mk, rid, place)
+        if (not r or not r.items or (mk.code == "swiggy" and "address" not in (r.info or {}))) and place:
+            r = load_menu(mk, rid, place, force=bool(r and r.items))  # a Swiggy menu read before addresses were kept is read again once
         if r and place and hasattr(mk, "profile") and not (r.info or {}).get("address"):
             try:  # the restaurant's info page carries its address and hours: one light call, kept on the restaurant
                 p = mk.profile(place, rid)
@@ -143,6 +143,7 @@ def export(request, brand_id, outlet_id, platform):
     measures = [
         (f"{mk.name} restaurant ID", lambda r, i: r.res_id),
         ("Address", lambda r, i: (r.info or {}).get("address", "")),
+        ("Map position (lat, lng)", lambda r, i: (r.info or {}).get("lat_lng", "")),
         ("Open today", lambda r, i: (r.info or {}).get("open_text", "")),
         ("Cost for two", lambda r, i: (r.info or {}).get("cost_for_two", "")),
         ("Cuisines", lambda r, i: ", ".join((r.info or {}).get("cuisines") or [])),

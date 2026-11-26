@@ -171,7 +171,7 @@ class Swiggy:
     @staticmethod
     def menu(spot, res_id):
         mn = swiggy.menu(spot, res_id)
-        return {**mn, "info": {k: mn.get(k) for k in ("cost_for_two", "area", "cuisines", "delivery_time", "distance_km", "is_open")}}
+        return {**mn, "info": {k: mn.get(k) for k in ("cost_for_two", "area", "address", "lat_lng", "cuisines", "delivery_time", "distance_km", "is_open")}}
 
 
 MARKETS = {m.code: m for m in (Zomato, Swiggy)}

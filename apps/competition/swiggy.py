@@ -368,6 +368,8 @@ def menu_once(place: dict, res_id: str) -> dict:
     return {"res_id": str(res_id), "name": info.get("name", ""), "rating": info.get("avgRating"), "votes": (info.get("totalRatingsString") or "").replace(" ratings", ""),
             "offers": offers, "combos": [], "items": list(items.values()), "cost_for_two": info.get("costForTwoMessage", ""),
             "area": info.get("areaName", ""), "cuisines": info.get("cuisines") or [],
+            "address": ", ".join(dict.fromkeys(x.strip() for x in (info.get("locality"), info.get("areaName"), info.get("city")) if isinstance(x, str) and x.strip())),
+            "lat_lng": str(info.get("latLong") or "").strip(),
             "delivery_time": f"{sla['minDeliveryTime']}-{sla['maxDeliveryTime']} mins" if sla.get("minDeliveryTime") else "",
             "distance_km": sla.get("lastMileTravel"), "is_open": info.get("isOpen")}
 
