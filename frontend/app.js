@@ -2458,15 +2458,16 @@ async function renderReconciliation(page) {
         <td>${state.me.is_staff ? `<span class="btn-row">${[["order", "Order charge"], ["ad", "Ad spend"], ["deduction", "Other deduction"]].map(([k, t]) =>
           `<button class="btn ${l.guess === k ? "blue" : "light"}" data-line="${l.id}" data-kind="${k}">${t}</button>`).join("")}</span>` : ""}</td></tr>`).join("")}
       </tbody></table></details>` : ""}
-    ${summary.issues.length ? `<div class="card" style="margin-bottom:20px"><div class="card-head"><h3>What needs checking</h3></div>
-      <ul class="payout-issues">${summary.issues.map((i) => `<li><button class="payout-issue-btn ${payoutFilters.issue === i.code ? "on" : ""}" data-payout-issue="${i.code}">
-        <b>${inr.format(i.count)}</b> ${esc(i.label)}<span class="muted">${payoutFilters.issue === i.code ? "showing · clear" : "show"}</span></button></li>`).join("")}</ul></div>` : ""}
+    ${summary.issues.length ? `<div class="card rc-need" style="margin-bottom:20px"><div class="card-head"><h3>What needs checking</h3><small class="muted">click one to see just those payouts below</small></div>
+      <div class="rc-issues">${summary.issues.map((i) => { const tone = ["payout_mismatch", "order_payout_math", "order_fee_math", "fee_rate_changed"].includes(i.code) ? "red" : i.code === "overdue" ? "amber" : "blue", on = payoutFilters.issue === i.code;
+        return `<button type="button" class="rc-issue ${tone} ${on ? "on" : ""}" data-payout-issue="${i.code}"><b>${inr.format(i.count)}</b><span>${esc(i.label)}</span><em>${on ? "Showing · clear ✕" : "Show these →"}</em></button>`; }).join("")}</div></div>` : ""}
     ${combined?.platforms.length ? `<details class="card payout-combined" id="combinedBox" style="margin-bottom:12px" ${payoutFilters.combinedOpen ? "open" : ""}>
-      <summary><b>Combined statement</b> <span class="muted">· ${plural(combined.total.payouts, "payout")} matching these filters · ${inr.format(combined.total.orders)} orders · net ${rupees(combined.total.net_payout)}
-          (paid ${rupees(combined.total.paid)} · to be paid ${rupees(combined.total.to_be_paid)}) · click to open</span></summary>
+      <summary class="rc-comb-sum"><div class="rc-comb-title"><b>Combined statement</b><span class="muted">${plural(combined.total.payouts, "payout")} · ${inr.format(combined.total.orders)} orders matching these filters</span></div>
+        <div class="rc-comb-stats"><div><small>Net payout</small><b>${rupees(combined.total.net_payout)}</b></div><div class="paid"><small>Paid</small><b>${rupees(combined.total.paid)}</b></div><div class="due"><small>To be paid</small><b>${rupees(combined.total.to_be_paid)}</b></div></div>
+        <span class="rc-comb-open"><span class="o1">Open details</span><span class="o2">Close details</span></span></summary>
       <p style="margin:10px 0 6px"><a class="btn light" href="${combinedXlsx}" download>Export Excel</a></p>
       <div class="payout-combined-grid">${combined.platforms.map((p) => `<div>
-        <h4>${p.platform === "swiggy" ? "Swiggy" : "Zomato"} <span class="muted">· ${plural(p.payouts, "payout")} · ${plural(p.outlets, "outlet")} · ${inr.format(p.orders)} orders</span></h4>
+        <h4><span class="rc-plat ${p.platform === "swiggy" ? "swiggy" : "zomato"}">${p.platform === "swiggy" ? "Swiggy" : "Zomato"}</span> <span class="muted">· ${plural(p.payouts, "payout")} · ${plural(p.outlets, "outlet")} · ${inr.format(p.orders)} orders</span></h4>
         <table class="payout-statement"><tbody>${(() => { const base = stmtBase(p.sections); return p.sections.map((sec) => `<tr class="section"><td>${esc(sec.label)}</td><td>${rupees(sec.value)}</td></tr>
           ${sec.items.map((i) => `<tr><td class="muted">${esc(i.label)}</td><td class="muted">${rupees(i.value)}</td></tr>`).join("")}`).join("") + `<tr class="section total"><td>Net payout</td><td>${rupees(p.net_payout)}</td></tr>`; })()}</tbody></table></div>`).join("")}</div>
       <p class="muted" style="margin:8px 0 0">Adds up every payout matching the filters (dates, outlets, platform, status, search), the same ones the list and the CSV use. Zomato and Swiggy statements are laid out differently, so each is combined on its own.</p>
