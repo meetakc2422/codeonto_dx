@@ -125,7 +125,7 @@ def parse_annexure(content: bytes) -> list[dict]:
 
     book = load_workbook(io.BytesIO(content), data_only=True, read_only=True)
     if "Order Level" not in book.sheetnames:
-        raise ReportFormatChanged("no 'Order Level' sheet")
+        raise ReportFormatChanged(f"no 'Order Level' sheet (the file has: {', '.join(book.sheetnames)[:200]})")
     rows = list(book["Order Level"].iter_rows(values_only=True))
     index = next((i for i, r in enumerate(rows[:30]) if "order id" in {_header(c) for c in r}), None)
     if index is None:
@@ -289,6 +289,7 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     stop, lock, tally = threading.Event(), threading.Lock(), Counter()
 
     again = []  # stores that failed on something unexpected: one more go at the end
+    odd = []  # annexures that were not in the expected layout: reported once at the end, with the store and dates
 
     def work(s, last=False):
         if stop.is_set():
@@ -314,7 +315,13 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                         if content is None:
                             tally["not_ready"] += 1
                         else:
-                            orders = parse_annexure(content)
+                            try:
+                                orders = parse_annexure(content)
+                            except ReportFormatChanged as e:  # this one file is not in the expected layout: keep its statement, skip its orders, carry on with the other stores
+                                with lock:
+                                    odd.append(f"store {res_id}, payout {cycle['start_date']} to {cycle['end_date']}: {e}")
+                                log.warning("swiggy payouts: store %s, payout %s to %s: annexure not in the expected layout (%s); its orders are skipped for now", res_id, cycle["start_date"], cycle["end_date"], e)
+                                orders = None
                     else:
                         tally["deferred"] += 1
                 result = reconcile(statement, orders) if orders is not None else None
@@ -356,6 +363,11 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
         time.sleep(retry.ROUND_WAIT)
         for s in again:
             work(s, last=True)
+    if odd:
+        log.error("swiggy payouts: %s annexure(s) were not in the expected layout; their statements are saved, their orders are not checked yet:\n  %s", len(odd), "\n  ".join(odd[:12]))
+        alerts.incident("Swiggy payout annexure changed", f"{len(odd)} annexure(s) were not in the expected layout:\n" + "\n".join(odd[:8]) + (f"\n…and {len(odd) - 8} more" if len(odd) > 8 else ""),
+                        "Open one of these payouts' annexure in the Swiggy partner dashboard, then update collector/swiggy/payouts.py to match (python inspect_swiggy_annexure.py <login> <swiggy_id> shows a file's layout).")
+        tally["failed"] += 1
     log.info("swiggy payouts: %s cycles saved, %s reconciled (%s orders), %s waiting for the next run, %s not ready, %s failed",
              tally["cycles"], tally["reconciled"], tally["orders"], tally["deferred"], tally["not_ready"], tally["failed"])
     return not tally["failed"]
