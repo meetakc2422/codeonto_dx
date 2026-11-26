@@ -376,6 +376,7 @@ function showPageSkeleton(page) {
 }
 
 let pageSeq = 0;
+let snapRoute = "";  // the page drawn before this one, to tell "arriving on Overview" from "Overview redrawn by a filter"
 async function render() {
   if (!state.me) return;
   ensureAssistant();
@@ -383,7 +384,7 @@ async function render() {
   destroyCharts();
   STAT_PCT = {};  // each page sets its own tile bars
   closePicker();
-  const route = currentRoute();
+  const route = currentRoute(), prevRoute = snapRoute; snapRoute = route;
   // a slow page (Overview makes 8 requests) must not paint over the page opened after it: once a newer render starts,
   // this render's writes go to a throwaway element instead of the screen
   const mine = ++pageSeq, real = $("#page"), sink = document.createElement("div");
@@ -507,7 +508,7 @@ async function render() {
   page.classList.toggle("calm", route === "reviews" || route === "tickets");  // a plainer look for these two pages: solid white cards, hairline borders, no gradients or glass
   try {
     if (isSetup) await renderSetup(page, { creating: Boolean(setup.newBrandClientId) });
-    else if (route === "overview") await renderOverview(page);
+    else if (route === "overview") { const arrived = prevRoute !== "overview"; await renderOverview(page); if (arrived) setTimeout(() => { if (currentRoute() === "overview") showSnapshot(true); }, 600); }  // the snapshot opens every time you come to Overview, not when a filter redraws it
     else if (route === "reviews") await renderReviews(page);
     else if (route === "stock_outs") await renderStockOuts(page);
     else if (route === "tickets") await renderComplaints(page);
@@ -1073,17 +1074,10 @@ function openSnapshot(d) {
   go(0, 1);
 }
 
-function autoSnapshot() {
-  const today = new Date().toISOString().slice(0, 10);
-  if (snapSeen(state.brandId, today) || document.getElementById("snapBg")) return;
-  setTimeout(() => showSnapshot(true), 900);
-}
-
 async function showSnapshot(auto) {
   let d;
   try { d = await api(`/brands/${state.brandId}/snapshot`, filterParams()); } catch { if (!auto) toast("The snapshot couldn't be loaded right now"); return; }
   if (!d || d.empty) { if (!auto) toast("There is no sales data for yesterday yet"); return; }
-  snapMark(state.brandId, new Date().toISOString().slice(0, 10));
   openSnapshot(d);
 }
 
@@ -5507,7 +5501,6 @@ async function boot() {
   const initial = state.brands.find((b) => String(b.id) === saved)?.id || state.brands[0].id;
   $("#brandSelect").value = initial;
   await loadBrand(initial);
-  autoSnapshot();  // once a day, as soon as the dashboard is up
 }
 
 // back from Google's consent screen: tell the user how it went, then tidy the address bar
