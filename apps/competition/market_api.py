@@ -206,11 +206,11 @@ def cuisines(request, brand_id, outlet_id, platform):
 
 
 NEARBY_KM = 5  # a competitor farther than this is only suggested when too few are closer
-RANK_FRESH = 3 * 3600  # seconds a cuisine's ranking is kept, so reopening the page doesn't search again
+RANK_FRESH = 30 * 60  # seconds a cuisine's ranking is kept (half an hour: ad slots move through the day), so reopening the page does not search again
 
 
 def _ranked_cached(m, outlet, place, tag):
-    """(total, [restaurants in the app's order]) for one cuisine at the outlet's spot, kept for a few hours so reopening the page
+    """(total, [restaurants in the app's order]) for one cuisine at the outlet's spot, kept for half an hour so reopening the page
     doesn't search again. Shared by the rank table and the suggested competitors."""
     from django.core.cache import cache
     key = f"ranked:{m.code}:{outlet.id}:{place.get('lat')}:{place.get('lng')}:{tag}"
@@ -268,7 +268,7 @@ def suggested(request, brand_id, outlet_id, platform):
 @api_view(["GET"])
 def ranking(request, brand_id, outlet_id, platform):
     """Where the outlet sits in the app's own list for each of its cuisine tags: [{cuisine, rank, of, top}]. rank is None
-    when the outlet isn't in the first pages. Zomato only; kept for a few hours."""
+    when the outlet isn't in the first pages. Zomato only; kept for half an hour."""
     from django.core.cache import cache
     m = _market(platform)
     if not hasattr(m, "ranked"):
