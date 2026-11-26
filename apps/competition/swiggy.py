@@ -171,7 +171,7 @@ def suggest(place: dict, text: str) -> list[dict]:
     for c in _cards(r):
         if not c["type_url"].endswith("GlobalAutoSuggestion"):
             continue
-        v = c["value"]
+        v = c["value"].replace("\\a", "\x07").replace("\\v", "\x0b").replace("\\'", "'")  # protobuf bytes that arrive written as \a \v \'
         link = re.search(r"swiggy://explore\?[^\s\x00-\x1f\"\\]+", v)
         if not link:
             continue
@@ -187,7 +187,8 @@ def suggest(place: dict, text: str) -> list[dict]:
         out.append({"name": q.get("query", ""), "type": meta.get("type", ""), "label": meta.get("displayLabel", ""),
                     "res_id": str(data.get("primaryRestaurantId") or "") or None, "brand_id": data.get("brandId") or data.get("parentId"),
                     "area": area, "rating": float(rating.group(1)) if rating else None,
-                    "delivery_time": (m.group(0) if (m := re.search(r"\d+-\d+ mins", v)) else ""), "query": q.get("query", ""), "metadata": meta})
+                    "delivery_time": (m.group(0) if (m := re.search(r"\d+-\d+ mins", v)) else ""),
+                    "votes": (m.group(1) if (m := re.search(r"\d+-\d+ mins\W+(\d[\d.,]*[KkLl]?\+?)", v)) else ""), "query": q.get("query", ""), "metadata": meta})
     return out
 
 

@@ -149,7 +149,8 @@ class Swiggy:
     def _row(r):
         return {"res_id": r["res_id"], "name": r["name"], "rating": r["rating"], "offers": [], "is_ad": False,
                 "distance_km": r["distance_km"], "delivery_time": r["delivery_time"], "area": r["area"],
-                "image": r.get("image", ""), "cuisines": r.get("cuisines") or [], "cost_for_two": r.get("cost_for_two", "")}
+                "image": r.get("image", ""), "cuisines": r.get("cuisines") or [], "cost_for_two": r.get("cost_for_two", ""),
+                "votes": (r.get("ratings") or "").replace(" ratings", "").strip()}
 
     @staticmethod
     def search(spot, q, kind=None):  # Swiggy lists by one search; the type option is Zomato's
@@ -169,7 +170,7 @@ class Swiggy:
                 cards.update({r["res_id"]: r for r in Swiggy._nearby(spot, h["name"])})
             card = cards.get(h["res_id"])
             named.append(Swiggy._row(card) if card else {"res_id": h["res_id"], "name": h["name"], "rating": h["rating"], "offers": [], "is_ad": False,
-                                                          "distance_km": None, "delivery_time": h["delivery_time"], "area": h["area"]})
+                                                          "distance_km": None, "delivery_time": h["delivery_time"], "area": h["area"], "votes": h.get("votes", "")})
         if listed or named:
             seen = {r["res_id"] for r in named}
             rows = named + [Swiggy._row(r) for r in listed if r["res_id"] not in seen]
