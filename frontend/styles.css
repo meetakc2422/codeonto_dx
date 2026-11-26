@@ -1569,17 +1569,17 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 
 /* connected highlight */
 #page { position: relative; }
-.lk-svg { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 20; overflow: visible; }
+.lk-svg { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 3; overflow: visible; }
 .lk-path { fill: none; stroke: #0a84ff; stroke-opacity: .6; stroke-linecap: round; animation: lkdraw .7s cubic-bezier(.2, .8, .2, 1) forwards; }
 @keyframes lkdraw { to { stroke-dashoffset: 0; } }
 .lk-dot { fill: #0a84ff; stroke: #fff; stroke-width: 2; transform-box: fill-box; transform-origin: center; animation: lkpop .3s cubic-bezier(.3, 1.6, .5, 1) both; }
 @keyframes lkpop { from { transform: scale(0); opacity: 0; } }
 .lk { transition: opacity .25s, box-shadow .25s, transform .25s; position: relative; }
 .lk-on .lk:not(.lk-rel):not(.lk-sel) { opacity: .28; }
-.lk-sel { box-shadow: 0 0 0 2px #0a84ff, 0 10px 22px -10px rgba(10, 132, 255, .6) !important; background: #e8f0ff; z-index: 21; }
-.lk-rel { box-shadow: 0 0 0 1.5px rgba(10, 132, 255, .5); background: #f4f8ff; z-index: 21; }
+.lk-sel { box-shadow: 0 0 0 2px #0a84ff, 0 10px 22px -10px rgba(10, 132, 255, .6) !important; background: #e8f0ff; z-index: 2; }
+.lk-rel { box-shadow: 0 0 0 1.5px rgba(10, 132, 255, .5); background: #f4f8ff; z-index: 2; }
 .lk-n { position: absolute; top: -8px; right: -6px; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: #0a84ff; color: #fff; font-size: 11px; font-weight: 700; line-height: 20px; text-align: center; animation: lkpop .3s .5s cubic-bezier(.3, 1.6, .5, 1) both; }
-.lk-bar { position: sticky; top: 8px; z-index: 30; display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 8px 12px; border-radius: 14px; background: rgba(255, 255, 255, .9); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border: 1px solid #cfe0ff; box-shadow: 0 10px 24px -12px rgba(10, 132, 255, .5); font-size: 13px; }
+.lk-bar { position: sticky; top: 8px; z-index: 10; display: flex; align-items: center; gap: 10px; margin: 0 0 10px; padding: 8px 12px; border-radius: 14px; background: rgba(255, 255, 255, .9); -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px); border: 1px solid #cfe0ff; box-shadow: 0 10px 24px -12px rgba(10, 132, 255, .5); font-size: 13px; }
 .lk-bar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .lk-path, .lk-dot, .lk-n { animation: none; stroke-dashoffset: 0 !important; } }
 
