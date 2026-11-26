@@ -237,25 +237,37 @@ class UpstreamErrorForStaffTests(SimpleTestCase):
 
 
 class ZomatoSearchWithOnlyRestaurantHints(SimpleTestCase):
-    """Typing a restaurant's name when the only suggestion is that restaurant, and it doesn't deliver at this spot, gives 'nothing found', not a crash."""
+    """A restaurant name typed when Zomato's only suggestion is that restaurant: it is shown (marked), never dropped, and never crashes."""
 
-    def test_no_dish_hint_and_the_restaurant_is_not_found_here(self):
-        hint = {"name": "Milano Ice Cream", "kind": "", "res_id": "20283473", "search": {"x": 1}}
-        with mock.patch.object(zomato, "suggest", return_value=[hint]), \
-             mock.patch.object(zomato, "search_restaurants", return_value={"total": 5, "has_more": False, "postback": None, "restaurants": []}):
-            query, total, rows = markets.Zomato.search({"lat": 17.4, "lng": 78.4}, "Milano ice cream")
-        self.assertEqual((query, rows), ("Milano ice cream", []))
-        self.assertEqual(rows.unavailable, ("Milano Ice Cream",))  # the page says Zomato knows it but it doesn't deliver here
+    HINT = {"name": "Milano Ice Cream", "kind": "", "res_id": "20283473", "search": {"x": 1}}
+    SPOT = {"lat": 17.4, "lng": 78.4}
 
-    def test_the_restaurant_is_shown_when_zomato_finds_it_here(self):
-        hint = {"name": "Milano Ice Cream", "kind": "", "res_id": "20283473", "search": {"x": 1}}
-        found = {"res_id": "20283473", "name": "Milano Ice Cream", "rating": 4.2, "distance_km": 1.1, "is_ad": False, "offers": []}
-        with mock.patch.object(zomato, "suggest", return_value=[hint]), \
-             mock.patch.object(zomato, "search_restaurants", return_value={"total": 1, "has_more": False, "postback": None, "restaurants": [found]}):
-            _, _, rows = markets.Zomato.search({"lat": 17.4, "lng": 78.4}, "Milano ice cream")
-        self.assertEqual([r["name"] for r in rows], ["Milano Ice Cream"])
+    def test_a_name_match_is_shown_even_with_no_dish_or_cuisine_suggestion(self):
+        with mock.patch.object(zomato, "suggest", return_value=[self.HINT]):
+            query, total, rows = markets.Zomato.search(self.SPOT, "Milano ice cream")
+        self.assertEqual(query, "Milano ice cream")
+        self.assertEqual([(r["name"], r["suggested"]) for r in rows], [("Milano Ice Cream", True)])
+
+    def test_the_lists_own_details_win_when_the_restaurant_is_in_the_list(self):
+        dish = {"name": "More results", "kind": "", "res_id": None, "search": {"y": 1}}
+        real = {"res_id": "20283473", "name": "Milano Ice Cream", "rating": 4.2, "distance_km": 1.1, "is_ad": False, "offers": []}
+        other = {"res_id": "9", "name": "Other", "rating": 4.0, "distance_km": 2.0, "is_ad": False, "offers": []}
+        with mock.patch.object(zomato, "suggest", return_value=[self.HINT, dish]), \
+             mock.patch.object(zomato, "search_restaurants", return_value={"total": 2, "has_more": False, "postback": None, "restaurants": [other, real]}):
+            _, _, rows = markets.Zomato.search(self.SPOT, "Milano ice cream")
+        self.assertEqual([r["name"] for r in rows], ["Other", "Milano Ice Cream"])  # the list's order, the name match not repeated
+        self.assertNotIn("suggested", rows[1])
+
+    def test_name_matches_come_after_the_real_results(self):
+        dish = {"name": "Mughlai", "kind": "See all restaurants", "res_id": None, "search": {"y": 1}}
+        real = {"res_id": "1", "name": "Baba's", "rating": 4.4, "distance_km": 9.2, "is_ad": True, "offers": []}
+        stale = {"name": "Mughlai Junction", "kind": "", "res_id": "307485", "search": {"z": 1}}
+        with mock.patch.object(zomato, "suggest", return_value=[dish, stale]), \
+             mock.patch.object(zomato, "search_restaurants", return_value={"total": 1, "has_more": False, "postback": None, "restaurants": [real]}):
+            _, _, rows = markets.Zomato.search(self.SPOT, "Mughlai")
+        self.assertEqual([r["name"] for r in rows], ["Baba's", "Mughlai Junction"])
 
     def test_no_suggestions_at_all_gives_nothing_found(self):
         with mock.patch.object(zomato, "suggest", return_value=[]):
-            _, _, rows = markets.Zomato.search({"lat": 17.4, "lng": 78.4}, "zzzz")
+            _, _, rows = markets.Zomato.search(self.SPOT, "zzzz")
         self.assertEqual(rows, [])

@@ -4541,15 +4541,16 @@ async function renderMarketComp(page, outletId) {
     dlg.set(`Results for "${entry.query || entry.asked}"`, entry.total ? `${inr.format(entry.total)} restaurants on ${zName()} · showing the first ${results.length}` : "",
       results.length ? results.map((x, i) => `<div class="cs-row">
         <span class="cs-thumb">${x.image ? `<img src="${esc(x.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}<b>${esc((x.name || "?").trim().charAt(0).toUpperCase())}</b></span>
-        <span class="cs-main"><strong>${esc(x.name)}${x.is_ad ? ' <em class="comp-ad">Ad</em>' : ""}${x.is_us ? ' <em class="comp-you">You</em>' : ""}</strong>
+        <span class="cs-main"><strong>${esc(x.name)}${x.is_ad ? ' <em class="comp-ad">Ad</em>' : ""}${x.suggested ? ' <em class="comp-ad">Name match</em>' : ""}${x.is_us ? ' <em class="comp-you">You</em>' : ""}</strong>
           <span class="cs-meta">${x.rating ? `<span class="cs-rate">${x.rating.toFixed(1)} ★</span>` : ""}${[x.distance_km != null ? `${x.distance_km} km` : "", x.delivery_time, x.area].filter(Boolean).map((t) => `<span>${esc(t)}</span>`).join("")}</span>
+          ${x.suggested ? '<small class="cs-dishes">Zomato suggests this name. Open it to see its menu; delivery to this area isn\'t checked.</small>' : ""}
           ${x.offers?.[0]?.text ? `<span class="cs-offer">${esc(x.offers[0].text)}</span>` : ""}
           ${x.dishes?.length ? `<small class="cs-dishes">${x.dishes.slice(0, 3).map((dd) => `${esc(dd.name)}${dd.price ? ` ${esc(dd.price)}` : ""}`).join(" · ")}</small>`
             : x.cuisines?.length ? `<small class="cs-dishes">${[x.cuisines.slice(0, 4).join(", "), x.cost_for_two].filter(Boolean).map(esc).join(" · ")}</small>` : ""}</span>
         <span class="cs-act"><button class="btn light" data-zres="${i}" data-act="view">View</button>
           ${x.is_us ? "" : `${d.our_how === "linked" ? "" : `<button class="btn light" data-zres="${i}" data-act="us">This is us</button>`}
             <button class="btn ${x.tracked ? "light" : "blue"}" data-zres="${i}" data-act="track" ${x.tracked ? "disabled" : ""}>${x.tracked ? "Comparing" : "Compare"}</button>`}</span></div>`).join("")
-        : `<p class="muted cs-note">Nothing found.${(entry.unavailable || []).length ? ` Zomato knows ${entry.unavailable.map((n) => `"${esc(n)}"`).join(", ")}, but it doesn't deliver to ${esc(zPeek(outletId)?.title || d.area.title || "this area")}. Try <b>Look from another area</b> to see where it does.` : ""}</p>`);
+        : '<p class="muted cs-note">Nothing found.</p>');
     dlg.body.onclick = (ev) => {
       const b = ev.target.closest("[data-zres]");
       if (!b) return;
@@ -4585,7 +4586,7 @@ async function renderMarketComp(page, outletId) {
     runLoader(dlg.body);
     try {
       const r = await apiJSON(`${zBase(outletId)}/search`, "POST", { q: e.target.q.value, kind, spot: zPeek(outletId)?.spot });
-      const entry = { asked, query: r.query, total: r.total, results: r.results, unavailable: r.unavailable || [], at: Date.now() };
+      const entry = { asked, query: r.query, total: r.total, results: r.results, at: Date.now() };
       state.zSearchCache[ck] = entry; state.zLastSearch[lastKey] = entry;
       Object.keys(state.zSearchCache).sort((a, b2) => state.zSearchCache[a].at - state.zSearchCache[b2].at).slice(0, -20).forEach((k) => delete state.zSearchCache[k]);
       showLast(); showResults(entry, dlg);
