@@ -371,8 +371,18 @@ def search(request, brand_id, outlet_id, platform):
     tracked = set(MarketCompetitor.objects.filter(outlet=outlet, restaurant__platform=m.code).values_list("restaurant__res_id", flat=True))
     ours = our_res_id(outlet, m)[0]
     rows = []
+    saved = {c.restaurant.res_id: c for c in MarketCompetitor.objects.filter(outlet=outlet, restaurant__platform=m.code, restaurant__res_id__in=[r["res_id"] for r in found if r["res_id"]]).select_related("restaurant")}
     for r in found:
         if r["res_id"] and r["res_id"] not in {x["res_id"] for x in rows}:
+            c = saved.get(r["res_id"])
+            if c:
+                # one restaurant, one set of numbers: a restaurant already being compared shows the rating the comparison table shows, and its
+                # distance and delivery time are brought up to date from what this search found from the outlet's spot
+                if r.get("distance_km") is not None and (c.distance_km != r["distance_km"] or (r.get("delivery_time") and c.delivery_time != r["delivery_time"])):
+                    c.distance_km, c.delivery_time = r["distance_km"], r.get("delivery_time") or c.delivery_time
+                    c.save(update_fields=["distance_km", "delivery_time"])
+                r = {**r, "rating": c.restaurant.rating if c.restaurant.rating is not None else r.get("rating"),
+                     "distance_km": r.get("distance_km") if r.get("distance_km") is not None else c.distance_km}
             rows.append({**r, "tracked": r["res_id"] in tracked, "is_us": r["res_id"] == ours})
     return Response({"query": query, "total": total, "results": rows[:SEARCH_SHOWN]})
 
