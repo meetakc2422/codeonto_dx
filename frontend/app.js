@@ -580,14 +580,14 @@ async function renderReport(page) {
       <div class="ex-group"><span class="ex-glabel">Share the PDF</span><button class="btn light ex-btn" id="exWa">${EX_ICON.wa}WhatsApp</button><button class="btn light ex-btn" id="exMail">${EX_ICON.mail}Email</button><button class="btn light ex-btn" id="exMore" title="AirDrop, Messages and other apps">${EX_ICON.more}More</button></div>
     </div></div>
     <aside class="ex-side"><div class="card ex-prev">
-      <div class="ex-prev-head"><b>Preview</b><span class="ex-zoom"><button class="ex-z" id="exZout" title="Zoom out" aria-label="Zoom out">−</button><button class="ex-z ex-zv" id="exZval" title="Back to fit">100%</button><button class="ex-z" id="exZin" title="Zoom in" aria-label="Zoom in">+</button></span><span class="muted" id="exPrevState"></span></div>
+      <div class="ex-prev-head"><b>Preview</b><button class="ex-z ex-max-btn" id="exMax" title="Maximize the preview (Esc to close)">⤢ Maximize</button><span class="muted" id="exPrevState"></span></div>
       <div class="ex-frame-wrap"><iframe id="exFrame" title="Report preview"></iframe><div class="ex-busy" id="exBusy">Building the preview…</div></div>
       <div class="ex-send"><div class="ex-chip" id="exChip" draggable="true" title="Drag me onto WhatsApp or Email">${EX_ICON.pdf}<span><b id="exChipName">report.pdf</b><small class="muted">drag me to send</small></span></div>
         <div class="ex-drop" data-via="wa">${EX_ICON.wa}<span>WhatsApp</span></div><div class="ex-drop" data-via="mail">${EX_ICON.mail}<span>Email</span></div><div class="ex-drop" data-via="system" title="AirDrop, Messages and other apps">${EX_ICON.more}<span>More apps</span></div></div>
     </div></aside></div>`;
-  let zoom = 1;  // the preview zoom: the frame gets wider than its box and the box scrolls
-  const setZoom = (z) => { zoom = Math.min(3, Math.max(1, Math.round(z * 4) / 4)); const f = $("#exFrame"); f.style.width = `${zoom * 100}%`; $("#exZval").textContent = `${Math.round(zoom * 100)}%`; };
-  $("#exZin").onclick = () => setZoom(zoom + 0.25); $("#exZout").onclick = () => setZoom(zoom - 0.25); $("#exZval").onclick = () => setZoom(1);
+  const setMax = (on) => { const p = page.querySelector(".ex-prev"); p.classList.toggle("ex-max", on); document.body.classList.toggle("ex-noscroll", on); $("#exMax").textContent = on ? "✕ Close" : "⤢ Maximize"; };
+  $("#exMax").onclick = () => setMax(!page.querySelector(".ex-prev").classList.contains("ex-max"));
+  if (!window._exEsc) { window._exEsc = true; document.addEventListener("keydown", (e) => { if (e.key === "Escape" && document.querySelector(".ex-prev.ex-max")) { document.querySelector(".ex-prev").classList.remove("ex-max"); document.body.classList.remove("ex-noscroll"); const b = document.getElementById("exMax"); if (b) b.textContent = "⤢ Maximize"; } }); }
   const wrap = page.querySelector(".ex-wrap");  // per-render handlers go on this, not on `page`, which outlives the render
   const $s = $("#exStart"), $e = $("#exEnd");
   $s.value = expState.start; $e.value = expState.end;

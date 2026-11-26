@@ -1444,8 +1444,8 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .ex-side { position: sticky; top: 76px; }
 @media (max-width: 1179px) { .ex-side { position: static; } }
 .ex-prev { padding: 14px; } .ex-prev-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-size: 14px; } .ex-prev-head span { font-size: 12px; }
-.ex-frame-wrap { position: relative; aspect-ratio: 1.414 / 1; border-radius: 12px; overflow: auto; border: 1px solid var(--border); background: #eef1f6; }
-.ex-frame-wrap iframe { width: 100%; height: 100%; min-width: 100%; border: 0; background: #fff; display: block; }
+.ex-frame-wrap { position: relative; aspect-ratio: 1.414 / 1; border-radius: 12px; overflow: hidden; border: 1px solid var(--border); background: #eef1f6; }
+.ex-frame-wrap iframe { width: 100%; height: 100%; border: 0; background: #fff; display: block; }
 .ex-busy { position: absolute; inset: 0; display: none; align-items: center; justify-content: center; text-align: center; padding: 16px; background: rgba(255,255,255,.84); color: var(--muted); font-size: 13px; }
 .ex-busy.show { display: flex; }
 .ex-send { display: grid; grid-template-columns: 1.5fr 1fr 1fr 1fr; gap: 8px; margin-top: 12px; }
@@ -1584,4 +1584,6 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .lk-bar span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (prefers-reduced-motion: reduce) { .lk-path, .lk-dot, .lk-n { animation: none; stroke-dashoffset: 0 !important; } }
 
-.ex-zoom { display: inline-flex; align-items: center; gap: 4px; margin: 0 auto 0 12px; } .ex-z { border: 1px solid var(--border); background: #fff; border-radius: 8px; min-width: 28px; height: 26px; padding: 0 8px; font-size: 14px; cursor: pointer; color: inherit; } .ex-z:hover { background: #eef1f6; } .ex-zv { font-size: 12px; min-width: 52px; }
+.ex-z { border: 1px solid var(--border); background: #fff; border-radius: 8px; height: 26px; padding: 0 10px; font-size: 12px; cursor: pointer; color: inherit; margin: 0 auto 0 12px; } .ex-z:hover { background: #eef1f6; }
+.ex-prev.ex-max { position: fixed; inset: 12px; z-index: 1000; display: flex; flex-direction: column; box-shadow: 0 0 0 100vmax rgba(15, 23, 42, .55); }
+.ex-prev.ex-max .ex-frame-wrap { flex: 1; aspect-ratio: auto; min-height: 0; } .ex-prev.ex-max .ex-send { display: none; } body.ex-noscroll { overflow: hidden; }
