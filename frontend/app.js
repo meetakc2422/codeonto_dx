@@ -240,8 +240,8 @@ function applyCustomRange(start, end, label = "") {
   $("#rangePop").hidden = true; render();
 }
 
-// TESTING: true opens the snapshot every time you arrive on Overview; set false for the real behaviour (once, right after login)
-const SNAP_ON_OVERVIEW = true;
+// false: the snapshot opens once, right after signing in. true (testing only) opens it every time you arrive on Overview.
+const SNAP_ON_OVERVIEW = false;
 let snapRoute = "";
 function renderSidebar() {
   const route = currentRoute();
