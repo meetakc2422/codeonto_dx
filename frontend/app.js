@@ -2439,15 +2439,12 @@ async function renderReconciliation(page) {
   const combinedXlsx = new URL(`${API}/brands/${state.brandId}/payouts/combined/xlsx`, location.origin);
   Object.entries(listParams).forEach(([k, v]) => { if (v !== "" && v != null) combinedXlsx.searchParams.set(k, v); });
   page.innerHTML = `
-    <div class="so-hero rc-hero">
-      <div><div class="so-big"><span>${inr.format(summary.with_issues)}</span><small> payout${summary.with_issues === 1 ? "" : "s"} to check</small></div>
-        <p>${inr.format(summary.reconciled)} of ${inr.format(summary.cycles)} payouts checked against their orders · Zomato and Swiggy</p></div>
-      <div class="so-now">Unexplained difference<b>${rupees(summary.discrepancy_total)}</b></div>
-    </div>
-    <div class="grid cols-3 rc-kpis" style="margin-bottom:20px">
-      <div class="card kpi rc-kpi paid"><i class="rc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.7 2.7L16 9.5"/></svg></i><div><span class="kpi-label">Paid</span><div class="kpi-value">${rupees(summary.paid_total)}</div>${summary.zero_payouts ? `<span class="muted">${inr.format(summary.zero_payouts)} payouts were ₹0 after ads and Hyperpure</span>` : ""}</div></div>
-      <div class="card kpi rc-kpi due"><i class="rc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></i><div><span class="kpi-label">To be paid</span><div class="kpi-value">${rupees(summary.to_be_paid_total)}</div><span class="muted">${inr.format(summary.to_be_paid_cycles)} payouts${summary.carried_forward_cycles ? ` · ${inr.format(summary.carried_forward_cycles)} carried forward (${rupees(summary.carried_forward_total)})` : ""}</span></div></div>
-      <div class="card kpi rc-kpi rate"><i class="rc-ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 5L5 19"/><circle cx="7.5" cy="7.5" r="2.5"/><circle cx="16.5" cy="16.5" r="2.5"/></svg></i><div><span class="kpi-label">Commission take rate</span><div class="kpi-value">${summary.take_rate == null ? "—" : `${summary.take_rate.toFixed(2)}%`}</div><span class="muted">service fee on checked orders</span></div></div>
+    <div class="card rc-strip">
+      <div class="rc-stat main ${summary.with_issues ? "bad" : ""}"><small>${summary.with_issues === 1 ? "Payout" : "Payouts"} to check</small><b>${inr.format(summary.with_issues)}</b><span>${inr.format(summary.reconciled)} of ${inr.format(summary.cycles)} checked</span></div>
+      <div class="rc-stat"><small>Unexplained difference</small><b>${rupees(summary.discrepancy_total)}</b></div>
+      <div class="rc-stat"><small>Paid</small><b>${rupees(summary.paid_total)}</b>${summary.zero_payouts ? `<span>${inr.format(summary.zero_payouts)} were ₹0 after ads and Hyperpure</span>` : ""}</div>
+      <div class="rc-stat"><small>To be paid</small><b>${rupees(summary.to_be_paid_total)}</b><span>${inr.format(summary.to_be_paid_cycles)} payouts${summary.carried_forward_cycles ? ` · ${inr.format(summary.carried_forward_cycles)} carried forward` : ""}</span></div>
+      <div class="rc-stat"><small>Commission take rate</small><b>${summary.take_rate == null ? "—" : `${summary.take_rate.toFixed(2)}%`}</b><span>service fee on checked orders</span></div>
     </div>
     ${summary.new_lines?.length && state.me.is_staff ? `<details class="card new-lines" style="margin-bottom:12px"><summary><b>${plural(summary.new_lines.length, "new statement line")}</b> to review <span class="muted">· lines we haven't seen on a Zomato or Swiggy statement before, click to open</span></summary>
       <p class="muted" style="margin-top:10px">These appeared on Zomato or Swiggy payout statements for the first time. Until reviewed they count as deductions not tied to orders, and aren't counted as ad spend.</p>
@@ -2457,9 +2454,8 @@ async function renderReconciliation(page) {
         <td>${state.me.is_staff ? `<span class="btn-row">${[["order", "Order charge"], ["ad", "Ad spend"], ["deduction", "Other deduction"]].map(([k, t]) =>
           `<button class="btn ${l.guess === k ? "blue" : "light"}" data-line="${l.id}" data-kind="${k}">${t}</button>`).join("")}</span>` : ""}</td></tr>`).join("")}
       </tbody></table></details>` : ""}
-    ${summary.issues.length ? `<div class="card rc-need" style="margin-bottom:20px"><div class="card-head"><h3>What needs checking</h3><small class="muted">click one to see just those payouts below</small></div>
-      <div class="rc-issues">${summary.issues.map((i) => { const tone = ["payout_mismatch", "order_payout_math", "order_fee_math", "fee_rate_changed"].includes(i.code) ? "red" : i.code === "overdue" ? "amber" : "blue", on = payoutFilters.issue === i.code;
-        return `<button type="button" class="rc-issue ${tone} ${on ? "on" : ""}" data-payout-issue="${i.code}"><b>${inr.format(i.count)}</b><span>${esc(i.label)}</span><em>${on ? "Showing · clear ✕" : "Show these →"}</em></button>`; }).join("")}</div></div>` : ""}
+    ${summary.issues.length ? `<div class="rc-need"><span class="muted">Needs checking</span>${summary.issues.map((i) => { const on = payoutFilters.issue === i.code;
+      return `<button type="button" class="rc-chip ${on ? "on" : ""}" data-payout-issue="${i.code}" title="${on ? "Click to clear" : "Show these payouts"}"><b>${inr.format(i.count)}</b> ${esc(i.label)}${on ? " ✕" : ""}</button>`; }).join("")}</div>` : ""}
     ${combined?.platforms.length ? `<details class="card payout-combined" id="combinedBox" style="margin-bottom:12px" ${payoutFilters.combinedOpen ? "open" : ""}>
       <summary class="rc-comb-sum"><div class="rc-comb-title"><b>Combined statement</b><span class="muted">${plural(combined.total.payouts, "payout")} · ${inr.format(combined.total.orders)} orders matching these filters</span></div>
         <div class="rc-comb-stats"><div><small>Net payout</small><b>${rupees(combined.total.net_payout)}</b></div><div class="paid"><small>Paid</small><b>${rupees(combined.total.paid)}</b></div><div class="due"><small>To be paid</small><b>${rupees(combined.total.to_be_paid)}</b></div></div>
