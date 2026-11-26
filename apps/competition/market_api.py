@@ -276,6 +276,15 @@ def suggested(request, brand_id, outlet_id, platform):
     ours = our_res_id(outlet, m, find=True)[0]
     r = MarketRestaurant.objects.filter(platform=m.code, res_id=ours).first() if ours else None
     tags = ((r.info or {}).get("cuisines") if r else None) or []
+    if not tags and not ours:
+        # the cuisines belong to the brand: use what was read for another outlet of the brand that has a listing (the cuisine buttons already do)
+        from apps.outlets.models import BrandOutlet
+        for sib in BrandOutlet.objects.filter(brand_id=outlet.brand_id, is_active=True).exclude(pk=outlet.pk):
+            sid = m.linked_id(sib)
+            kept = MarketRestaurant.objects.filter(platform=m.code, res_id=str(sid)).first() if sid else None
+            if kept and (kept.info or {}).get("cuisines"):
+                tags = kept.info["cuisines"]
+                break
     if not tags:
         return Response({"detail": "Open the cuisine tags first so we know them.", "suggestions": []})
     tracked = set(MarketCompetitor.objects.filter(outlet=outlet, restaurant__platform=m.code).values_list("restaurant__res_id", flat=True)) | _linked_elsewhere(outlet, m)
