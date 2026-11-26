@@ -903,10 +903,13 @@ function diningPast(rows) {
   if (!rows.length) return `<details class="dn-fold" style="margin-top:14px">${head}<p class="muted" style="margin:8px 0 0">No readings for past dates in this period. We keep the last 30 days.</p></details>`;
   const tone = (p) => (p == null ? "" : p >= 70 ? "color:#16a34a" : p < 30 ? "color:#dc2626" : "");
   return `<details class="dn-fold" style="margin-top:14px">${head}<p class="muted" style="margin:8px 0;font-size:12px">Booked = most slots we saw minus the last reading. An estimate: cancellations and manual changes also move the count.</p>
-    <table class="tbl"><thead><tr><th>Date</th><th>Meal</th><th>Offer</th><th>Slots</th><th>Booked</th><th>Filled</th></tr></thead><tbody>${rows.map((r) => `<tr>
-      <td>${new Date(r.date + "T00:00:00").toLocaleDateString("en-IN", { weekday: "short", day: "numeric", month: "short" })}</td>
+    <table class="tbl dn-past"><thead><tr><th>Meal</th><th>Offer</th><th>Slots</th><th>Booked</th><th>Filled</th></tr></thead><tbody>${rows.map((r, k) => {
+      const first = k === 0 || rows[k - 1].date !== r.date;
+      const when = new Date(r.date + "T00:00:00"), ago = Math.round((new Date().setHours(0, 0, 0, 0) - when) / 864e5);
+      const band = first ? `<tr class="dn-dayband"><td colspan="5"><b>${when.toLocaleDateString("en-IN", { weekday: "long", day: "numeric", month: "short" })}</b>${ago === 1 ? " <span>Yesterday</span>" : ago === 0 ? " <span>Today</span>" : ""}</td></tr>` : "";
+      return `${band}<tr>
       <td>${esc(r.meal)}</td><td><b>${esc(r.offer)}</b></td><td>${esc(r.capacity)}</td><td>${esc(r.booked)}</td>
-      <td style="${tone(r.fill_pct)}"><b>${r.fill_pct == null ? "—" : esc(r.fill_pct) + "%"}</b></td></tr>`).join("")}</tbody></table></details>`;
+      <td style="${tone(r.fill_pct)}"><b>${r.fill_pct == null ? "—" : esc(r.fill_pct) + "%"}</b></td></tr>`; }).join("")}</tbody></table></details>`;
 }
 
 function diningDay(day) {
