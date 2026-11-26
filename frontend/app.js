@@ -1257,10 +1257,10 @@ const STAT_ICONS = [
   [/refund/i, '<path d="M7 5h10M7 9h10M7 5c5 0 5 7 0 7h-1l6 7"/>'],
 ];
 let STAT_PCT = {};  // label -> 0..100, set by the page before it draws its tiles
-function statTile(label, value, tone = "", sub = "") {
+function statTile(label, value, tone = "", sub = "", tip = "") {
   const ico = (STAT_ICONS.find(([re]) => re.test(label)) || [0, '<path d="M5 19V9M12 19V5M19 19v-7"/>'])[1];
   const pct = STAT_PCT[label];
-  return `<div class="cp-stat ${tone}"><span><i class="cs-ico"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ico}</svg></i>${label}</span>
+  return `<div class="cp-stat ${tone}"${tip ? ` data-tip="${tip.replace(/"/g, "&quot;")}"` : ""}><span><i class="cs-ico"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ico}</svg></i>${label}</span>
     <b>${value}</b>${sub ? `<small>${sub}</small>` : ""}${pct != null && isFinite(pct) ? `<em class="cs-bar"><u style="--w:${Math.max(2, Math.min(100, pct)).toFixed(0)}%"></u></em>` : ""}</div>`;
 }
 
@@ -1730,9 +1730,8 @@ async function renderComplaints(page) {
   const showList = complaintUi.listOpen || complaintFilters.issue || complaintFilters.status || complaintFilters.q || complaintFilters.outlet;  // the list stays out of the way until a slice is clicked
   page.innerHTML = `
     <i id="lkMarker" hidden></i>
-    ${glance}
     <div class="card cp-stats">
-      ${stat("Complaints", inr.format(s.total))}${stat("Open", inr.format(s.open), s.open ? "warn" : "")}
+      ${stat("Complaints", inr.format(s.total), "", change == null ? "" : `<b style="color:var(${change > 0 ? "--red" : "--green"})">${change > 0 ? "▲" : "▼"} ${Math.abs(change)}%</b> vs the period before`, [topIssue ? `Mostly ${issueName(topIssue.issue_type).toLowerCase()} (${Math.round((topIssue.count / s.total) * 100)}%)` : "", topDish ? `${topDish.dish} is the dish people mention most (${topDish.count})` : "", repPct != null ? `${repPct}% from repeat customers` : ""].filter(Boolean).join(". "))}${stat("Open", inr.format(s.open), s.open ? "warn" : "")}
       ${stat("In progress", inr.format(s.in_progress))}${stat("Resolved", inr.format(s.resolved), "ok")}
       ${stat("Refunds", rupees(s.refunds))}
       ${stat("Expiring ≤6h", inr.format(s.expiring), s.expiring ? "bad" : "")}
