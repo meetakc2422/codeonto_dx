@@ -34,6 +34,14 @@ class Command(BaseCommand):
         self.stdout.write(f"spot: {a.title} ({a.lat:.4f}, {a.lng:.4f})\n\n== dropdown for {query!r}")
         for h in swiggy.suggest(spot, query):
             self.stdout.write(f"  {h['type'] or '?':12} id={h['res_id']} brand={h['brand_id']} {h['name']!r} area={h['area']!r} rating={h['rating']} {h['delivery_time']}")
+        first = next((h for h in swiggy.suggest(spot, query) if h["res_id"] and h["metadata"]), None)
+        if first:
+            self.stdout.write(f"\n== opening {first['name']!r} from the dropdown, as tapping it does")
+            try:
+                for r in swiggy.search_restaurants(spot, first["name"], suggestion=first["metadata"])[:8]:
+                    self.stdout.write(f"  id={r['res_id']} {r['name']!r} area={r['area']!r} {r['distance_km']} km rating={r['rating']} ratings={r['ratings']!r} {r['delivery_time']}")
+            except swiggy.SwiggyAppError as e:
+                self.stdout.write(f"  (failed: {e})")
         self.stdout.write(f"\n== search page for {query!r}")
         rows = swiggy.search_restaurants(spot, query)
         for r in rows:

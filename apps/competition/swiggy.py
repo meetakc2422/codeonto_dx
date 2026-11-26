@@ -263,7 +263,7 @@ def parse_restaurant_card(value: str) -> dict | None:
         return None
 
 
-def search_restaurants(place: dict, text: str, tries: int = 3) -> list[dict]:
+def search_restaurants(place: dict, text: str, tries: int = 3, suggestion: dict | None = None) -> list[dict]:
     """What the app shows after typing a name and pressing search: the restaurants that deliver to this spot, so a chain
     shows the branch near it (auto-suggest only names the chain's default branch). Retried on a bad answer; [] when nothing readable."""
     import time
@@ -273,6 +273,8 @@ def search_restaurants(place: dict, text: str, tries: int = 3) -> list[dict]:
             "redirection": 1, "secondaryFacets": {}, "showIntentLocation": False, "sldEnabled": 0, "submitAction": "ENTER",
             "supportedMarketplaces": [{"businessLineId": "FOOD", "marketplaceId": "SWIGGY"}], "supportedTabs": ["RESTAURANT", "DISH"],
             "trackingId": str(uuid.uuid4())}
+    if suggestion:  # tapping a restaurant in the dropdown: the app sends that suggestion's own data, and Swiggy answers with the branch near the spot
+        body.update({"submitAction": "SUGGESTION", "selectedPLTab": "RESTAURANT", "metaData": json.dumps(suggestion, separators=(",", ":"))})
     last = None
     for attempt in range(tries):
         try:
