@@ -283,3 +283,17 @@ class ZomatoNameMatchNotPushedOff(SimpleTestCase):
             _, _, rows = markets.Zomato.search({"lat": 1, "lng": 2}, "natural ice cream")
         self.assertEqual(len(rows), 10)
         self.assertEqual(rows[-1]["name"], "Natural Ice Creams")
+
+
+class SwiggySearchLikeTheCustomerApp(SimpleTestCase):
+    def test_a_restaurant_the_dropdown_names_comes_first_even_when_the_list_lacks_it(self):
+        card = lambda i, n: {"res_id": i, "name": n, "rating": 4.5, "distance_km": 11.1, "delivery_time": "20-25 mins", "area": "", "image": "", "cuisines": [], "cost_for_two": ""}
+        hint = {"res_id": "5", "name": "Milano Ice Cream", "type": "RESTAURANT", "rating": 4.5, "delivery_time": "", "area": ""}
+        dish = {"res_id": "9", "name": "Ice cream", "type": "DISH", "rating": None, "delivery_time": "", "area": ""}
+
+        def nearby(spot, text):
+            return [card("1", "Cream Stone")] if text == "milano ice cream" else [card("5", "Milano Ice Cream")]
+        with mock.patch.object(markets.Swiggy, "_nearby", side_effect=nearby), mock.patch.object(swiggy, "suggest", return_value=[hint, dish]):
+            _, _, rows = markets.Swiggy.search({"lat": 1, "lng": 2}, "milano ice cream")
+        self.assertEqual([r["name"] for r in rows], ["Milano Ice Cream", "Cream Stone"])
+        self.assertEqual(rows[0]["distance_km"], 11.1)  # the full card, not just the dropdown's name

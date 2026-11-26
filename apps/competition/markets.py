@@ -146,12 +146,33 @@ class Swiggy:
             return []
 
     @staticmethod
+    def _row(r):
+        return {"res_id": r["res_id"], "name": r["name"], "rating": r["rating"], "offers": [], "is_ad": False,
+                "distance_km": r["distance_km"], "delivery_time": r["delivery_time"], "area": r["area"],
+                "image": r.get("image", ""), "cuisines": r.get("cuisines") or [], "cost_for_two": r.get("cost_for_two", "")}
+
+    @staticmethod
     def search(spot, q, kind=None):  # Swiggy lists by one search; the type option is Zomato's
+        """Like the customer app: the restaurants its dropdown names for what was typed come first (that is where a restaurant a few km away
+        is found), then what pressing search lists. The dropdown carries only a name and rating, so each restaurant it names that the list
+        does not hold is looked up once by its own name to get the same card (photo, distance, cuisines) as everything else."""
         listed = Swiggy._nearby(spot, q)
-        if listed:
-            rows = [{"res_id": r["res_id"], "name": r["name"], "rating": r["rating"], "offers": [], "is_ad": False,
-                     "distance_km": r["distance_km"], "delivery_time": r["delivery_time"], "area": r["area"],
-                     "image": r.get("image", ""), "cuisines": r.get("cuisines") or [], "cost_for_two": r.get("cost_for_two", "")} for r in listed]
+        try:
+            hints = [h for h in swiggy.suggest(spot, q) if h["res_id"] and (h.get("type") or "RESTAURANT").upper() == "RESTAURANT"]
+        except swiggy.SwiggyAppError:
+            hints = []
+        cards = {r["res_id"]: r for r in listed}
+        looked_up, named = set(), []
+        for h in hints[:5]:
+            if h["res_id"] not in cards and h["name"] not in looked_up and len(looked_up) < 3:
+                looked_up.add(h["name"])
+                cards.update({r["res_id"]: r for r in Swiggy._nearby(spot, h["name"])})
+            card = cards.get(h["res_id"])
+            named.append(Swiggy._row(card) if card else {"res_id": h["res_id"], "name": h["name"], "rating": h["rating"], "offers": [], "is_ad": False,
+                                                          "distance_km": None, "delivery_time": h["delivery_time"], "area": h["area"]})
+        if listed or named:
+            seen = {r["res_id"] for r in named}
+            rows = named + [Swiggy._row(r) for r in listed if r["res_id"] not in seen]
             return q, None, rows[:40]
         rows = [{"res_id": h["res_id"], "name": h["name"], "rating": h["rating"], "offers": [], "is_ad": False, "distance_km": None,
                  "delivery_time": h["delivery_time"], "area": h["area"]} for h in swiggy.suggest(spot, q) if h["res_id"]]
