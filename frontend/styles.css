@@ -1621,7 +1621,7 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .sb-x { width: 28px; height: 28px; border: 0; border-radius: 8px; background: transparent; color: inherit; opacity: .6; cursor: pointer; font-size: 13px; } .sb-x:hover { opacity: 1; background: rgba(0, 0, 0, .06); }
 
 /* Overview: space under the title, and the gradient fades in from the top instead of starting with a hard edge */
-.ov-glass.ov-page { margin-top: 16px; padding-top: 6px; background:
+.ov-glass { margin-top: 16px; padding-top: 6px; background:
   linear-gradient(to bottom, var(--bg, #f4f6fa) 0, rgba(244, 246, 250, 0) 56px),
   radial-gradient(700px 380px at 6% 0%, rgba(64,143,202,.34), transparent 70%),
   radial-gradient(640px 380px at 96% 6%, rgba(139,92,246,.24), transparent 70%),
