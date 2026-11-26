@@ -1767,7 +1767,7 @@ async function renderComplaints(page) {
   $("#cq")?.addEventListener("input", (e) => { clearTimeout(timer); timer = setTimeout(() => { complaintFilters.q = e.target.value; loadComplaints(true); }, 300); });
   $("#cStatus")?.addEventListener("change", (e) => { complaintFilters.status = e.target.value; loadComplaints(true); });
   $("#cClear")?.addEventListener("click", () => { complaintFilters.issue = ""; render(); });
-  const cfg = { sel: complaintSel, types: ["dish", "issue", "outlet", "reason"], noun: "complaint",
+  const cfg = { sel: complaintSel, types: ["dish", "issue", "outlet", "reason"], noun: "complaint", noLines: true,
     labelOf: (t, k) => (t === "outlet" ? names.get(Number(k)) || `Outlet ${k}` : t === "issue" ? ISSUE_LABELS[k] || k : k) };
   bindLinks(page, s, cfg, (type, key) => {  // "Read them": open the real complaints behind the highlight
     if (type === "issue") complaintFilters.issue = key; else if (type === "outlet") { state.locationId = key; showSelectedOutlet(); } else complaintFilters.q = key;
