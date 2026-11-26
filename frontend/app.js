@@ -4370,7 +4370,7 @@ async function renderMarketComp(page, outletId) {
     <div class="card">
       <form id="zSearch" class="comp-search comp-search-lg">${state.compTab === "zomato" ? `<select name="kind" id="zKind" aria-label="Search type" title="What to search for">${SEARCH_KINDS.map(([v, t]) => `<option value="${v}" ${(state.searchKind || "") === v ? "selected" : ""}>${t}</option>`).join("")}</select>` : ""}<input name="q" placeholder="Search a restaurant, dish or cuisine on ${zName()}, e.g. Meghana, biryani, chinese" autofocus>
         <button class="btn blue">Search</button></form>
-      <p class="login-error" id="zError"></p>
+      <p class="comp-last" id="zLast"></p><p class="login-error" id="zError"></p>
       <div id="zCuisines" class="comp-cuisines"></div>
       ${zPeek(outletId) ? `<p class="comp-peek">Viewing from <strong>${esc(zPeek(outletId).title)}</strong>${zPeek(outletId).address ? `, ${esc(zPeek(outletId).address)}` : ""}
           <small>just for now, not saved</small> · <button class="login-link" id="zPeekOff">Back to the outlet's location</button></p>`
@@ -4458,41 +4458,74 @@ async function renderMarketComp(page, outletId) {
   page.querySelectorAll("[data-zuntrack]").forEach((b) => b.addEventListener("click", (e) => { e.stopPropagation(); track({ res_id: b.dataset.zuntrack }, false); }));
   page.querySelectorAll("[data-zview]").forEach((tr) => tr.addEventListener("click", () => showMarketRestaurant(outletId, tr.dataset.zview, track)));
   let results = [];
+  state.zSearchCache ||= {}; state.zLastSearch ||= {};
+  const lastKey = `${state.compTab}:${outletId}`, FRESH_MS = 10 * 60 * 1000;
+  const cacheKey = (q, kind) => JSON.stringify([state.compTab, outletId, q.toLowerCase(), kind || "", zPeek(outletId)?.spot || null]);
+  const trackedIds = new Set((d.competitors || []).map((c) => String(c.res_id)));
+  const showLast = () => {
+    const e = state.zLastSearch[lastKey], box = $("#zLast"); if (!box) return;
+    const mins = e ? Math.floor((Date.now() - e.at) / 60000) : 0;
+    box.innerHTML = e ? `<small class="muted">Last search "${esc(e.asked)}" · ${inr.format(e.results.length)} restaurants · ${mins < 1 ? "just now" : `${mins} min ago`}</small> <button type="button" class="login-link" data-zshow>Show results</button>` : "";
+  };
+  $("#zLast")?.addEventListener("click", (ev) => { if (ev.target.closest("[data-zshow]") && state.zLastSearch[lastKey]) showResults(state.zLastSearch[lastKey]); });
   const kindBox = $("#zKind"), qBox = $("#zSearch")?.q;
   const hint = () => { const k = SEARCH_KINDS.find(([v]) => v === (kindBox?.value || "")); if (qBox && k) qBox.placeholder = `Search ${k[2]} on ${zName()}${k[0] ? "" : ", e.g. Meghana, biryani, chinese"}`; };
   kindBox?.addEventListener("change", () => { state.searchKind = kindBox.value; hint(); qBox?.focus(); });
   hint();
+
+  // the results, in the pop-up (kept for a while, so looking at another restaurant never needs a new search)
+  const showResults = (entry, dlg = null) => {
+    results = entry.results;
+    results.forEach((x) => { x.tracked = trackedIds.has(String(x.res_id)); });
+    dlg = dlg || searchModal("", "", "");
+    dlg.wide(false);
+    dlg.set(`Results for "${entry.query || entry.asked}"`, entry.total ? `${inr.format(entry.total)} restaurants on ${zName()} · showing the first ${results.length}` : "",
+      results.length ? results.map((x, i) => `<div class="cs-row">
+        <span class="cs-thumb">${x.image ? `<img src="${esc(x.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}<b>${esc((x.name || "?").trim().charAt(0).toUpperCase())}</b></span>
+        <span class="cs-main"><strong>${esc(x.name)}${x.is_ad ? ' <em class="comp-ad">Ad</em>' : ""}${x.is_us ? ' <em class="comp-you">You</em>' : ""}</strong>
+          <span class="cs-meta">${x.rating ? `<span class="cs-rate">${x.rating.toFixed(1)} ★</span>` : ""}${[x.distance_km != null ? `${x.distance_km} km` : "", x.delivery_time, x.area].filter(Boolean).map((t) => `<span>${esc(t)}</span>`).join("")}</span>
+          ${x.offers?.[0]?.text ? `<span class="cs-offer">${esc(x.offers[0].text)}</span>` : ""}
+          ${x.dishes?.length ? `<small class="cs-dishes">${x.dishes.slice(0, 3).map((dd) => `${esc(dd.name)}${dd.price ? ` ${esc(dd.price)}` : ""}`).join(" · ")}</small>`
+            : x.cuisines?.length ? `<small class="cs-dishes">${[x.cuisines.slice(0, 4).join(", "), x.cost_for_two].filter(Boolean).map(esc).join(" · ")}</small>` : ""}</span>
+        <span class="cs-act"><button class="btn light" data-zres="${i}" data-act="view">View</button>
+          ${x.is_us ? "" : `${d.our_how === "linked" ? "" : `<button class="btn light" data-zres="${i}" data-act="us">This is us</button>`}
+            <button class="btn ${x.tracked ? "light" : "blue"}" data-zres="${i}" data-act="track" ${x.tracked ? "disabled" : ""}>${x.tracked ? "Comparing" : "Compare"}</button>`}</span></div>`).join("")
+        : '<p class="muted cs-note">Nothing found.</p>');
+    dlg.body.onclick = (ev) => {
+      const b = ev.target.closest("[data-zres]");
+      if (!b) return;
+      const x = results[Number(b.dataset.zres)];
+      if (b.dataset.act === "view") showDetail(entry, x, dlg);
+      else if (b.dataset.act === "us") { dlg.close(); setUs(x.res_id); }
+      else { b.disabled = true; b.textContent = "Adding…"; track(x, true).then((ok) => { if (ok) { x.tracked = true; dlg.close(); } else { b.disabled = false; b.textContent = "Compare"; } }); }
+    };
+    return dlg;
+  };
+  // a restaurant opens inside the same pop-up, with a way back to the results (which are still there)
+  const showDetail = (entry, x, dlg) => {
+    dlg.wide(true);
+    dlg.set(x.name, "", '<div class="cs-back"><button type="button" class="login-link" data-csback>← Back to results</button></div><div class="cs-detail"></div>');
+    dlg.body.onclick = (ev) => { if (ev.target.closest("[data-csback]")) showResults(entry, dlg); };
+    showMarketRestaurant(outletId, x.res_id, async (r, on) => { const ok = await track(r, on); if (ok) dlg.close(); return ok; }, false, dlg.body.querySelector(".cs-detail"));
+  };
+
   $("#zSearch").addEventListener("submit", async (e) => {
     e.preventDefault(); $("#zError").textContent = "";
+    const asked = (e.target.q.value || "").trim(), kind = e.target.kind?.value || "", ck = cacheKey(asked, kind);
+    const hit = state.zSearchCache[ck];
+    if (hit && Date.now() - hit.at < FRESH_MS) { state.zLastSearch[lastKey] = hit; showLast(); showResults(hit); return; }  // the same search a moment ago: no new call
     const btn = e.target.querySelector("button"); btn.disabled = true;
-    const asked = (e.target.q.value || "").trim();
     const dlg = searchModal(`Results for "${asked}"`, `searching ${zName()}…`, '<p class="muted cs-note">One moment…</p>');
     try {
-      const r = await apiJSON(`${zBase(outletId)}/search`, "POST", { q: e.target.q.value, kind: e.target.kind?.value || "", spot: zPeek(outletId)?.spot });
-      results = r.results;
-      dlg.set(`Results for "${r.query || asked}"`, r.total ? `${inr.format(r.total)} restaurants on ${zName()} · showing the first ${results.length}` : "",
-        results.length ? results.map((x, i) => `<div class="cs-row">
-          <span class="cs-thumb">${x.image ? `<img src="${esc(x.image)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ""}<b>${esc((x.name || "?").trim().charAt(0).toUpperCase())}</b></span>
-          <span class="cs-main"><strong>${esc(x.name)}${x.is_ad ? ' <em class="comp-ad">Ad</em>' : ""}${x.is_us ? ' <em class="comp-you">You</em>' : ""}</strong>
-            <span class="cs-meta">${x.rating ? `<span class="cs-rate">${x.rating.toFixed(1)} ★</span>` : ""}${[x.distance_km != null ? `${x.distance_km} km` : "", x.delivery_time, x.area].filter(Boolean).map((t) => `<span>${esc(t)}</span>`).join("")}</span>
-            ${x.offers?.[0]?.text ? `<span class="cs-offer">${esc(x.offers[0].text)}</span>` : ""}
-            ${x.dishes?.length ? `<small class="cs-dishes">${x.dishes.slice(0, 3).map((dd) => `${esc(dd.name)}${dd.price ? ` ${esc(dd.price)}` : ""}`).join(" · ")}</small>`
-              : x.cuisines?.length ? `<small class="cs-dishes">${[x.cuisines.slice(0, 4).join(", "), x.cost_for_two].filter(Boolean).map(esc).join(" · ")}</small>` : ""}</span>
-          <span class="cs-act"><button class="btn light" data-zres="${i}" data-act="view">View</button>
-            ${x.is_us ? "" : `${d.our_how === "linked" ? "" : `<button class="btn light" data-zres="${i}" data-act="us">This is us</button>`}
-              <button class="btn ${x.tracked ? "light" : "blue"}" data-zres="${i}" data-act="track" ${x.tracked ? "disabled" : ""}>${x.tracked ? "Comparing" : "Compare"}</button>`}</span></div>`).join("")
-          : '<p class="muted cs-note">Nothing found.</p>');
-      dlg.body.onclick = (ev) => {
-        const b = ev.target.closest("[data-zres]");
-        if (!b) return;
-        const x = results[Number(b.dataset.zres)];
-        if (b.dataset.act === "view") { dlg.close(); showMarketRestaurant(outletId, x.res_id, track); }
-        else if (b.dataset.act === "us") { dlg.close(); setUs(x.res_id); }
-        else { b.disabled = true; b.textContent = "Adding…"; track(x, true).then((ok) => { if (ok) dlg.close(); else { b.disabled = false; b.textContent = "Compare"; } }); }
-      };
+      const r = await apiJSON(`${zBase(outletId)}/search`, "POST", { q: e.target.q.value, kind, spot: zPeek(outletId)?.spot });
+      const entry = { asked, query: r.query, total: r.total, results: r.results, at: Date.now() };
+      state.zSearchCache[ck] = entry; state.zLastSearch[lastKey] = entry;
+      Object.keys(state.zSearchCache).sort((a, b2) => state.zSearchCache[a].at - state.zSearchCache[b2].at).slice(0, -20).forEach((k) => delete state.zSearchCache[k]);
+      showLast(); showResults(entry, dlg);
     } catch (x) { dlg.close(); err(x); }
     btn.disabled = false;
   });
+  showLast();
 }
 
 // a compact pop-up for search results: opens at once with a waiting line, then set() fills it; closes on Esc, a click outside or the cross
@@ -4509,9 +4542,10 @@ function searchModal(title, sub, bodyHtml) {
   const onKey = (e) => { if (e.key === "Escape") close(); };
   document.addEventListener("keydown", onKey);
   bg.addEventListener("click", (e) => { if (e.target === bg || e.target.closest(".cs-x")) close(); });
-  const set = (title2, sub2, html) => { t.textContent = title2; u.textContent = sub2 || ""; body.innerHTML = html; };
+  const set = (title2, sub2, html) => { t.textContent = title2; u.textContent = sub2 || ""; body.innerHTML = html; body.scrollTop = 0; };
+  const wide = (on) => bg.querySelector(".cs-modal").classList.toggle("cs-wide", !!on);
   set(title, sub, bodyHtml);
-  return { body, set, close };
+  return { body, set, close, wide };
 }
 
 // step one on a delivery app: where the outlet stands in the app, so searches and menus match what customers there see
@@ -4601,13 +4635,18 @@ function photoEditor(outletId, r) {
 }
 
 // one restaurant's page on a delivery app: offers, combos, best sellers, categories and what is out of stock
-async function showMarketRestaurant(outletId, resId, track, refresh = false) {
-  const box = $("#zDetail");
+async function showMarketRestaurant(outletId, resId, track, refresh = false, target = null) {
+  const box = target || $("#zDetail");
   box.innerHTML = `<div class="card" style="margin-top:16px"><p class="muted">Loading the menu from ${zName()}… this can take a few seconds.</p></div>`;
-  box.scrollIntoView({ behavior: "smooth", block: "start" });
+  if (!target) box.scrollIntoView({ behavior: "smooth", block: "start" });
   let r;
   const spot = zPeek(outletId)?.spot;
-  try { r = await api(`${zBase(outletId)}/restaurants/${encodeURIComponent(resId)}`, spot ? { spot: JSON.stringify(spot) } : {}); }
+  state.zMenus ||= {};
+  const memo = JSON.stringify([state.compTab, outletId, String(resId), spot || null]), kept = state.zMenus[memo];
+  try {
+    if (kept && !refresh && Date.now() - kept.at < 5 * 60 * 1000) r = kept.r;  // looked at a moment ago: no new call
+    else { r = await api(`${zBase(outletId)}/restaurants/${encodeURIComponent(resId)}`, spot ? { spot: JSON.stringify(spot) } : {}); state.zMenus[memo] = { r, at: Date.now() }; }
+  }
   catch (e) { box.innerHTML = `<div class="card" style="margin-top:16px"><p class="login-error">${esc(userMessage(e))}</p></div>`; return; }
   const ins = r.insights || {};
   const cats = Object.entries(ins.by_category || {});
@@ -4662,7 +4701,7 @@ async function showMarketRestaurant(outletId, resId, track, refresh = false) {
       ${(r.items || []).map((i) => `<tr class="${i.in_stock ? "" : "comp-oos"}"><td>${i.image ? `<input type="checkbox" class="ph-pick" value="${esc(String(i.id))}">` : ""}</td><td>${i.image ? `<img class="comp-thumb" src="${esc(i.image)}" alt="" loading="lazy">` : '<span class="comp-thumb"></span>'}<span class="comp-diet ${i.veg ? "veg" : "nonveg"}"></span>${esc(i.name)}</td><td class="muted">${esc(i.category)}</td>
         <td class="num">${menuPrice(i)}</td><td>${[...i.tags, i.in_stock ? "" : "Out of stock"].filter(Boolean).map((t) => `<span class="comp-svc">${esc(t)}</span>`).join("")}</td></tr>`).join("")}</tbody></table></details>
   </div>`;
-  $("#zRefresh").addEventListener("click", () => showMarketRestaurant(outletId, resId, track, true));
+  $("#zRefresh").addEventListener("click", () => showMarketRestaurant(outletId, resId, track, true, target));
   photoEditor(outletId, r);
   $("#zTrackThis")?.addEventListener("click", (e) => { e.target.disabled = true; track(r, true); });
 }
