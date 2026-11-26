@@ -24,7 +24,8 @@ PROTEINS = {"chicken", "mutton", "lamb", "fish", "prawn", "prawns", "egg", "pane
 # words too common to tell dishes apart on their own
 GENERIC = PROTEINS | {"and", "with", "in", "of", "the", "a", "sauce", "special", "bowl", "combo", "fried", "fry", "spicy", "classic",
                       "boneless", "full", "half", "large", "small", "regular", "box", "meal", "dish", "style", "new",
-                      "make", "your", "own", "hamper", "pack", "platter", "bucket", "family", "party"}
+                      "make", "your", "own", "hamper", "pack", "platter", "bucket", "family", "party",
+                      "ice", "cream"}  # every ice-cream shop's items share these; "Ice Cream (1Kg)" must not match "Anjeer Ice Cream"
 
 
 @lru_cache(maxsize=None)

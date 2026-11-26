@@ -360,3 +360,16 @@ class ZomatoSearchAreas(TestCase):
         _add_areas(M, {}, again)
         self.assertEqual((again[0]["area"], M.calls), ("Indiranagar, Bengaluru", 1))
         self.assertIn("Indiranagar", MarketRestaurant.objects.get(platform="zomato", res_id="7").info["address"])
+
+
+class DishMatchingIceCream(SimpleTestCase):
+    def test_a_one_kilo_tub_is_never_matched_with_a_named_flavour(self):
+        from .market_export import _match
+        tub = {"name": "Ice Cream (1Kg, 2 Flavours)", "veg": True}
+        anjeer = {"name": "Anjeer Ice Cream", "veg": True}
+        self.assertEqual(_match(anjeer, [tub])[0], None)
+        self.assertEqual(_match(tub, [anjeer])[0], None)
+
+    def test_the_same_flavour_still_matches(self):
+        from .market_export import _match
+        self.assertEqual(_match({"name": "Anjeer Ice Cream", "veg": True}, [{"name": "Anjeer Ice Cream (100 ml)", "veg": True}])[0]["name"], "Anjeer Ice Cream (100 ml)")
