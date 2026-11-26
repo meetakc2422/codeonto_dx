@@ -376,13 +376,18 @@ def search(request, brand_id, outlet_id, platform):
         if r["res_id"] and r["res_id"] not in {x["res_id"] for x in rows}:
             c = saved.get(r["res_id"])
             if c:
-                # one restaurant, one set of numbers: a restaurant already being compared shows the rating the comparison table shows, and its
-                # distance and delivery time are brought up to date from what this search found from the outlet's spot
+                # a restaurant already being compared: the rating the customer app shows (the search's) is kept on it, so the table agrees, and what the
+                # search does not give (distance, area) comes from what was saved about it
+                info = c.restaurant.info or {}
+                if r.get("rating") and r["rating"] != c.restaurant.rating:
+                    c.restaurant.rating = r["rating"]
+                    c.restaurant.save(update_fields=["rating"])
                 if r.get("distance_km") is not None and (c.distance_km != r["distance_km"] or (r.get("delivery_time") and c.delivery_time != r["delivery_time"])):
                     c.distance_km, c.delivery_time = r["distance_km"], r.get("delivery_time") or c.delivery_time
                     c.save(update_fields=["distance_km", "delivery_time"])
-                r = {**r, "rating": c.restaurant.rating if c.restaurant.rating is not None else r.get("rating"),
-                     "distance_km": r.get("distance_km") if r.get("distance_km") is not None else c.distance_km}
+                r = {**r, "distance_km": r["distance_km"] if r.get("distance_km") is not None else (c.distance_km if c.distance_km is not None else info.get("distance_km")),
+                     "area": r.get("area") or info.get("area") or info.get("address", ""),
+                     "cuisines": r.get("cuisines") or info.get("cuisines") or [], "cost_for_two": r.get("cost_for_two") or info.get("cost_for_two", "")}
             rows.append({**r, "tracked": r["res_id"] in tracked, "is_us": r["res_id"] == ours})
     return Response({"query": query, "total": total, "results": rows[:SEARCH_SHOWN]})
 
