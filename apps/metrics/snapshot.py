@@ -28,6 +28,18 @@ def _sales(outlets, plat, s, e) -> float:
     return float(v or 0)
 
 
+def _by_outlet(outlets, plats, day) -> dict:
+    """Each outlet's sales (the same line as the headline figure) for one day."""
+    out: dict[int, float] = {}
+    for plat, code in SALES_SOURCES:
+        if plat not in plats:
+            continue
+        rows = MetricDaily.objects.filter(outlet_id__in=outlets, platform_id=plat, kpi__code=code, metric_date=day).values("outlet_id").annotate(v=Sum("value"))
+        for r in rows:
+            out[r["outlet_id"]] = out.get(r["outlet_id"], 0.0) + float(r["v"] or 0)
+    return out
+
+
 def _kpi_sum(outlets, codes, day, platform=None) -> float:
     q = MetricDaily.objects.filter(outlet_id__in=outlets, kpi__code__in=codes, metric_date=day)
     if platform:
@@ -71,6 +83,15 @@ def brand_snapshot(request, brand_id):
             by_platform.append({"platform": p, "sales": round(c, 2), "last_week": round(w, 2), "change": _pct(c, w)})
     by_platform.sort(key=lambda r: -r["sales"])
 
+    # outlets: who gained and who dropped against the same weekday last week (in rupees, so a tiny outlet's big percentage doesn't crowd out the real movers)
+    now_o, was_o = _by_outlet(outlets, plats, day), _by_outlet(outlets, plats, day - timedelta(days=7))
+    moves = [(oid, now_o.get(oid, 0.0), was_o.get(oid, 0.0)) for oid in set(now_o) | set(was_o)]
+    names = {o.id: " · ".join(x for x in (o.outlet_name, o.area) if x) for o in brand.outlets.filter(id__in=[m[0] for m in moves])}
+    row = lambda m: {"name": names.get(m[0], f"Outlet {m[0]}"), "sales": round(m[1], 2), "last_week": round(m[2], 2), "diff": round(m[1] - m[2], 2), "change": _pct(m[1], m[2])}
+    ups = sorted((m for m in moves if m[1] - m[2] > 0), key=lambda m: m[2] - m[1])[:3]
+    downs = sorted((m for m in moves if m[1] - m[2] < 0), key=lambda m: m[1] - m[2])[:3]
+    outlet_card = {"count": len(outlets), "reporting": len(now_o), "up": [row(m) for m in ups], "down": [row(m) for m in downs], "compared": bool(was_o)}
+
     reviews = Review.objects.filter(outlet_id__in=outlets, reviewed_at__date=day)
     if platform:
         reviews = reviews.filter(platform_id=platform)
@@ -85,7 +106,7 @@ def brand_snapshot(request, brand_id):
         "empty": False, "date": day.isoformat(), "weekday": day.strftime("%A"),
         "sales": {"value": round(cur, 2), "last_week": round(prev, 2), "change": _pct(cur, prev), "usual": round(sum(usual) / len(usual), 2) if usual else None, "bars": bars},
         "orders": {"value": int(_kpi_sum(outlets, ["delivered_orders"], day, platform))},
-        "platforms": by_platform,
+        "platforms": by_platform, "outlets": outlet_card,
         "reviews": {**rv, "pending": pending.count()},
         "leakage": {**{k: round(v, 2) for k, v in leak.items()}, "total": round(sum(leak.values()), 2)},
     })

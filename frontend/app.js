@@ -240,6 +240,9 @@ function applyCustomRange(start, end, label = "") {
   $("#rangePop").hidden = true; render();
 }
 
+// TESTING: true opens the snapshot every time you arrive on Overview; set false for the real behaviour (once, right after login)
+const SNAP_ON_OVERVIEW = true;
+let snapRoute = "";
 function renderSidebar() {
   const route = currentRoute();
   const navLink = (code, name, extra = "") => `<a class="nav-item ${route === code ? "active" : ""}" href="#/${code}" title="${esc(name)}">
@@ -376,7 +379,6 @@ function showPageSkeleton(page) {
 }
 
 let pageSeq = 0;
-let snapRoute = "";  // the page drawn before this one, to tell "arriving on Overview" from "Overview redrawn by a filter"
 async function render() {
   if (!state.me) return;
   ensureAssistant();
@@ -508,7 +510,7 @@ async function render() {
   page.classList.toggle("calm", route === "reviews" || route === "tickets");  // a plainer look for these two pages: solid white cards, hairline borders, no gradients or glass
   try {
     if (isSetup) await renderSetup(page, { creating: Boolean(setup.newBrandClientId) });
-    else if (route === "overview") { const arrived = prevRoute !== "overview"; await renderOverview(page); if (arrived) setTimeout(() => { if (currentRoute() === "overview") showSnapshot(true); }, 600); }  // the snapshot opens every time you come to Overview, not when a filter redraws it
+    else if (route === "overview") { const arrived = prevRoute !== "overview"; await renderOverview(page); if (SNAP_ON_OVERVIEW && arrived) setTimeout(() => { if (currentRoute() === "overview") showSnapshot(true); }, 600); }
     else if (route === "reviews") await renderReviews(page);
     else if (route === "stock_outs") await renderStockOuts(page);
     else if (route === "tickets") await renderComplaints(page);
@@ -991,92 +993,87 @@ function animateOverview(page) {
   });
 }
 
-// ---------- the daily snapshot: yesterday as a short run of slides, opened once a day on login and from a button on Overview ----------
+// ---------- the daily snapshot: yesterday as a deck of cards, opened once, right after signing in ----------
 const snapSeen = (brandId, day) => { try { return localStorage.getItem(`snap:${brandId}:${day}`) === "1"; } catch { return false; } };
 const snapMark = (brandId, day) => { try { localStorage.setItem(`snap:${brandId}:${day}`, "1"); } catch { /* it just shows again next time */ } };
 
-function snapSlides(d) {
+function snapSections(d) {
   const nice = (iso, o) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-GB", o);
   const money = (v) => `₹${inr.format(Math.round(v))}`;
   const chip = (c) => (c == null ? "" : `<span class="snap-chip ${c >= 0 ? "up" : "down"}">${c >= 0 ? "▲" : "▼"} ${Math.abs(c)}% vs last week</span>`);
-  const s = d.sales, slides = [];
-  slides.push(`<div class="snap-hero"><svg viewBox="0 0 400 150" preserveAspectRatio="none" aria-hidden="true"><path class="a1" d="M0 150 L0 105 C60 100 90 40 150 28 C210 18 260 70 330 55 C360 48 380 60 400 62 L400 150Z"/><path class="a2" d="M0 150 L0 122 C70 118 110 96 170 98 C230 100 270 62 330 58 C365 56 385 64 400 66 L400 150Z"/></svg></div>
-    <div class="snap-body"><small class="snap-date">${nice(d.date, { day: "numeric", month: "long", year: "numeric" })}${d.date < new Date(Date.now() - 864e5).toISOString().slice(0, 10) ? " · latest day with sales data" : ""}</small><h2>Your daily snapshot is ready</h2>
-    <p>See yesterday's performance across sales, platforms, customers and money lost.</p><button type="button" class="snap-cta" data-snap="next">Let's get started</button></div>`);
+  const compact = (v) => (v >= 1e5 ? `${(v / 1e5).toFixed(1).replace(/\.0$/, "")}L` : v >= 1e3 ? `${(v / 1e3).toFixed(1).replace(/\.0$/, "")}k` : `${Math.round(v)}`);
+  const s = d.sales, out = [];
   const ratio = s.usual ? (s.value - s.usual) / s.usual : null;
   const verdict = ratio == null ? "" : ratio > 0.1 ? "above usual" : ratio < -0.1 ? "below usual" : "in line with usual";
   const max = Math.max(...s.bars.map((b) => b.sales), 1);
-  slides.push(`<div class="snap-body"><small class="snap-kicker">SALES</small><div class="snap-big">${money(s.value)}</div>${chip(s.change)}
+  out.push(["Sales", `<small class="snap-kicker">SALES</small><div class="snap-big"><span class="snap-cur">₹</span>${inr.format(Math.round(s.value))}</div>${chip(s.change)}
     <p class="snap-text">Your ${d.weekday} was <b>${verdict || "a normal day"}</b>${s.change != null ? `, ${s.change >= 0 ? "up" : "down"} ${Math.abs(s.change)}% on last ${d.weekday}` : ""}. ${d.orders.value ? `${inr.format(d.orders.value)} order${d.orders.value === 1 ? "" : "s"} came in.` : ""}</p>
-    <div class="snap-bars">${s.bars.map((b, i) => `<div class="snap-bar ${i === s.bars.length - 1 ? "now" : ""}"><u style="--h:${Math.max(3, Math.round((b.sales / max) * 100))}%;--i:${i}"></u><span>${i === s.bars.length - 1 ? "Yesterday" : nice(b.date, { day: "numeric", month: "short" })}</span></div>`).join("")}</div></div>`);
+    <div class="snap-bars">${s.bars.map((b, i) => `<div class="snap-bar ${i === s.bars.length - 1 ? "now" : ""}"><u style="--h:${Math.max(3, Math.round((b.sales / max) * 100))}%;--j:${i}"></u><em>${compact(b.sales)}</em><span>${i === s.bars.length - 1 ? "Yesterday" : nice(b.date, { day: "numeric", month: "short" })}</span></div>`).join("")}</div>`]);
   if (d.platforms.length) {
     const tot = d.platforms.reduce((t, p) => t + p.sales, 0) || 1, top = d.platforms[0], name = (p) => (p === "zomato" ? "Zomato" : p === "swiggy" ? "Swiggy" : p);
-    slides.push(`<div class="snap-body"><small class="snap-kicker">PLATFORMS</small><h2>${name(top.platform)} ${d.platforms.length > 1 ? `brought ${Math.round((top.sales / tot) * 100)}% of yesterday's sales` : "carried yesterday"}</h2>
-      <div class="snap-rank">${d.platforms.map((p, i) => `<div class="snap-row" style="--i:${i}"><i style="--w:${Math.max(6, Math.round((p.sales / top.sales) * 100))}%"></i><span>${i + 1}. ${name(p.platform)}</span><b>${money(p.sales)}</b></div>${p.change != null ? `<small class="snap-sub">${p.change >= 0 ? "▲" : "▼"} ${Math.abs(p.change)}% vs last ${d.weekday}</small>` : ""}`).join("")}</div></div>`);
+    out.push(["Platforms", `<small class="snap-kicker">PLATFORMS</small><h3>${name(top.platform)} ${d.platforms.length > 1 ? `brought ${Math.round((top.sales / tot) * 100)}% of yesterday's sales` : "carried yesterday"}</h3>
+      <div class="snap-rank">${d.platforms.map((p, i) => `<div class="snap-row" style="--j:${i}"><i style="--w:${Math.max(6, Math.round((p.sales / top.sales) * 100))}%"></i><span>${i + 1}. ${name(p.platform)}</span><b>${money(p.sales)}</b></div>${p.change != null ? `<small class="snap-sub">${p.change >= 0 ? "▲" : "▼"} ${Math.abs(p.change)}% vs last ${d.weekday}</small>` : ""}`).join("")}</div>`]);
+  }
+  const O = d.outlets;
+  if (O && O.compared && (O.up.length || O.down.length)) {
+    const line = (o, good) => `<div class="snap-oline"><span>${esc(o.name)}</span><b class="${good ? "up" : "down"}">${good ? "+" : "−"}${money(Math.abs(o.diff))}</b><small>${o.sales ? money(o.sales) : "no sales"} vs ${money(o.last_week)} last ${d.weekday}${o.change != null ? ` · ${o.change >= 0 ? "▲" : "▼"} ${Math.abs(o.change)}%` : ""}</small></div>`;
+    out.push(["Outlets", `<small class="snap-kicker">OUTLETS</small><h3>${O.down.length ? "Where yesterday slipped" : "Every outlet held up"}</h3>
+      <p class="snap-text">${inr.format(O.reporting)} of ${inr.format(O.count)} outlet${O.count === 1 ? "" : "s"} reported sales, compared with last ${d.weekday}.</p>
+      ${O.down.length ? `<div class="snap-olist"><h4>Biggest drops</h4>${O.down.map((o) => line(o, false)).join("")}</div>` : ""}
+      ${O.up.length ? `<div class="snap-olist"><h4>Biggest gains</h4>${O.up.map((o) => line(o, true)).join("")}</div>` : ""}`]);
   }
   const r = d.reviews;
-  slides.push(`<div class="snap-body"><small class="snap-kicker">CUSTOMER REVIEWS</small><h2>${r.negative ? "Some customers weren't happy" : r.positive ? "Customers loved you yesterday" : "A quiet day for reviews"}</h2>
+  out.push(["Reviews", `<small class="snap-kicker">CUSTOMER REVIEWS</small><h3>${r.negative ? "Some customers weren't happy" : r.positive ? "Customers loved you yesterday" : "A quiet day for reviews"}</h3>
     <div class="snap-two"><div class="good"><b>${inr.format(r.positive)}</b><span>Positive reviews</span></div><div class="bad"><b>${inr.format(r.negative)}</b><span>Negative reviews</span></div></div>
-    <p class="snap-text">${r.pending ? `<b>${inr.format(r.pending)}</b> review${r.pending === 1 ? " is" : "s are"} still waiting for a reply.` : "Every review has been answered."}</p></div>`);
+    <p class="snap-text">${r.pending ? `<b>${inr.format(r.pending)}</b> review${r.pending === 1 ? " is" : "s are"} still waiting for a reply.` : "Every review has been answered."}</p>`]);
   const L = d.leakage;
   if (L.total > 0) {
     const R = 100, len = Math.PI * R, parts = [["Discounts", L.discounts, "#4f74d6"], ["Cancelled orders", L.cancelled, "#cf4f4f"], ["Ad spend", L.ads, "#8e98ab"]];
     let off = 0;
     const arcs = parts.filter((p) => p[1] > 0).map(([, v, c]) => { const l = (v / L.total) * len; const el = `<path d="M20 120 A100 100 0 0 1 220 120" pathLength="${len}" stroke="${c}" stroke-dasharray="${l} ${len}" stroke-dashoffset="${-off}"/>`; off += l; return el; }).join("");
-    slides.push(`<div class="snap-body"><small class="snap-kicker">REVENUE LEAKAGE</small><h2>Silent revenue killers</h2>
+    out.push(["Leakage", `<small class="snap-kicker">REVENUE LEAKAGE</small><h3>Silent revenue killers</h3>
       <div class="snap-gauge"><svg viewBox="0 0 240 130" aria-hidden="true"><path class="bg" d="M20 120 A100 100 0 0 1 220 120"/>${arcs}</svg><div><b>${money(L.total)}</b><span>${s.value ? `${Math.round((L.total / (s.value + L.total)) * 100)}% of what was ordered` : "lost yesterday"}</span></div></div>
-      ${parts.map(([n, v, c]) => `<div class="snap-leak"><span><i style="background:${c}"></i>${n}</span><b>${money(v)}</b><em><u style="--w:${L.total ? Math.round((v / L.total) * 100) : 0}%;background:${c}"></u></em></div>`).join("")}</div>`);
+      ${parts.map(([n, v, c]) => `<div class="snap-leak"><span><i style="background:${c}"></i>${n}</span><b>${money(v)}</b><em><u style="--w:${L.total ? Math.round((v / L.total) * 100) : 0}%;background:${c}"></u></em></div>`).join("")}`]);
   }
-  slides.push(`<div class="snap-body snap-end"><h2>You're all caught up with yesterday</h2><p>See you tomorrow with more insights and numbers.</p><button type="button" class="snap-cta" data-snap="close">Return to dashboard</button></div>`);
-  return slides;
+  return out;
 }
 
 function openSnapshot(d) {
   document.getElementById("snapBg")?.remove();
-  const slides = snapSlides(d), STEP = 7000;
-  let i = 0, paused = false, timer = null, left = STEP, started = 0;
+  const secs = snapSections(d);
+  const stale = d.date < new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  const dateTxt = new Date(`${d.date}T00:00:00`).toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) + (stale ? " · latest day with sales data" : "");
+  const AC = { Sales: "#2f4a9a", Platforms: "#2c8a6b", Reviews: "#d29a2a", Outlets: "#7a55c7", Leakage: "#cf4f4f" };
   const bg = document.createElement("div");
   bg.id = "snapBg"; bg.className = "snap-bg";
-  bg.innerHTML = `<div class="snap-stage" role="dialog" aria-modal="true" aria-label="Daily snapshot">
-    <div class="snap-prog">${slides.map(() => "<i><u></u></i>").join("")}</div>
-    <div class="snap-top"><button type="button" class="snap-ctl" data-snap="pause" aria-label="Pause">❚❚</button><button type="button" class="snap-ctl" data-snap="close" aria-label="Close">✕</button></div>
-    <button type="button" class="snap-nav prev" data-snap="prev" aria-label="Previous">‹</button><button type="button" class="snap-nav next" data-snap="next" aria-label="Next">›</button>
-    <div class="snap-card">${slides.map((h) => `<section class="snap-slide">${h}</section>`).join("")}<button type="button" class="snap-skip" data-snap="close">Skip</button></div></div>`;
+  bg.innerHTML = `<div class="snap-panel" role="dialog" aria-modal="true" aria-label="Yesterday at a glance">
+    <header class="snap-head"><div><small>${dateTxt}</small><h2>Yesterday at a glance</h2></div><button type="button" class="snap-x" data-snap="close" aria-label="Close">✕</button></header>
+    <div class="snap-deck">${secs.map(([n, h]) => `<article class="snap-card" style="--ac:${AC[n] || "#2f4a9a"}"><section class="snap-sec">${h}</section></article>`).join("")}</div>
+    <footer class="snap-foot"><div class="snap-dots">${secs.map(() => "<i></i>").join("")}</div><div class="snap-btns"><button type="button" class="snap-back" data-snap="prev">Back</button><button type="button" class="snap-next" data-snap="next">Next</button></div></footer></div>`;
   document.body.appendChild(bg);
-  const segs = [...bg.querySelectorAll(".snap-prog i")], els = [...bg.querySelectorAll(".snap-slide")];
-  const close = () => { clearTimeout(timer); document.removeEventListener("keydown", onKey); bg.classList.add("out"); setTimeout(() => bg.remove(), 220); };
-  const tick = () => { clearTimeout(timer); if (paused || i >= slides.length - 1) return; started = performance.now(); timer = setTimeout(() => go(i + 1), left); };
-  function go(n, dir) {
-    n = Math.max(0, Math.min(slides.length - 1, n)); dir = dir || (n >= i ? 1 : -1);
-    els.forEach((e, k) => { e.classList.toggle("on", k === n); e.classList.toggle("before", k < n); });
-    segs.forEach((sg, k) => { sg.classList.toggle("done", k < n); sg.classList.toggle("now", k === n); sg.firstChild.style.animation = "none"; });
-    void bg.offsetWidth;
-    if (n < slides.length - 1) segs[n].firstChild.style.animation = `snapfill ${STEP}ms linear forwards`;
-    else segs[n].classList.add("done");
-    segs[n].firstChild.style.animationPlayState = paused ? "paused" : "running";
-    i = n; left = STEP; tick();
-  }
-  const setPause = (p) => {
-    if (p === paused) return;
-    if (p) { left = Math.max(300, left - (performance.now() - started)); clearTimeout(timer); } paused = p;
-    segs[i].firstChild.style.animationPlayState = p ? "paused" : "running";
-    bg.querySelector('[data-snap="pause"]').textContent = p ? "▶" : "❚❚";
-    if (!p) tick();
+  const cards = [...bg.querySelectorAll(".snap-card")], dots = [...bg.querySelectorAll(".snap-dots i")], back = bg.querySelector(".snap-back"), next = bg.querySelector(".snap-next");
+  let i = 0;
+  const close = () => { document.removeEventListener("keydown", onKey); bg.classList.add("out"); setTimeout(() => bg.remove(), 220); };
+  const go = (n) => {
+    i = Math.max(0, Math.min(cards.length - 1, n));
+    cards.forEach((c, k) => { c.classList.toggle("on", k === i); c.classList.toggle("before", k < i); c.querySelectorAll(".snap-bar u,.snap-row i").forEach((e) => { e.style.animation = "none"; void e.offsetWidth; e.style.animation = ""; }); });
+    dots.forEach((d, k) => d.classList.toggle("on", k === i));
+    back.hidden = i === 0; next.textContent = i === cards.length - 1 ? "Done" : "Next";
   };
-  const onKey = (e) => { if (e.key === "Escape") close(); else if (e.key === "ArrowRight") go(i + 1); else if (e.key === "ArrowLeft") go(i - 1); else if (e.key === " ") { e.preventDefault(); setPause(!paused); } };
+  const step = (d) => (d > 0 && i === cards.length - 1 ? close() : go(i + d));
+  const onKey = (e) => { if (e.key === "Escape") close(); else if (e.key === "ArrowRight") step(1); else if (e.key === "ArrowLeft") step(-1); };
   document.addEventListener("keydown", onKey);
   bg.addEventListener("click", (e) => {
-    const b = e.target.closest("[data-snap]");
-    if (!b) { if (e.target === bg) close(); return; }
-    const a = b.dataset.snap;
-    if (a === "next") go(i + 1, 1); else if (a === "prev") go(i - 1, -1); else if (a === "pause") setPause(!paused); else if (a === "close") close();
+    if (e.target === bg) return close();
+    const b = e.target.closest("[data-snap]"); if (!b) return;
+    if (b.dataset.snap === "close") close(); else if (b.dataset.snap === "next") step(1); else if (b.dataset.snap === "prev") step(-1);
   });
-  go(0, 1);
+  go(0);
 }
 
 async function showSnapshot(auto) {
   let d;
-  try { d = await api(`/brands/${state.brandId}/snapshot`, filterParams()); } catch { if (!auto) toast("The snapshot couldn't be loaded right now"); return; }
+  try { d = await api(`/brands/${state.brandId}/snapshot`)  /* always the whole brand: the outlet and platform filters on the page do not change it */; } catch { if (!auto) toast("The snapshot couldn't be loaded right now"); return; }
   if (!d || d.empty) { if (!auto) toast("There is no sales data for yesterday yet"); return; }
   openSnapshot(d);
 }
@@ -5057,6 +5054,7 @@ function showLogin() {
     try {
       await api("/auth/me").catch(() => null);  // sets the CSRF cookie
       await apiJSON("/auth/login", "POST", { username: f.get("username"), password: f.get("password") });
+      try { sessionStorage.setItem("snapAfterLogin", "1"); } catch { /* no storage: no snapshot this time */ }
       location.reload();
     } catch (err) { $("#loginError").textContent = userMessage(err); }
   });
@@ -5108,6 +5106,7 @@ function showOtp(identifier = "") {
     try {
       await api("/auth/me").catch(() => null);  // sets the CSRF cookie
       await apiJSON("/auth/otp/verify", "POST", { identifier, code: new FormData(e.target).get("code") });
+      try { sessionStorage.setItem("snapAfterLogin", "1"); } catch { /* no storage: no snapshot this time */ }
       location.reload();
     } catch (err) { $("#loginError").textContent = userMessage(err); btn.disabled = false; }
   });
@@ -5501,6 +5500,8 @@ async function boot() {
   const initial = state.brands.find((b) => String(b.id) === saved)?.id || state.brands[0].id;
   $("#brandSelect").value = initial;
   await loadBrand(initial);
+  let fresh = false; try { fresh = sessionStorage.getItem("snapAfterLogin") === "1"; sessionStorage.removeItem("snapAfterLogin"); } catch { /* ignore */ }
+  if (fresh && !SNAP_ON_OVERVIEW) setTimeout(() => showSnapshot(true), 600);  // the snapshot opens once, right after signing in
 }
 
 // back from Google's consent screen: tell the user how it went, then tidy the address bar
