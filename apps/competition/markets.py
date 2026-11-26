@@ -149,8 +149,7 @@ class Swiggy:
     def _row(r):
         return {"res_id": r["res_id"], "name": r["name"], "rating": r["rating"], "offers": [], "is_ad": False,
                 "distance_km": r["distance_km"], "delivery_time": r["delivery_time"], "area": r["area"],
-                "image": r.get("image", ""), "cuisines": r.get("cuisines") or [], "cost_for_two": r.get("cost_for_two", ""),
-                "votes": (r.get("ratings") or "").replace(" ratings", "").strip()}
+                "image": r.get("image", ""), "cuisines": r.get("cuisines") or [], "cost_for_two": r.get("cost_for_two", "")}
 
     @staticmethod
     def search(spot, q, kind=None):  # Swiggy lists by one search; the type option is Zomato's

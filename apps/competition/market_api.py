@@ -379,10 +379,9 @@ def search(request, brand_id, outlet_id, platform):
                 # a restaurant already being compared: the rating the customer app shows (the search's) is kept on it, so the table agrees, and what the
                 # search does not give (distance, area) comes from what was saved about it
                 info = c.restaurant.info or {}
-                if (r.get("rating") and r["rating"] != c.restaurant.rating) or (r.get("votes") and r["votes"] != c.restaurant.votes):
-                    c.restaurant.rating = r.get("rating") or c.restaurant.rating
-                    c.restaurant.votes = r.get("votes") or c.restaurant.votes
-                    c.restaurant.save(update_fields=["rating", "votes"])
+                if r.get("rating") and r["rating"] != c.restaurant.rating:
+                    c.restaurant.rating = r["rating"]
+                    c.restaurant.save(update_fields=["rating"])
                 if r.get("distance_km") is not None and (c.distance_km != r["distance_km"] or (r.get("delivery_time") and c.delivery_time != r["delivery_time"])):
                     c.distance_km, c.delivery_time = r["distance_km"], r.get("delivery_time") or c.delivery_time
                     c.save(update_fields=["distance_km", "delivery_time"])
