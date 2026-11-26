@@ -281,45 +281,6 @@ def suggested(request, brand_id, outlet_id, platform):
     return Response({"suggestions": pick_suggestions(found_by_tag, ours, tracked), "cuisines": tags})
 
 
-@api_view(["GET"])
-def ranking(request, brand_id, outlet_id, platform):
-    """Where the outlet sits in the app's own list for each of its cuisine tags: [{cuisine, rank, of, ours_is_ad, organic_rank, ahead}]. rank is None
-    when the outlet isn't in the first pages. Zomato only; kept for half an hour."""
-    from django.core.cache import cache
-    m = _market(platform)
-    if not hasattr(m, "ranked"):
-        return Response({"detail": f"Ranking by cuisine isn't available on {m.name} yet.", "rows": []})
-    outlet = _outlet(request, brand_id, outlet_id)
-    place = _spot(request, outlet, m)
-    if not place:
-        return Response({"detail": f"Set the outlet's {m.name} location first."}, status=400)
-    ours = our_res_id(outlet, m, find=True)[0]
-    if not ours:
-        return Response({"detail": f"This outlet has no {m.name} listing linked, so there is no rank to show. Link it under Brands & Outlets (a listing already linked to another outlet of the brand isn't used).", "rows": []})
-    r = MarketRestaurant.objects.filter(platform=m.code, res_id=ours).first() if ours else None
-    tags = ((r.info or {}).get("cuisines") if r else None) or []
-    if not tags:
-        return Response({"detail": "Open the cuisine tags first so we know them.", "rows": []})
-    rows, stamps = [], []
-    for tag in tags:
-        try:
-            total, found, at = _ranked_checked(m, outlet, place, tag)
-        except m.Error as e:
-            return _error(e)
-        stamps.append(at)
-        ids = [x["res_id"] for x in found]
-        i = ids.index(ours) if ours in ids else None
-        ahead = found[:i] if i is not None else found
-        rows.append({"cuisine": tag, "rank": i + 1 if i is not None else None, "of": total or len(ids), "checked": len(ids),
-                     # most of the first results are paid placements: say whether ours is one, and where it stands among the unpaid ones
-                     "ours_is_ad": bool(found[i].get("is_ad")) if i is not None else None,
-                     "organic_rank": (sum(1 for x in ahead if not x.get("is_ad")) + 1) if i is not None and not found[i].get("is_ad") else None,
-                     "ads_in_list": sum(1 for x in found if x.get("is_ad")),
-                     "ahead": [{"name": x["name"], "is_ad": bool(x.get("is_ad"))} for x in ahead],
-                     "top": [x["name"] for x in ahead[:3]]})
-    return Response({"rows": rows, "checked_at": min(stamps).isoformat() if stamps else None})
-
-
 @api_view(["POST"])
 def locations(request, brand_id, outlet_id, platform):
     """{q}: the app's own address search, from near the outlet when we know where it is."""

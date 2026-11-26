@@ -4316,7 +4316,6 @@ async function loadMarketCuisines(outletId) {
       <div class="comp-cuisine-row">${p.cuisines.map((c) => `<button type="button" class="comp-cuisine" data-cuisine="${esc(c)}">${esc(c)}</button>`).join("")}</div>
       ${p.open_text || p.cost_text ? `<small class="muted">${[p.open_text, p.cost_text].filter(Boolean).map(esc).join(" · ")}</small>` : ""}`;
     loadSuggestedCompetitors(outletId, box, spot);
-    loadCuisineRanking(outletId, box, spot);
     box.onclick = (e) => {
       const b = e.target.closest("[data-cuisine]");
       if (!b) return;
@@ -4354,43 +4353,6 @@ async function loadSuggestedCompetitors(outletId, box, spot) {
       catch (e) { b.disabled = false; b.textContent = "Compare with us"; toast(userMessage(e)); }
     }));
   } catch (x) { if (slot.isConnected) slot.innerHTML = `<small class="muted">Suggested competitors couldn't be loaded right now.</small>`; }
-}
-
-// where the outlet sits in the app's own list for each cuisine tag
-async function loadCuisineRanking(outletId, box, spot) {
-  const slot = document.createElement("div");
-  slot.className = "comp-rank";
-  slot.innerHTML = `<small class="muted">Checking your rank for each cuisine…</small>`;
-  box.appendChild(slot);
-  try {
-    const p = await api(`${zBase(outletId)}/ranking`, spot ? { spot: JSON.stringify(spot) } : {});
-    if (!slot.isConnected) return;
-    if (!p.rows?.length) { slot.innerHTML = p.detail ? `<small class="muted">${esc(p.detail)}</small>` : ""; return; }
-    const when = p.checked_at ? new Date(p.checked_at).toLocaleTimeString("en-IN", { hour: "numeric", minute: "2-digit" }) : "";
-    const adCounts = p.rows.map((r) => r.ads_in_list || 0), adLo = Math.min(...adCounts), adHi = Math.max(...adCounts), ads = adLo === adHi ? adHi : `${adLo}–${adHi}`, checked = Math.max(...p.rows.map((r) => r.checked || 0));
-    const where = (r) => {
-      if (!r.rank) return `<span class="muted">not in the first ${esc(r.checked)}</span>`;
-      const lo = Math.max(1, r.rank - 1), hi = r.rank + 1;
-      return r.ours_is_ad
-        ? `<b>about #${lo}–${hi}</b> <span class="comp-ad">Ad slot</span><br><small class="muted">your ad is showing; the unpaid position isn't visible</small>`
-        : `<b>about #${lo}–${hi}</b> <small class="muted">of ${esc(r.of)}</small>${r.organic_rank ? `<br><small class="muted">#${r.organic_rank} among unpaid results</small>` : ""}`;
-    };
-    const ahead = (r) => {
-      const list = r.ahead || [];
-      if (!list.length) return r.rank ? `<small class="muted">nobody ahead in this check (a customer may see one or two ahead)</small>` : "";
-      const name = (x) => `${esc(x.name)}${x.is_ad ? ' <span class="comp-ad">Ad</span>' : ""}`;
-      return list.length <= 3 ? `<small>${list.map(name).join(", ")}</small>`
-        : `<details class="comp-ahead"><summary><small>${list.length} ahead · ${list.slice(0, 3).map((x) => esc(x.name)).join(", ")}…</small></summary><small>${list.map(name).join(" · ")}</small></details>`;
-    };
-    slot.innerHTML = `<div class="comp-cuisine-head"><b>Where you show by cuisine</b> <small class="muted">${zName()}'s own search at this spot${when ? `, checked at ${when}` : ""}. First ${checked} results read: ${ads} of them are paid ads. Positions move by 1 or 2 between customers.</small></div>
-      <table class="tbl"><thead><tr><th>Cuisine</th><th>Where you show</th><th>Ahead of you</th></tr></thead><tbody>${p.rows.map((r) =>
-        `<tr><td>${esc(r.cuisine)}</td><td>${where(r)}</td><td>${ahead(r)}</td></tr>`).join("")}</tbody></table>`;
-  } catch (x) {
-    if (!slot.isConnected) return;
-    console.error("cuisine ranking failed", x);
-    slot.innerHTML = `<small class="muted">The ranking couldn't be loaded right now${x && x.status ? ` (${esc(String(x.status))})` : ""}. <button class="login-link" type="button" data-rank-retry>Try again</button></small>`;
-    slot.querySelector("[data-rank-retry]")?.addEventListener("click", () => { slot.remove(); loadCuisineRanking(outletId, box, spot); });
-  }
 }
 
 async function renderMarketComp(page, outletId) {
