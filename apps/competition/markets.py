@@ -8,6 +8,11 @@ from . import swiggy, zomato
 INDIA = (20.5937, 78.9629)  # where to search from before an outlet has a spot or a Google listing
 
 
+class _Rows(list):
+    """Search results that also remember the restaurant names Zomato suggested but that do not deliver at this spot."""
+    unavailable: tuple = ()
+
+
 class Zomato:
     code, name = "zomato", "Zomato"
     Error = zomato.ZomatoAppError
@@ -55,7 +60,7 @@ class Zomato:
         hints = zomato.suggest(spot, q)
         # a restaurant in the typing dropdown is only a name match: it can be a listing that doesn't deliver here at all. Keep it only when
         # Zomato's own search for it, from this spot, finds it, and then show it with its real rating, distance and offer.
-        named = []
+        named, dropped = [], []
         for h in [h for h in hints if h["res_id"]][:3]:
             try:
                 found = zomato.search_restaurants(spot, h["name"].strip(), search=h["search"]) if h.get("search") else {"restaurants": []}
@@ -64,16 +69,25 @@ class Zomato:
             real = next((r for r in found["restaurants"] if r["res_id"] == str(h["res_id"])), None)
             if real:
                 named.append(real)
+            else:
+                dropped.append(h["name"].strip())
+
+        def done(label, total, rows):
+            out = _Rows(rows)
+            out.unavailable = tuple(dropped)
+            return label, total, out
+
         if kind == "restaurant":
-            return q, None, named
+            return done(q, None, named)
         if kind in ("dish", "cuisine"):
             want = "Dish" if kind == "dish" else "See all restaurants"
             hit = next((h for h in hints if h["search"] and not h["res_id"] and (h.get("kind") or "").strip() == want), None)
             if not hit:
-                return q, 0, []
-            return hit["name"], None, Zomato._listing(spot, q, hit["search"])["restaurants"]
+                return done(q, 0, [])
+            return done(hit["name"], None, Zomato._listing(spot, q, hit["search"])["restaurants"])
         dish = next((h for h in hints if h["search"] and not h["res_id"]), None)
-        listed = Zomato._listing(spot, q, dish["search"]) if dish or not named else {"total": None, "restaurants": []}
+        # a dish or cuisine suggestion lists what the app shows for it; with only restaurant names (none of which delivers here) there is nothing to list
+        listed = Zomato._listing(spot, q, dish["search"]) if dish else {"total": None, "restaurants": []}
         label = dish["name"] if dish else q
         if "|{" in label or label.startswith("<"):  # Zomato's own styling markup, not text to show
             label = q
@@ -82,7 +96,7 @@ class Zomato:
             if r["res_id"] not in seen:
                 seen.add(r["res_id"])
                 rows.append(r)
-        return label, listed.get("total"), rows[:10]
+        return done(label, listed.get("total"), rows[:10])
 
     @staticmethod
     def ranked(spot, q, pages=5):

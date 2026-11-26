@@ -4549,7 +4549,7 @@ async function renderMarketComp(page, outletId) {
         <span class="cs-act"><button class="btn light" data-zres="${i}" data-act="view">View</button>
           ${x.is_us ? "" : `${d.our_how === "linked" ? "" : `<button class="btn light" data-zres="${i}" data-act="us">This is us</button>`}
             <button class="btn ${x.tracked ? "light" : "blue"}" data-zres="${i}" data-act="track" ${x.tracked ? "disabled" : ""}>${x.tracked ? "Comparing" : "Compare"}</button>`}</span></div>`).join("")
-        : '<p class="muted cs-note">Nothing found.</p>');
+        : `<p class="muted cs-note">Nothing found.${(entry.unavailable || []).length ? ` Zomato knows ${entry.unavailable.map((n) => `"${esc(n)}"`).join(", ")}, but it doesn't deliver to ${esc(zPeek(outletId)?.title || d.area.title || "this area")}. Try <b>Look from another area</b> to see where it does.` : ""}</p>`);
     dlg.body.onclick = (ev) => {
       const b = ev.target.closest("[data-zres]");
       if (!b) return;
@@ -4585,7 +4585,7 @@ async function renderMarketComp(page, outletId) {
     runLoader(dlg.body);
     try {
       const r = await apiJSON(`${zBase(outletId)}/search`, "POST", { q: e.target.q.value, kind, spot: zPeek(outletId)?.spot });
-      const entry = { asked, query: r.query, total: r.total, results: r.results, at: Date.now() };
+      const entry = { asked, query: r.query, total: r.total, results: r.results, unavailable: r.unavailable || [], at: Date.now() };
       state.zSearchCache[ck] = entry; state.zLastSearch[lastKey] = entry;
       Object.keys(state.zSearchCache).sort((a, b2) => state.zSearchCache[a].at - state.zSearchCache[b2].at).slice(0, -20).forEach((k) => delete state.zSearchCache[k]);
       showLast(); showResults(entry, dlg);

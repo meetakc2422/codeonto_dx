@@ -374,7 +374,7 @@ def search(request, brand_id, outlet_id, platform):
     for r in found:
         if r["res_id"] and r["res_id"] not in {x["res_id"] for x in rows}:
             rows.append({**r, "tracked": r["res_id"] in tracked, "is_us": r["res_id"] == ours})
-    return Response({"query": query, "total": total, "results": rows[:SEARCH_SHOWN]})
+    return Response({"query": query, "total": total, "results": rows[:SEARCH_SHOWN], "unavailable": list(getattr(found, "unavailable", ()))})
 
 
 @api_view(["GET"])
