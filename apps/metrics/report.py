@@ -516,10 +516,19 @@ def brand_report_pdf(request, brand_id):
 SHARE_DAYS = 7  # a shared report link works this long
 
 
+def _pdf_name(name: str | None) -> str:
+    """A file name that is safe to send: letters, digits, spaces and - _ . ( ) &, ending in .pdf (the readable name the page chose)."""
+    import re
+
+    clean = re.sub(r"[^\w .()&,-]", "", (name or ""), flags=re.UNICODE).strip(" .")[:120]
+    return (clean if clean.lower().endswith(".pdf") else f"{clean}.pdf") if clean else "report.pdf"
+
+
 @api_view(["POST"])
 def brand_report_share(request, brand_id):
     """Build the same PDF as /report/pdf, keep it under a long random address and return that address, so the report can be sent
-    as a link (a browser on a computer cannot attach a file to WhatsApp). The link needs no login and stops working after SHARE_DAYS."""
+    as a link (a browser on a computer cannot attach a file to WhatsApp). The link is short (`/r/<code>`), needs no login and stops
+    working after SHARE_DAYS. The readable file name (?name=) is kept beside the file and used when the PDF is opened or saved."""
     import os
     import secrets
     import time
@@ -538,18 +547,22 @@ def brand_report_share(request, brand_id):
         try:
             if old.stat().st_mtime < cutoff:
                 os.remove(old)
+                old.with_suffix(".name").unlink(missing_ok=True)
         except OSError:
             pass
-    token = secrets.token_urlsafe(24)
+    token = secrets.token_urlsafe(16)  # 22 characters, 128 bits: short and still not guessable
     (root / f"{token}.pdf").write_bytes(pdf)
-    return Response({"path": f"/r/{token}/report_{start}_to_{end}.pdf", "expires_days": SHARE_DAYS})
+    (root / f"{token}.name").write_text(_pdf_name(request.query_params.get("name") or f"report_{start}_to_{end}.pdf"), encoding="utf-8")
+    return Response({"path": f"/r/{token}", "expires_days": SHARE_DAYS})
 
 
-def shared_report(request, token, name):
-    """The public side of a shared report: the file for this token while it is still fresh. `name` is only for how the link looks."""
+def shared_report(request, token, name=None):
+    """The public side of a shared report: the file for this token while it is still fresh. Old links carry a name after the code; it is
+    only used when no name was kept."""
     import re
     import time
     from pathlib import Path
+    from urllib.parse import quote
 
     from django.conf import settings
     from django.http import FileResponse, Http404
@@ -559,9 +572,11 @@ def shared_report(request, token, name):
     f = Path(settings.SHARED_REPORTS_DIR) / f"{token}.pdf"
     if not f.is_file() or f.stat().st_mtime < time.time() - SHARE_DAYS * 86400:
         raise Http404
-    safe = re.sub(r"[^A-Za-z0-9._-]", "_", name)[:80] or "report.pdf"
+    kept = f.with_suffix(".name")
+    safe = _pdf_name(kept.read_text(encoding="utf-8") if kept.is_file() else name)
+    ascii_name = re.sub(r"[^A-Za-z0-9._ -]", "_", safe)
     resp = FileResponse(open(f, "rb"), content_type="application/pdf")
-    resp["Content-Disposition"] = f'inline; filename="{safe}"'
+    resp["Content-Disposition"] = f"inline; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(safe)}"
     resp["Cache-Control"] = "private, max-age=0"
     resp["X-Robots-Tag"] = "noindex"
     return resp

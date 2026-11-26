@@ -757,8 +757,9 @@ async function renderReport(page) {
         let link = "";
         try {
           const url = pdfUrl(); url.pathname = url.pathname.replace(/\/report\/pdf$/, "/report/share");
+          url.searchParams.set("name", name);  // the readable file name is kept on the server, so the link itself stays short
           const res = await apiFetch(url, { method: "POST" });
-          if (res.ok) link = location.origin + (await res.json()).path.replace(/[^/]+$/, encodeURIComponent(name));  // the last part of the address is only for how the link looks
+          if (res.ok) link = location.origin + (await res.json()).path;
         } catch (e) { /* falls back to downloading the file below */ }
         if (link) {
           const msg = `${title}\n${link}`;

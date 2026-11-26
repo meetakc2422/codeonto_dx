@@ -176,7 +176,8 @@ urlpatterns = [
     path("g/oauth/callback/", google_oauth.callback),
     path("codeonto/googleservices/oauth/callback/", google_oauth.callback),  # same handler under the api.codeonto.com address
     *[path(f"api/{p.pattern}", p.callback) for p in api],
-    path("r/<str:token>/<str:name>", report.shared_report),  # a shared report link: no login, long random address, expires
+    path("r/<str:token>/<str:name>", report.shared_report),  # an older shared report link (the code, then a name)
+    path("r/<str:token>", report.shared_report),  # a shared report link: no login, long random address, expires
     re_path(r"^m(?:/(?P<path>.*))?$", mobile_web),
     # Dashboard (static SPA)
     path("", serve, {"path": "index.html", "document_root": settings.FRONTEND_DIR}),
