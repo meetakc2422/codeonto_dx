@@ -178,7 +178,8 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
     refusals = Refusals("zomato reviews")
     for s in stores:
         acc_id = s["account_id"] if s["account_id"] in by_id else default
-        if refusals.is_dead(acc_id):
+        who = acc_id if s["account_id"] in by_id else "unassigned"  # a store no login owns is tried with the default login, but its refusals are not that login's
+        if refusals.is_dead(who):
             continue
         try:
             fresh_ids: list[str] = []
@@ -223,9 +224,9 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                     log.warning("zomato reviews %s (%s): contact check stopped (%s)", s["outlet_name"], s["res_id"], type(e).__name__)
             total_new += new
             log.info("zomato reviews %s · %s (%s): %s new", s["brand"], s["outlet_name"], s["res_id"], new)
-            refusals.success(acc_id)
+            refusals.success(who)
         except PermissionError as e:
-            refusals.refused(acc_id, f"{s['brand']} · {s['outlet_name']} ({s['res_id']})", e)
+            refusals.refused(who, f"{s['brand']} · {s['outlet_name']} ({s['res_id']})", e)
             ok = False
         except Exception as e:
             log.exception("zomato reviews %s failed: %s", s["res_id"], e)

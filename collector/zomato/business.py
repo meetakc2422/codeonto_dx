@@ -162,8 +162,9 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
             # answers with that login's account totals; the MAX_DAILY_ORDERS check below refuses to save those
             unknown.append(f"{s['brand']} · {s['outlet_name']} ({s['res_id']})")
         acc_id = s["account_id"] if s["account_id"] in by_id else default
+        who = acc_id if s["account_id"] in by_id else "unassigned"  # a store no login owns is tried with the default login, but its refusals are not that login's
         cookies = creds[acc_id]
-        if refusals.is_dead(acc_id):
+        if refusals.is_dead(who):
             continue
         try:
             n = 0
@@ -192,9 +193,9 @@ def run_all(accounts: list[str], headless: bool = False, force: bool = False) ->
                             (s["outlet_id"], kpi_id[code], day, value, weight))
                 n += len(rows)
             log.info("zomato business %s · %s (%s): %s daily values", s["brand"], s["outlet_name"], s["res_id"], n)
-            refusals.success(acc_id)
+            refusals.success(who)
         except PermissionError as e:
-            refusals.refused(acc_id, f"{s['brand']} · {s['outlet_name']} ({s['res_id']})", e)
+            refusals.refused(who, f"{s['brand']} · {s['outlet_name']} ({s['res_id']})", e)
             ok = False
         except Exception as e:
             log.exception("zomato business %s failed: %s", s["res_id"], e)

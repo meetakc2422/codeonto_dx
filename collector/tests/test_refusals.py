@@ -51,6 +51,15 @@ class RefusalsTests(unittest.TestCase):
         self.mark.assert_called_once()
         self.assertEqual(self.mark.call_args[0][0], 1)
 
+    def test_stores_no_login_owns_never_flag_a_login(self):
+        r = Refusals("zomato reviews")
+        for i in range(12):
+            if not r.is_dead("unassigned"):
+                r.refused("unassigned", f"orphan {i}", "refused")  # tried with the default login, but counted under "unassigned"
+        r.summary()
+        self.mark.assert_not_called()
+        self.assertTrue(r.is_dead("unassigned"))  # still stops asking after a long run of refusals
+
 
 if __name__ == "__main__":
     unittest.main()
