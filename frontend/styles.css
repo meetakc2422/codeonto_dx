@@ -1600,3 +1600,19 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .card.cp-stats { gap: 8px; margin-bottom: 8px; } .cp-stat { padding: 8px 12px 9px; } .cp-stat b { font-size: 22px; margin-bottom: 4px; min-height: 0; }
 .dn-glance { margin-bottom: 8px; padding: 10px 14px; } .dn-gline { font-size: 14px; line-height: 1.4; } .dn-gfacts { margin-top: 6px; }
 .dn-dishes, .dn-attn { margin-bottom: 8px; } .dn-dish { padding: 4px 8px; }
+
+/* ---- Reviews and Complaints: a plainer look. Solid white cards, thin borders, small corners, no glass, gradients, shadows or lifting ---- */
+.ov-glass.calm { background: none; }
+.ov-glass.calm .card, .calm .cp-stat, .calm .dn-ring, .calm .dn-glance, .calm .dn-ocard, .calm .lk-bar {
+  background: #fff; -webkit-backdrop-filter: none; backdrop-filter: none; border: 1px solid #e3e7ee; border-radius: 10px; box-shadow: none; }
+.ov-glass.calm .card.cp-stats { background: none; border: 0; }
+.calm .cp-stat:hover, .calm .dn-ring:hover, .calm .dn-ocard:hover { transform: none; box-shadow: none; border-color: #cfd6e1; }
+.calm .cs-ico { background: none; color: #64748b; width: 16px; height: 16px; border-radius: 0; } .calm .cs-ico svg { width: 15px; height: 15px; }
+.calm .cp-stat span { gap: 6px; } .calm .cp-stat b { letter-spacing: 0; }
+.calm .dn-gfacts span, .calm .dn-pills em, .calm .lk-chip { border-radius: 6px; }
+.calm .dn-gfacts span { background: #f1f3f7; } .calm .dn-gfacts .bad { background: #fdecec; } .calm .dn-gfacts .warn { background: #fdf3df; }
+.calm .dn-item.on, .calm .dn-dish.on { background: #eef3fb; }
+.calm .lk-sel { box-shadow: 0 0 0 2px #2563eb !important; background: #eef3fb; } .calm .lk-rel { box-shadow: 0 0 0 1px #9db8ea; background: #f7f9fd; }
+.calm .lk-n { border-radius: 6px; min-width: 18px; height: 18px; font-size: 10.5px; background: #2563eb; }
+.calm .lk-bar { padding: 8px 12px; } .calm .btn { border-radius: 8px; }
+.calm .dn-ring, .calm .dn-ocard, .calm .dn-glance { transition: border-color .15s; }
