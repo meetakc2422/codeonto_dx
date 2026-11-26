@@ -503,6 +503,7 @@ async function render() {
   const lockedModule = state.config.modules.find((m) => m.code === route && m.locked);
   if (lockedModule) return renderLocked(page, lockedModule);
   page.classList.toggle("ov-glass", !isSetup);
+  page.classList.toggle("ov-page", route === "overview");  // the Overview page gets a little air under its title and a soft top edge on its gradient
   page.classList.toggle("calm", route === "reviews" || route === "tickets");  // a plainer look for these two pages: solid white cards, hairline borders, no gradients or glass
   try {
     if (isSetup) await renderSetup(page, { creating: Boolean(setup.newBrandClientId) });
