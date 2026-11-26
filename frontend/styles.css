@@ -1627,3 +1627,10 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
   radial-gradient(640px 380px at 96% 6%, rgba(139,92,246,.24), transparent 70%),
   radial-gradient(760px 460px at 70% 55%, rgba(18,161,80,.14), transparent 72%),
   radial-gradient(700px 420px at 10% 95%, rgba(245,165,36,.16), transparent 72%); background-attachment: local; }
+
+/* Reviews and Complaints: one calm palette. Blue family for plain things; red, amber and green only where they mean bad, middling and good, all slightly muted */
+.calm .cp-stat { --ac: #4f74d6; } .calm .cp-stat.warn { --ac: #e0a63a; } .calm .cp-stat.bad { --ac: #cf4f4f; } .calm .cp-stat.ok { --ac: #4a9d73; }
+.calm .dn-pills .bad { background: #fbeeee; color: #a63a3a; } .calm .dn-pills .warn { background: #fbf3e2; color: #8a6a1f; }
+.calm .dn-item.on, .calm .dn-dish.on { background: #eef2fb; }
+.calm .lk-sel { box-shadow: 0 0 0 2px #4f74d6 !important; } .calm .lk-n { background: #4f74d6; }
+.calm .cp-bad { color: #b84343; } .calm .cp-warn { color: #9a741f; }

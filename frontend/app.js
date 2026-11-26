@@ -1272,7 +1272,10 @@ const shade = (hex, amt) => {  // mix a #rrggbb colour toward white (amt > 0) or
   const mix = (c) => Math.round(c + (t - c) * k);
   return `rgb(${mix(n >> 16)}, ${mix((n >> 8) & 255)}, ${mix(n & 255)})`;
 };
-const DONUT_COLORS = ["#d9480f", "#f59e0b", "#10b981", "#8b5cf6", "#ec4899", "#14b8a6", "#f97316", "#64748b"];
+// one calm palette for the breakdown rings: a Compass orange family for plain categories, and red / amber / green used only where they mean bad / middling / good
+const DONUT_COLORS = ["#9a3412", "#d9480f", "#f08a5d", "#f6b493", "#fadbc8", "#8e98ab", "#5b6477", "#3b4252"];
+const TONE = { bad: "#cf4f4f", mid: "#e0a63a", good: "#4a9d73" };
+const DONUT_PLATFORM = { zomato: "#cf4f4f", swiggy: "#e08c3e" };
 function donutCard(id, title, hint, slices, centerLabel, cls = "", foot = "") {
   slices = slices.filter((x) => x.count > 0);
   if (!slices.length) return { html: "", mount() {} };
@@ -1341,14 +1344,14 @@ async function renderReviews(page) {
   const outletList = s.by_outlet;  // the full table, shown under the cards on request
   const attentionItems = s.by_outlet.slice(0, 4).map((r) => ({ id: r.outlet_id, name: short(names.get(r.outlet_id) || `Outlet ${r.outlet_id}`), full: names.get(r.outlet_id) || "",
     sub: `${inr.format(r.count)} review${r.count === 1 ? "" : "s"}`, value: r.avg_rating == null ? "—" : `${r.avg_rating.toFixed(2)} ★`, tone: r.avg_rating == null ? "" : r.avg_rating < 3.5 ? "bad" : r.avg_rating < 4 ? "warn" : "",
-    pct: (r.negative / maxNeg) * 100, barColor: r.negative ? "#dc2626" : "#cbd5e1",
+    pct: (r.negative / maxNeg) * 100, barColor: r.negative ? TONE.bad : "#cbd5e1",
     pills: [r.negative ? { text: `${inr.format(r.negative)} negative`, tone: "bad" } : null, r.pending ? { text: `${inr.format(r.pending)} pending`, tone: "warn" } : null].filter(Boolean) }));
-  const ratingBands = [["neg", "1–2★", "#dc2626"], ["mid", "3★", "#f59e0b"], ["pos", "4–5★", "#16a34a"]];
+  const ratingBands = [["neg", "1–2★", TONE.bad], ["mid", "3★", TONE.mid], ["pos", "4–5★", TONE.good]];
   const bandCount = (b) => s.by_rating.filter((r) => RATING_BAND[r.stars] === b).reduce((t, r) => t + r.count, 0);
   const ratingDonut = donutCard("rating", "By rating", "click a slice to filter", ratingBands.map(([b, label, color]) => ({ key: b, label, color, count: bandCount(b), on: reviewFilters.rating === b, attr: `data-band="${b}"`, tip: b === "neg" ? "Negative reviews" : b === "pos" ? "Positive reviews" : "Neutral reviews" })), "reviews");
-  const platformDonut = donutCard("platform", "By platform", "where the reviews came from", s.by_platform.map((r, i) => ({ key: r.platform, label: r.platform === "zomato" ? "Zomato" : r.platform === "swiggy" ? "Swiggy" : r.platform, color: PLATFORM_COLORS[r.platform] || DONUT_COLORS[i % DONUT_COLORS.length], count: r.count, attr: `data-platform="${r.platform}"`, sub: r.avg_rating != null ? `avg ${r.avg_rating.toFixed(2)} ★` : "" })), "reviews");
+  const platformDonut = donutCard("platform", "By platform", "where the reviews came from", s.by_platform.map((r, i) => ({ key: r.platform, label: r.platform === "zomato" ? "Zomato" : r.platform === "swiggy" ? "Swiggy" : r.platform, color: DONUT_PLATFORM[r.platform] || DONUT_COLORS[i % DONUT_COLORS.length], count: r.count, attr: `data-platform="${r.platform}"`, sub: r.avg_rating != null ? `avg ${r.avg_rating.toFixed(2)} ★` : "" })), "reviews");
   const topicDonut = donutCard("topic", "What customers talk about", `${reviewFilters.topic ? "click again to clear" : "click a slice to filter"}${s.by_topic?.no_text ? ` · ${inr.format(s.by_topic.no_text)} rated with no text` : ""}`,
-    [...topicList.map((t, i) => ({ key: t.slug, label: t.slug === "other" ? "No specific topic" : t.label, color: t.slug === "food_safety" ? "#dc2626" : DONUT_COLORS[i % DONUT_COLORS.length], count: t.count, on: reviewFilters.topic === t.slug,
+    [...topicList.map((t, i) => ({ key: t.slug, label: t.slug === "other" ? "No specific topic" : t.label, color: t.slug === "food_safety" ? TONE.bad : DONUT_COLORS[i % DONUT_COLORS.length], count: t.count, on: reviewFilters.topic === t.slug,
         attr: `data-topic="${t.slug}"`, sub: t.negative ? `${inr.format(t.negative)} negative` : "", tip: `${t.count} review${t.count === 1 ? "" : "s"} mention this, ${t.negative} of them 1–2★` })),
      ...(!reviewUi.topicsAll && allTopics.length > topicList.length ? [{ key: "more", label: `${allTopics.length - topicList.length} more topics`, color: "#94a3b8", attr: 'data-more="topicsAll"',
         count: allTopics.filter((t) => !topicList.includes(t)).reduce((n, t) => n + t.count, 0) }] : [])], "mentions", "",
@@ -1704,7 +1707,7 @@ async function renderComplaints(page) {
   const stat = statTile;
   const attentionItems = s.by_outlet.slice(0, 4).map((r) => ({ id: r.outlet_id, name: short(names.get(r.outlet_id) || `Outlet ${r.outlet_id}`), full: names.get(r.outlet_id) || "",
     sub: `${inr.format(r.count)} complaint${r.count === 1 ? "" : "s"}`, value: r.open ? `${inr.format(r.open)} open` : "none open", tone: r.open ? "bad" : "",
-    pct: (r.count / maxOutlet) * 100, barColor: r.open ? "#dc2626" : "#cbd5e1", pills: r.refunds ? [{ text: `${rupees(r.refunds)} refunds`, tone: "warn" }] : [] }));
+    pct: (r.count / maxOutlet) * 100, barColor: r.open ? TONE.bad : "#cbd5e1", pills: r.refunds ? [{ text: `${rupees(r.refunds)} refunds`, tone: "warn" }] : [] }));
   const issueColor = new Map(s.by_issue.map((r, i) => [r.issue_type, DONUT_COLORS[i % DONUT_COLORS.length]]));
   const issueName = (t) => ISSUE_LABELS[t] || t;
   const topIssue = s.by_issue[0], topDish = s.by_item?.[0], span = Math.max(1, Math.round((new Date(range().end) - new Date(range().start)) / 864e5) + 1);
@@ -1722,10 +1725,10 @@ async function renderComplaints(page) {
       <b>${inr.format(r.count)}</b><em>${esc(r.issues.slice(0, 2).map((x) => issueName(x.issue_type)).join(", "))}</em></button>`).join("")}</div>` : "";
   const reasons = s.by_reason?.length ? `<div class="card cp-card dn-reasons"><div class="cp-head"><h3>What exactly went wrong</h3><span class="muted">click to read them</span></div>
     <div class="dn-chips">${s.by_reason.map((r) => `<button type="button" class="dn-chip ${complaintFilters.q === r.reason ? "on" : ""}" data-reason="${esc(r.reason)}">${esc(r.reason)} <b>${inr.format(r.count)}</b></button>`).join("")}</div></div>` : "";
-  const whoDonut = donutCard("who", "Who complains", "repeat customers are your regulars", [{ key: "repeat", label: "Repeat customers", color: "#f59e0b", count: rep.repeat }, { key: "first", label: "First-time customers", color: "#0a84ff", count: rep.first }], "customers");
+  const whoDonut = donutCard("who", "Who complains", "repeat customers are your regulars", [{ key: "repeat", label: "Repeat customers", color: DONUT_COLORS[0], count: rep.repeat }, { key: "first", label: "First-time customers", color: DONUT_COLORS[3], count: rep.first }], "customers");
   const issueDonut = donutCard("issue", "By issue", "click a slice to filter", s.by_issue.map((r, i) => ({ key: r.issue_type, label: ISSUE_LABELS[r.issue_type] || r.issue_type, color: DONUT_COLORS[i % DONUT_COLORS.length],
     count: r.count, on: complaintFilters.issue === r.issue_type, attr: `data-issue="${esc(r.issue_type)}"`, sub: r.refunds ? `${rupees(r.refunds)} refunds` : "" })), "complaints");
-  const statusDonut = donutCard("status", "By ticket status", "click a slice to filter", [["open", "Open", "#dc2626", s.open], ["in_progress", "In progress", "#f59e0b", s.in_progress], ["resolved", "Resolved", "#16a34a", s.resolved]]
+  const statusDonut = donutCard("status", "By ticket status", "click a slice to filter", [["open", "Open", TONE.bad, s.open], ["in_progress", "In progress", TONE.mid, s.in_progress], ["resolved", "Resolved", TONE.good, s.resolved]]
     .map(([key, label, color, count]) => ({ key, label, color, count, on: complaintFilters.status === key, attr: `data-status="${key}"` })), "complaints");
   STAT_PCT = s.total ? { "Open": (s.open / s.total) * 100, "In progress": (s.in_progress / s.total) * 100, "Resolved": (s.resolved / s.total) * 100 } : {};
   const showList = complaintUi.listOpen || complaintFilters.issue || complaintFilters.status || complaintFilters.q || complaintFilters.outlet;  // the list stays out of the way until a slice is clicked
