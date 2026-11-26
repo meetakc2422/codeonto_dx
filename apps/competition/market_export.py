@@ -13,7 +13,7 @@ from rest_framework.response import Response
 from . import dishes
 from .api import _outlet
 from .models import MarketCompetitor, MarketRestaurant, MarketSpot
-from .export_dashboard import add_dashboard
+from .export_dashboard import add_dashboard, add_notes, print_ready
 from .market_api import _area, _insights, _market, load_menu, our_res_id
 from .errors import upstream_error
 
@@ -117,6 +117,10 @@ def export(request, brand_id, outlet_id, platform):
             cell.fill = PatternFill("solid", fgColor="0B1229")
             cell.alignment = Alignment(vertical="center", wrap_text=True)
         ws.freeze_panes = "B2" if title == "Summary" else "A2"
+        if title != "Summary" and ws.max_row > 1:
+            ws.auto_filter.ref = ws.dimensions  # filter and sort on any column
+        ws.row_dimensions[1].height = 24
+        print_ready(ws, title_rows="1:1", landscape=True)
         for i, col in enumerate(ws.columns, 1):
             width = max(len(str(c.value or "")) for c in col)
             ws.column_dimensions[get_column_letter(i)].width = min(max(width + 2, 10), (widths or {}).get(i, 48))
@@ -237,8 +241,10 @@ def export(request, brand_id, outlet_id, platform):
 
     read = max((r.menu_refreshed_at for _, r, _ in rows if r.menu_refreshed_at), default=None)
     spot = (MarketSpot.objects.filter(outlet=outlet, platform=mk.code).values_list("title", flat=True).first() or "the outlet")
-    add_dashboard(wb, mk.name, outlet.display_name, spot, read.astimezone(IST).strftime("%d %b %Y %H:%M") if read else "",
-                  rows, ins, kinds)
+    read_at = read.astimezone(IST).strftime("%d %b %Y %H:%M") if read else ""
+    add_dashboard(wb, mk.name, outlet.display_name, spot, read_at, rows, ins, kinds)
+    add_notes(wb, mk.name, outlet.display_name, spot, read_at, rows, ins)
+    wb.properties.title, wb.properties.creator = f"{mk.name} competition · {outlet.display_name}", "SocialSpork"
 
     buf = BytesIO()
     wb.save(buf)
