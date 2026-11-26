@@ -70,11 +70,10 @@ class Zomato:
         label = dish["name"] if dish else q
         if "|{" in label or label.startswith("<"):  # Zomato's own styling markup, not text to show
             label = q
-        seen, rows = set(), []
-        for r in listed["restaurants"] + named:  # what the app lists first; a name match that is already in the list is shown once, with the list's details
-            if r["res_id"] not in seen:
-                seen.add(r["res_id"])
-                rows.append(r)
+        # the list is the app's own order, but a restaurant the dropdown named is never pushed off the end by it: those take the last places
+        real = {r["res_id"] for r in listed["restaurants"]}
+        extra = [n for n in named if n["res_id"] not in real]
+        rows = listed["restaurants"][:max(10 - len(extra), 0)] + extra
         return label, listed.get("total"), rows[:10]
 
     @staticmethod

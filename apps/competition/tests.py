@@ -271,3 +271,15 @@ class ZomatoSearchWithOnlyRestaurantHints(SimpleTestCase):
         with mock.patch.object(zomato, "suggest", return_value=[]):
             _, _, rows = markets.Zomato.search(self.SPOT, "zzzz")
         self.assertEqual(rows, [])
+
+
+class ZomatoNameMatchNotPushedOff(SimpleTestCase):
+    def test_a_full_list_still_leaves_room_for_the_restaurant_that_was_typed(self):
+        dish = {"name": "Ice Cream", "kind": "See all restaurants", "res_id": None, "search": {"y": 1}}
+        hint = {"name": "Natural Ice Creams", "kind": "", "res_id": "777", "search": {"x": 1}}
+        full = [{"res_id": str(i), "name": f"R{i}", "rating": 4.0, "distance_km": 1.0, "is_ad": False, "offers": []} for i in range(10)]
+        with mock.patch.object(zomato, "suggest", return_value=[dish, hint]), \
+             mock.patch.object(zomato, "search_restaurants", return_value={"total": 90, "has_more": True, "postback": "p", "restaurants": full}):
+            _, _, rows = markets.Zomato.search({"lat": 1, "lng": 2}, "natural ice cream")
+        self.assertEqual(len(rows), 10)
+        self.assertEqual(rows[-1]["name"], "Natural Ice Creams")
