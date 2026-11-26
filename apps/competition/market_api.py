@@ -11,6 +11,8 @@ from rest_framework.decorators import api_view
 from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
+from apps.outlets.access import is_staff
+
 from . import zomato
 from .api import MAX_TRACKED, _outlet
 from .markets import INDIA, MARKETS
@@ -27,8 +29,8 @@ def _market(platform):
     return MARKETS[platform]
 
 
-def _error(e):
-    return upstream_error(e)
+def _error(e, request=None):
+    return upstream_error(e, staff=bool(request is not None and is_staff(request.user)))
 
 
 def _area(outlet, m):
@@ -216,7 +218,7 @@ def cuisines(request, brand_id, outlet_id, platform):
     except src.Error as e:
         if r and (r.info or {}).get("cuisines"):  # the app is unreachable: what we kept is better than nothing
             return Response({**_profile_json(r), "from_outlet": borrowed, "source": src.name})
-        return _error(e)
+        return _error(e, request)
     return Response({**_profile_json(r), "from_outlet": borrowed, "source": src.name})
 
 
@@ -293,7 +295,7 @@ def suggested(request, brand_id, outlet_id, platform):
         try:
             found_by_tag[tag] = _ranked_cached(m, outlet, place, tag)[1]
         except m.Error as e:
-            return _error(e)
+            return _error(e, request)
     return Response({"suggestions": pick_suggestions(found_by_tag, ours, tracked), "cuisines": tags})
 
 
@@ -310,7 +312,7 @@ def locations(request, brand_id, outlet_id, platform):
     try:
         return Response(m.locations(q, near["lat"], near["lng"]))
     except m.Error as e:
-        return _error(e)
+        return _error(e, request)
 
 
 def _confirm(m, request):
@@ -320,7 +322,7 @@ def _confirm(m, request):
     try:
         d = m.confirm(pick.get("pick") or pick)
     except m.Error as e:
-        return None, _error(e)
+        return None, _error(e, request)
     if not d.get("serviceable"):
         return None, Response({"detail": f"{m.name} doesn't deliver to that spot. Pick another."}, status=400)
     return {**d, "title": d.get("title") or pick.get("title", ""), "address": d.get("address") or pick.get("address", "")}, None
@@ -365,7 +367,7 @@ def search(request, brand_id, outlet_id, platform):
         kind = request.data.get("kind") if request.data.get("kind") in ("restaurant", "dish", "cuisine") else None
         query, total, found = m.search(place, q, kind)
     except m.Error as e:
-        return _error(e)
+        return _error(e, request)
     tracked = set(MarketCompetitor.objects.filter(outlet=outlet, restaurant__platform=m.code).values_list("restaurant__res_id", flat=True))
     ours = our_res_id(outlet, m)[0]
     rows = []
@@ -386,7 +388,7 @@ def restaurant(request, brand_id, outlet_id, platform, res_id):
     try:
         r = load_menu(m, res_id, place, force=True)
     except m.Error as e:
-        return _error(e)
+        return _error(e, request)
     comp = MarketCompetitor.objects.filter(outlet=outlet, restaurant=r).first()
     ours = our_res_id(outlet, m, find=True)[0]
     return Response({**_summary(r, comp, bool(comp)), "combos": r.combos, "insights": _insights(r), "is_us": res_id == ours, "has_us": bool(ours),
@@ -413,7 +415,7 @@ def track(request, brand_id, outlet_id, platform):
     try:
         r = load_menu(m, res_id, place, request.data.get("name", ""))
     except m.Error as e:
-        return _error(e)
+        return _error(e, request)
     MarketCompetitor.objects.update_or_create(outlet=outlet, restaurant=r, defaults={
         "distance_km": request.data.get("distance_km"), "delivery_time": request.data.get("delivery_time") or ""})
     return Response({"tracked": True})

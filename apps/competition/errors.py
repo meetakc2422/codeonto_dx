@@ -10,9 +10,10 @@ log = logging.getLogger(__name__)
 FRIENDLY = "The platform didn't answer just now. Please try again in a moment."
 
 
-def upstream_error(e: Exception) -> Response:
+def upstream_error(e: Exception, staff: bool = False) -> Response:
+    """The plain sentence for everyone. SocialSpork staff also get the real reason after it, so a failure can be diagnosed from the page itself."""
     log.warning("competition upstream error: %s: %s", type(e).__name__, e)
-    return Response({"detail": FRIENDLY}, status=502)
+    return Response({"detail": f"{FRIENDLY} [staff: {type(e).__name__}: {str(e)[:240]}]" if staff else FRIENDLY}, status=502)
 
 
 RETRY_STATUS = {429, 502, 503, 504}  # "busy" answers worth one more try

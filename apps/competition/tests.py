@@ -222,3 +222,15 @@ class SuggestedCompetitorsTests(__import__("django.test", fromlist=["SimpleTestC
         from .market_api import pick_suggestions
         found = {"Chinese": [self._r("far", "Far", km=6.9), self._r("near", "Near", km=2.7)], "Asian": [self._r("far", "Far", km=6.9)]}
         self.assertEqual([c["name"] for c in pick_suggestions(found, None, set())], ["Near", "Far"])  # Far matches two, but is over 5 km
+
+
+class UpstreamErrorForStaffTests(SimpleTestCase):
+    def test_clients_get_the_plain_sentence_and_staff_also_get_the_reason(self):
+        from .errors import FRIENDLY, upstream_error
+
+        e = zomato.ZomatoAppError("Zomato blocked this server's IP (403 Access Denied).")
+        self.assertEqual(upstream_error(e).data["detail"], FRIENDLY)
+        staff = upstream_error(e, staff=True)
+        self.assertEqual(staff.status_code, 502)
+        self.assertTrue(staff.data["detail"].startswith(FRIENDLY))
+        self.assertIn("Zomato blocked this server's IP", staff.data["detail"])
