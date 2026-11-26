@@ -78,6 +78,14 @@ def _restaurants(mk, outlet, res_ids, with_us=True):
         r = MarketRestaurant.objects.filter(platform=mk.code, res_id=rid).first()
         if (not r or not r.items) and place:
             r = load_menu(mk, rid, place)
+        if r and place and hasattr(mk, "profile") and not (r.info or {}).get("address"):
+            try:  # the restaurant's info page carries its address and hours: one light call, kept on the restaurant
+                p = mk.profile(place, rid)
+                r.info = {**(r.info or {}), "cuisines": p["cuisines"], "cost_text": p["cost_text"], "address": p["address"],
+                          "open_text": p["open_text"], "timings": p["timings"], "profile_at": timezone.now().isoformat()}
+                r.save(update_fields=["info"])
+            except mk.Error:
+                pass  # no address in the report rather than no report
         if r:
             where = ", ".join(x for x in ((outlet.area, outlet.city) if is_us else ((r.info or {}).get("area"), None)) if x)
             name = f"{r.name} ({where})" if where and where.lower() not in r.name.lower() else r.name
@@ -134,6 +142,8 @@ def export(request, brand_id, outlet_id, platform):
         return round(100 * n / of) if of else None
     measures = [
         (f"{mk.name} restaurant ID", lambda r, i: r.res_id),
+        ("Address", lambda r, i: (r.info or {}).get("address", "")),
+        ("Open today", lambda r, i: (r.info or {}).get("open_text", "")),
         ("Cost for two", lambda r, i: (r.info or {}).get("cost_for_two", "")),
         ("Cuisines", lambda r, i: ", ".join((r.info or {}).get("cuisines") or [])),
         ("Rating", lambda r, i: r.rating), ("Ratings (votes)", lambda r, i: r.votes),
@@ -151,7 +161,7 @@ def export(request, brand_id, outlet_id, platform):
         ("Menu read at (IST)", lambda r, i: r.menu_refreshed_at.astimezone(IST).strftime("%d %b %Y %H:%M") if r.menu_refreshed_at else ""),
     ]
     sheet("Summary", ["Measure", *[label for label, _, _ in rows]],
-          [[name, *[f(r, ins[r.res_id]) for _, r, _ in rows]] for name, f in measures], {1: 30})
+          [[name, *[f(r, ins[r.res_id]) for _, r, _ in rows]] for name, f in measures], {1: 30, **{c: 36 for c in range(2, 2 + len(rows))}})
 
     # side by side: the same dish on every selected menu on one row, prices in neighbouring columns
     groups = []  # {"rep": first item seen, "by": {res_id: item}}
