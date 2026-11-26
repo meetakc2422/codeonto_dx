@@ -11,7 +11,7 @@ from django.db.models import Count, Q, Sum
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from apps.outlets.access import get_brand, in_scope, outlet_ids
+from apps.outlets.access import get_brand, in_scope, is_staff, outlet_ids
 from apps.outlets.models import BrandOutlet
 from apps.reviews.models import Review
 
@@ -57,7 +57,10 @@ def brand_snapshot(request, brand_id):
     brand = get_brand(request.user, brand_id)
     qp = request.query_params
     # the whole client: every active outlet of every active brand mapped to it (limited to what this login may see)
-    scope = BrandOutlet.objects.filter(brand__client_id=brand.client_id, brand__is_active=True, is_active=True).select_related("brand")
+    # a client login: its own client. A SocialSpork admin login has no single client, so it is every client's outlets together
+    scope = BrandOutlet.objects.filter(brand__is_active=True, brand__client__is_active=True, is_active=True).select_related("brand")
+    if not is_staff(request.user):
+        scope = scope.filter(brand__client_id=brand.client_id)
     scope_rows = list(in_scope(scope, request.user, "id"))
     outlets = {o.id for o in scope_rows}
     brand_names = sorted({o.brand.name for o in scope_rows})
@@ -109,7 +112,7 @@ def brand_snapshot(request, brand_id):
     leak = {"discounts": _kpi_sum(outlets, ["discount_given"], day, platform), "cancelled": _kpi_sum(outlets, ["cancellation_loss"], day, platform),
             "ads": _kpi_sum(outlets, ["ad_spend"], day, platform)}
     return Response({
-        "empty": False, "client": brand.client.name, "brands": brand_names, "outlet_count": len(outlets), "date": day.isoformat(), "weekday": day.strftime("%A"),
+        "empty": False, "client": "All clients" if is_staff(request.user) else brand.client.name, "brands": brand_names, "outlet_count": len(outlets), "date": day.isoformat(), "weekday": day.strftime("%A"),
         "sales": {"value": round(cur, 2), "last_week": round(prev, 2), "change": _pct(cur, prev), "usual": round(sum(usual) / len(usual), 2) if usual else None, "bars": bars},
         "orders": {"value": int(_kpi_sum(outlets, ["delivered_orders"], day, platform))},
         "platforms": by_platform, "outlets": outlet_card,
