@@ -246,7 +246,8 @@ def suggest(place: dict, text: str) -> list[dict]:
     return out
 
 
-def search_restaurants(place: dict, query: str, count: int = 10, page: int = 1, search: dict | None = None, postback: str | None = None) -> dict:
+def search_restaurants(place: dict, query: str, count: int = 10, page: int = 1, search: dict | None = None, postback: str | None = None,
+                       raw_out: list | None = None) -> dict:
     """Restaurants Zomato shows at a confirmed location (from location_details). Pass a suggestion's `search`
     to get exactly what the app shows for that dish or cuisine; without it Zomato ignores the keyword.
     Returns {total, has_more, restaurants: [...]}; ads are kept and flagged, as they hold real places too."""
@@ -263,6 +264,8 @@ def search_restaurants(place: dict, query: str, count: int = 10, page: int = 1, 
     if search.get("previous_search_id"):
         body["autosuggest_search_id"] = search["previous_search_id"]
     r = post("gateway/search/v1/get_search_results", body, place["lat"], place["lng"], place["city_id"])
+    if raw_out is not None:
+        raw_out.append(r)
     found = [_restaurant(item[kind]) for item in r.get("results", [])
              for kind in [(item.get("layout_config") or {}).get("snippet_type", "")] if kind.startswith("v2_res_snippet") and kind in item]
     return {"total": r.get("total_results"), "has_more": r.get("has_more"), "restaurants": found, "postback": r.get("postback_params")}
