@@ -264,11 +264,8 @@ def parse_restaurant_card(value: str) -> dict | None:
         return None
 
 
-def search_restaurants(place: dict, text: str, tries: int = 3, suggestion: dict | None = None) -> list[dict]:
-    """What the app shows after typing a name and pressing search: the restaurants that deliver to this spot, so a chain
-    shows the branch near it (auto-suggest only names the chain's default branch). Retried on a bad answer; [] when nothing readable."""
-    import time
-
+def _search_body(text: str, suggestion: dict | None = None) -> dict:
+    """The request body of the app's search page: typed text and Enter, or a tapped dropdown restaurant."""
     body = {"categoryPage": "FOOD", "deselectedFacets": {}, "isSimilarRxFlow": 0,
             "marketplaces": [{"businessLineId": "FOOD", "marketplaceId": "SWIGGY"}], "query": text, "queryUniqueId": str(uuid.uuid4()),
             "redirection": 1, "secondaryFacets": {}, "showIntentLocation": False, "sldEnabled": 0, "submitAction": "ENTER",
@@ -278,11 +275,23 @@ def search_restaurants(place: dict, text: str, tries: int = 3, suggestion: dict 
         body.update({"submitAction": "DEEPLINK", "metaData": json.dumps(suggestion, separators=(",", ":")), "metaMap": {}, "facets": {},
                      "supportedMarketplaces": [{"businessLineId": b, "marketplaceId": "SWIGGY"} for b in ("FOOD", "INSTAMART", "DINEOUT")],
                      "supportedTabs": ["RESTAURANT", "DISH", "INSTAMART"]})
+    return body
+
+
+def search_restaurants(place: dict, text: str, tries: int = 3, suggestion: dict | None = None, raw_out: list | None = None) -> list[dict]:
+    """What the app shows after typing a name and pressing search: the restaurants that deliver to this spot, so a chain
+    shows the branch near it (auto-suggest only names the chain's default branch). Retried on a bad answer; [] when nothing readable.
+    suggestion = a dropdown restaurant's data (the app's tap). raw_out, when given, receives the untouched answer."""
+    import time
+
+    body = _search_body(text, suggestion)
     last = None
     for attempt in range(tries):
         try:
             r = call("POST", "https://disc.swiggy.com/api/v3/search/", place["lat"], place["lng"], place.get("city_id", ""), place.get("city", ""),
                      params={"lat": place["lat"], "lng": place["lng"]}, body=body)
+            if raw_out is not None:
+                raw_out.append(r)
             break
         except SwiggyAppError as e:
             last = e

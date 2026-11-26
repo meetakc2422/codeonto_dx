@@ -5,6 +5,7 @@
 Prints the dropdown's restaurants (id, name, area, rating), every kind of card the search page holds, and for each restaurant card its id, name,
 area, distance and rating. Read-only: nothing is saved, and no session or token is printed."""
 import collections
+import re
 
 from django.db.models import Q
 
@@ -38,8 +39,16 @@ class Command(BaseCommand):
         if first:
             self.stdout.write(f"\n== opening {first['name']!r} from the dropdown, as tapping it does")
             try:
-                for r in swiggy.search_restaurants(spot, first["name"], suggestion=first["metadata"])[:8]:
+                raw = []
+                for r in swiggy.search_restaurants(spot, first["name"], suggestion=first["metadata"], raw_out=raw)[:8]:
                     self.stdout.write(f"  id={r['res_id']} {r['name']!r} area={r['area']!r} {r['distance_km']} km rating={r['rating']} ratings={r['ratings']!r} {r['delivery_time']}")
+                if raw:
+                    kinds = collections.Counter(c["type_url"].rsplit(".", 1)[-1] for c in swiggy._cards(raw[0]))
+                    self.stdout.write("  kinds of card in this answer: " + ", ".join(f"{k} x{n}" for k, n in kinds.most_common()))
+                    for c in swiggy._cards(raw[0]):
+                        if first["name"] in str(c.get("value", "")) and not c["type_url"].endswith(".Restaurant"):
+                            self.stdout.write(f"  a {c['type_url'].rsplit('.', 1)[-1]} card mentions it: " + re.sub(r"[^\x20-\x7e]", ".", str(c["value"]))[:700])
+                    self.stdout.write("  answer top-level keys: " + ", ".join(map(str, list(raw[0])[:12])))
             except swiggy.SwiggyAppError as e:
                 self.stdout.write(f"  (failed: {e})")
         if first:
