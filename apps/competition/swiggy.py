@@ -232,13 +232,12 @@ def _pb_fields(b: bytes) -> list[tuple[int, int, object]]:
     return out
 
 
-def parse_restaurant_card(value: str) -> dict | None:
-    """One Restaurant widget of the app's search results -> {res_id, name, area, address, rating, ratings, ...}; None when unreadable."""
+def _restaurant_message(msg: bytes) -> dict | None:
+    """One restaurant message (id, name, address, area, rating, ...) -> the restaurant's details; None when it isn't one."""
     try:
-        top = dict((f, v) for f, w, v in _pb_fields(_pb_bytes(value)) if w == 2)
         info: dict = {}
         cuisines = []
-        for f, w, v in _pb_fields(top[1]):
+        for f, w, v in _pb_fields(msg):
             if w == 2:
                 if f == 12:
                     cuisines.append(v.decode("utf-8", "replace"))
@@ -262,6 +261,40 @@ def parse_restaurant_card(value: str) -> dict | None:
                 "serviceable": st(7) == "SERVICEABLE", "closed_note": txt(68)}
     except Exception:
         return None
+
+
+def parse_restaurant_card(value: str) -> dict | None:
+    """One Restaurant widget of the app's search results -> {res_id, name, area, address, rating, ratings, ...}; None when unreadable."""
+    try:
+        top = dict((f, v) for f, w, v in _pb_fields(_pb_bytes(value)) if w == 2)
+        return _restaurant_message(top[1])
+    except Exception:
+        return None
+
+
+def find_restaurants(value: str) -> list[dict]:
+    """The restaurants inside any other widget (a dish group, for one: the app's nearest branch of a chain sits in one): every message in it
+    that reads as a restaurant with a name and at least a rating, an area or a price."""
+    found = []
+
+    def walk(b: bytes, depth: int) -> None:
+        try:
+            fields = _pb_fields(b)
+        except Exception:
+            return
+        for f, w, v in fields:
+            if w != 2:
+                continue
+            r = _restaurant_message(v)
+            if r and r["name"] and (r["rating"] is not None or r["area"] or r["cost_for_two"]):
+                found.append(r)
+            elif depth < 6:
+                walk(v, depth + 1)
+    try:
+        walk(_pb_bytes(value), 0)
+    except Exception:
+        return []
+    return found
 
 
 def _search_body(text: str, suggestion: dict | None = None) -> dict:
@@ -305,6 +338,12 @@ def search_restaurants(place: dict, text: str, tries: int = 3, suggestion: dict 
             if row and row["res_id"] not in seen:
                 seen.add(row["res_id"])
                 rows.append(row)
+    for c in _cards(r):  # restaurants shown inside other widgets (the chain's nearest branch is one), after the plain cards
+        if not c["type_url"].endswith(".Restaurant") and isinstance(c.get("value"), str):
+            for row in find_restaurants(c["value"]):
+                if row["res_id"] not in seen:
+                    seen.add(row["res_id"])
+                    rows.append(row)
     # the page also lists look-alikes and other nearby places: a name that holds every word typed comes first (stable order)
     want = set(re.findall(r"[a-z0-9]+", text.lower()))
     if want:

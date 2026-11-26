@@ -297,3 +297,29 @@ class SwiggySearchLikeTheCustomerApp(SimpleTestCase):
             _, _, rows = markets.Swiggy.search({"lat": 1, "lng": 2}, "milano ice cream")
         self.assertEqual([r["name"] for r in rows], ["Milano Ice Cream", "Cream Stone"])
         self.assertEqual(rows[0]["distance_km"], 11.1)  # the full card, not just the dropdown's name
+
+
+class SwiggyRestaurantInsideAnotherWidget(SimpleTestCase):
+    @staticmethod
+    def pb(*fields):
+        """Protobuf bytes from (field number, str | bytes), the way the app packs them."""
+        out = b""
+        for f, v in fields:
+            v = v.encode() if isinstance(v, str) else v
+            n, size = len(v), b""
+            while True:  # the length is a varint
+                size += bytes([n & 0x7F | (0x80 if n > 0x7F else 0)])
+                n >>= 7
+                if not n:
+                    break
+            out += bytes([f << 3 | 2]) + size + v
+        return out
+
+    def test_the_nearest_branch_inside_a_dish_group_is_read(self):
+        sla = self.pb((16, "20-25 MINS"), (17, "0.4 km"), (7, "SERVICEABLE"))
+        branch = self.pb((1, "208175"), (2, "Milano Ice Cream"), (7, "Shri Krishna Temple Road, Indira Nagar"), (9, "Indiranagar"),
+                         (11, "200 FOR TWO"), (12, "Ice Cream"), (18, "4.6"), (19, "10K+"), (22, sla))
+        card = self.pb((1, self.pb((2, self.pb((5, branch)), ), (3, "View more outlets"))))
+        value = "".join(chr(0xFF00 + b) if b >= 0x80 else chr(b) for b in card)
+        got = swiggy.find_restaurants(value)
+        self.assertEqual([(r["res_id"], r["area"], r["distance_km"], r["rating"], r["ratings"]) for r in got], [("208175", "Indiranagar", 0.4, 4.6, "10K+")])
