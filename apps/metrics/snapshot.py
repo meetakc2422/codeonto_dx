@@ -5,6 +5,7 @@ Sales (against the same weekday over the last weeks), each platform's share, the
 the same one the Export report uses (Zomato's "Sales" plus Swiggy's "Net Sales").
 """
 
+import statistics
 from datetime import date, timedelta
 
 from django.db.models import Count, Q, Sum
@@ -18,6 +19,7 @@ from apps.reviews.models import Review
 from .models import MetricDaily
 from .report import SALES_SOURCES
 
+OUTLIER_X, OUTLIER_MIN = 6, 10000  # a reading is ignored when it is over 6 times that outlet's own usual level and ₹10,000 above it
 WEEKS = 5  # the bars: the day itself and the same weekday over the four weeks before it
 
 
@@ -38,18 +40,6 @@ def _pairs(outlets, plats, day) -> dict:
         rows = MetricDaily.objects.filter(outlet_id__in=outlets, platform_id=plat, kpi__code=code, metric_date=day).values("outlet_id").annotate(v=Sum("value"))
         for r in rows:
             out[(r["outlet_id"], plat)] = float(r["v"] or 0)
-    return out
-
-
-def _by_outlet(outlets, plats, day) -> dict:
-    """Each outlet's sales (the same line as the headline figure) for one day."""
-    out: dict[int, float] = {}
-    for plat, code in SALES_SOURCES:
-        if plat not in plats:
-            continue
-        rows = MetricDaily.objects.filter(outlet_id__in=outlets, platform_id=plat, kpi__code=code, metric_date=day).values("outlet_id").annotate(v=Sum("value"))
-        for r in rows:
-            out[r["outlet_id"]] = out.get(r["outlet_id"], 0.0) + float(r["v"] or 0)
     return out
 
 
@@ -102,11 +92,33 @@ def brand_snapshot(request, brand_id):
     # like for like: every day is added up over the same outlet+platform pairs that reported on `day`, so a client whose data is
     # missing or half loaded on one of the days does not make that day look like a crash or a spike
     ref = set(pairs(day))
+    days = [day - timedelta(days=7 * i) for i in range(WEEKS)]
+    adj_cache: dict = {}
+    flagged: list = []
+
+    def adjusted(d) -> dict:
+        """Each pair's sales for day d, with a reading far above that pair's own usual level (a bad import, say a month's total stored on one
+        day) replaced by its usual level, so one wrong row cannot make a whole day look like a record."""
+        if d not in adj_cache:
+            out = {}
+            for k in ref:
+                v = pairs(d).get(k)
+                if v is None:
+                    continue
+                usual = sorted(x for x in (pairs(x).get(k) for x in days) if x)
+                if len(usual) >= 3:
+                    med = statistics.median(usual)
+                    if med > 0 and v > OUTLIER_X * med and v - med >= OUTLIER_MIN:
+                        flagged.append({"outlet_id": k[0], "platform": k[1], "date": d.isoformat(), "value": round(v, 2), "usual": round(med, 2)})
+                        v = med
+                out[k] = v
+            adj_cache[d] = out
+        return adj_cache[d]
 
     def day_sales(d, plat=None):
-        return sum(v for k, v in pairs(d).items() if k in ref and (plat is None or k[1] == plat))
+        return sum(v for k, v in adjusted(d).items() if plat is None or k[1] == plat)
 
-    bars = [{"date": (day - timedelta(days=7 * i)).isoformat(), "sales": round(day_sales(day - timedelta(days=7 * i)), 2)} for i in reversed(range(WEEKS))]
+    bars = [{"date": d.isoformat(), "sales": round(day_sales(d), 2)} for d in reversed(days)]
     cur, prev = bars[-1]["sales"], bars[-2]["sales"]
     usual = [b["sales"] for b in bars[:-1] if b["sales"] > 0]
     by_platform = []
@@ -116,9 +128,15 @@ def brand_snapshot(request, brand_id):
             by_platform.append({"platform": p, "sales": round(c, 2), "last_week": round(w, 2), "change": _pct(c, w)})
     by_platform.sort(key=lambda r: -r["sales"])
 
-    # outlets: who gained and who dropped against the same weekday last week (in rupees, so a tiny outlet's big percentage doesn't crowd out the real movers)
-    now_o, was_o = _by_outlet(outlets, plats, day), _by_outlet(outlets, plats, day - timedelta(days=7))
-    # only outlets that reported on the day: one with no reading at all is a data gap (reports arrive late), not a proven drop
+    # outlets: who gained and who dropped against the same weekday last week (in rupees, so a tiny outlet's big percentage doesn't crowd out the real movers).
+    # Only outlets that reported on the day: one with no reading at all is a data gap (reports arrive late), not a proven drop
+    def per_outlet(d):
+        out: dict[int, float] = {}
+        for (oid, _), v in adjusted(d).items():
+            out[oid] = out.get(oid, 0.0) + v
+        return out
+
+    now_o, was_o = per_outlet(day), per_outlet(day - timedelta(days=7))
     moves = [(oid, now_o[oid], was_o.get(oid, 0.0)) for oid in now_o]
     many = len(brand_names) > 1
     names = {o.id: " · ".join(x for x in ((o.brand.name if many else ""), o.outlet_name, o.area) if x) for o in scope_rows}
@@ -126,6 +144,7 @@ def brand_snapshot(request, brand_id):
     ups = sorted((m for m in moves if m[1] - m[2] > 0), key=lambda m: m[2] - m[1])[:3]
     downs = sorted((m for m in moves if m[1] - m[2] < 0), key=lambda m: m[1] - m[2])[:3]
     outlet_card = {"count": len(outlets), "reporting": len(now_o), "up": [row(m) for m in ups], "down": [row(m) for m in downs], "compared": bool(was_o)}
+    ignored = [{**f, "outlet": names.get(f["outlet_id"], f"Outlet {f['outlet_id']}")} for f in flagged[:5]]
 
     reviews = Review.objects.filter(outlet_id__in=outlets, reviewed_at__date=day)
     if platform:
@@ -139,7 +158,7 @@ def brand_snapshot(request, brand_id):
             "ads": _kpi_sum(outlets, ["ad_spend"], day, platform)}
     return Response({
         "empty": False, "client": "All clients" if is_staff(request.user) else brand.client.name, "brands": brand_names, "outlet_count": len(outlets), "date": day.isoformat(), "weekday": day.strftime("%A"),
-        "sales": {"value": round(cur, 2), "last_week": round(prev, 2), "change": _pct(cur, prev), "usual": round(sum(usual) / len(usual), 2) if usual else None, "bars": bars},
+        "ignored": ignored, "sales": {"value": round(cur, 2), "last_week": round(prev, 2), "change": _pct(cur, prev), "usual": round(sum(usual) / len(usual), 2) if usual else None, "bars": bars},
         "orders": {"value": int(_kpi_sum(outlets, ["delivered_orders"], day, platform))},
         "platforms": by_platform, "outlets": outlet_card,
         "reviews": {**rv, "pending": pending.count()},

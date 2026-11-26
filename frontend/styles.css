@@ -1713,3 +1713,4 @@ body { padding-bottom: env(safe-area-inset-bottom, 0px); }
 .dn-past .dn-dayband:first-child td, .dn-past tbody > .dn-dayband:first-child td { border-top: 0; }
 .dn-past .dn-dayband span { margin-left: 8px; font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #2f4a9a; background: #fff; border: 1px solid #c9d2e8; border-radius: 999px; padding: 2px 8px; }
 .dn-past tbody tr:not(.dn-dayband) td:first-child { padding-left: 22px; }
+.snap-note { margin: 0; font-size: 12px !important; line-height: 1.45 !important; color: #8a6d1f !important; background: #fdf6e3; border-radius: 8px; padding: 8px 10px; }
