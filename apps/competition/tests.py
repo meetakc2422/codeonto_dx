@@ -323,3 +323,11 @@ class SwiggyRestaurantInsideAnotherWidget(SimpleTestCase):
         value = "".join(chr(0xFF00 + b) if b >= 0x80 else chr(b) for b in card)
         got = swiggy.find_restaurants(value)
         self.assertEqual([(r["res_id"], r["area"], r["distance_km"], r["rating"], r["ratings"]) for r in got], [("208175", "Indiranagar", 0.4, 4.6, "10K+")])
+
+
+    def test_dishes_and_banners_shaped_like_restaurants_are_not_read(self):
+        dish = self.pb((1, "9912"), (2, "Original Whopper Chicken(XL size Bun)"), (11, "350 FOR TWO"), (18, "4.2"))
+        banner = self.pb((1, "5501"), (2, "rng/md/carousel/production/v58dvs05"), (7, "swiggy://externalWidget?x=1"), (9, "let us know"), (22, self.pb((16, "30-35 MINS"))))
+        card = self.pb((1, self.pb((2, dish), (3, banner))))
+        value = "".join(chr(0xFF00 + b) if b >= 0x80 else chr(b) for b in card)
+        self.assertEqual(swiggy.find_restaurants(value), [])

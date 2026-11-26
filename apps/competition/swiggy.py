@@ -272,6 +272,13 @@ def parse_restaurant_card(value: str) -> dict | None:
         return None
 
 
+def _is_restaurant(r: dict) -> bool:
+    """A real restaurant, not a dish, banner or link that happens to be shaped like one: a plain-text name, a street address, an area and a delivery time."""
+    name = r["name"]
+    return bool(name and name.isprintable() and "/" not in name and "://" not in name and "\ufffd" not in name
+                and r["address"] and r["area"] and r["delivery_time"] and "/" not in r["area"])
+
+
 def find_restaurants(value: str) -> list[dict]:
     """The restaurants inside any other widget (a dish group, for one: the app's nearest branch of a chain sits in one): every message in it
     that reads as a restaurant with a name and at least a rating, an area or a price."""
@@ -286,7 +293,7 @@ def find_restaurants(value: str) -> list[dict]:
             if w != 2:
                 continue
             r = _restaurant_message(v)
-            if r and r["name"] and (r["rating"] is not None or r["area"] or r["cost_for_two"]):
+            if r and _is_restaurant(r):
                 found.append(r)
             elif depth < 6:
                 walk(v, depth + 1)
